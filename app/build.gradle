@@ -1,11 +1,17 @@
 apply plugin: 'com.android.application'
 
+repositories {
+    google()
+    jcenter()
+    maven { url 'https://jitpack.io' }
+}
+
 android {
     compileSdkVersion 25
     buildToolsVersion "26.0.2"
 
     defaultConfig {
-        applicationId "com.sony.jpgcookbook"
+        applicationId "com.jpgcookbook.sony"
         minSdkVersion 9
         targetSdkVersion 25
         versionCode 1
@@ -14,6 +20,7 @@ android {
 }
 
 dependencies {
-    // This connects the 'app' to the 'lib' brain
-    compile project(':lib')
+    // This downloads the Sony Brain directly from the web!
+    // It replaces the empty 'lib' folder entirely.
+    compile 'com.github.ma1co:openmemories-framework:v0.3'
 }
