@@ -50,7 +50,7 @@ public class MainActivity extends BaseActivity implements SurfaceHolder.Callback
         mSurfaceHolder.addCallback(this);
         layout.addView(surfaceView);
 
-        // Status Text (e.g., "Cooking...")
+        // Status Text (e.g., "Cooking Image...")
         mStatusText = new TextView(this);
         mStatusText.setTextColor(Color.WHITE);
         mStatusText.setTextSize(24);
@@ -164,8 +164,8 @@ public class MainActivity extends BaseActivity implements SurfaceHolder.Callback
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         
-        // Half-Press: Trigger Autofocus
-        if (keyCode == KeyEvent.KEYCODE_FOCUS || keyCode == KeyEvent.KEYCODE_CAMERA_HALF) {
+        // FIX FOR COMPILE ERROR: Use scanCode 644 for Shutter Half-Press
+        if (keyCode == KeyEvent.KEYCODE_FOCUS || event.getScanCode() == 644) {
             if (mNormalCamera != null && !mIsTakingPicture) {
                 mNormalCamera.autoFocus(null); 
             }
@@ -196,7 +196,7 @@ public class MainActivity extends BaseActivity implements SurfaceHolder.Callback
         @Override
         public void onPictureTaken(byte[] data, Camera camera) {
             
-            // TODO: Phase 2 NDK Hook
+            // TODO: Phase 2 NDK Hook goes here
             
             File dir = new File(Environment.getExternalStorageDirectory(), "DCIM/COOKBOOK");
             if (!dir.exists()) dir.mkdirs();
