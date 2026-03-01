@@ -12,17 +12,17 @@ android {
     buildToolsVersion "25.0.2"
 
     defaultConfig {
-        applicationId "com.github.ma1co.pmcademo.app"
+        applicationId "com.jpgcookbook.baker"
         minSdkVersion 10
         targetSdkVersion 10
         versionCode 2
         versionName "1.1"
     }
 
-    // Renames the output APK from app-debug.apk to AlphaOS-Dashboard-v1.0.apk
+    // Renames the output APK from app-debug.apk to Sony-JpgCookbook-v1.0.apk
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
-            outputFileName = "AlphaOS-Dashboard-v${variant.versionName}.apk"
+            outputFileName = "Sony-JpgCookbook-v${variant.versionName}.apk"
         }
     }
 }
