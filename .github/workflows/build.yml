@@ -1,60 +1,24 @@
-name: Build Sony Camera APK
-
-on:
-  push:
-    branches: [ master, main ]
-  workflow_dispatch:
-
+name: Build Sony-JPGCookbook
+on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Java 8
-      uses: actions/setup-java@v4
+    - uses: actions/checkout@v4
+    - uses: actions/setup-java@v4
       with:
         java-version: '8'
         distribution: 'temurin'
-
-    - name: Inject Sony Brain (Failsafe)
-      run: |
-        # Download the missing Sony framework directly from ma1co
-        git clone https://github.com/ma1co/OpenMemories-Framework.git temp_framework
-        
-        # Create the folder structure the compiler expects
-        mkdir -p lib/src/main/java
-        
-        # Copy the Sony hardware source code into your project
-        cp -r temp_framework/src/* lib/src/main/java/
-        
-        # Copy the proprietary Sony hardware "stubs" (scalar.jar)
-        mkdir -p lib/libs
-        cp -r temp_framework/libs/* lib/libs/
-        
-        # Clean up
-        rm -rf temp_framework
-
-    - name: Purge Modern SDKs
+    - name: Purge SDK
       run: |
         sudo rm -rf $ANDROID_HOME/platforms/android-3*
         sudo rm -rf $ANDROID_HOME/build-tools/3*
-
-    - name: Setup Gradle 4.10.3
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: 4.10.3
-        cache-disabled: true
-
     - name: Build APK
       run: |
         gradle wrapper --gradle-version 4.10.3
         chmod +x gradlew
         ./gradlew assembleDebug --stacktrace
-
-    - name: Upload Result
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
         name: Sony-JPGCookbook-APK

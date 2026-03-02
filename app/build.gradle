@@ -1,25 +1,21 @@
 apply plugin: 'com.android.application'
 
-repositories {
-    google()
-    jcenter()
-    maven { url 'https://jitpack.io' }
-}
-
 android {
     compileSdkVersion 25
     buildToolsVersion "26.0.2"
 
     defaultConfig {
-        applicationId "com.jpgcookbook.sony"
+        applicationId "com.sony.jpgcookbook"
         minSdkVersion 9
         targetSdkVersion 25
         versionCode 1
         versionName "1.0"
     }
-}
 
-dependencies {
-    // This connects your 'app' to the 'lib' folder we just injected
-    compile project(':lib')
+    sourceSets {
+        main {
+            // This is the key: we tell it the camera brain is in the 'stubs' folder
+            java.srcDirs = ['src/main/java', 'src/main/stubs']
+        }
+    }
 }
