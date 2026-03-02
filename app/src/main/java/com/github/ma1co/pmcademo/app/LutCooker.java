@@ -11,7 +11,7 @@ public class LutCooker {
     private int lutSize = 0;
     private int[] lutPixels;
 
-    // 1. READ THE .CUBE FILE
+    // 1. READ THE .CUBE FILE (Bulletproof Version)
     public boolean loadLut(File cubeFile) {
         try {
             BufferedReader br = new BufferedReader(new FileReader(cubeFile));
@@ -20,32 +20,50 @@ public class LutCooker {
 
             while ((line = br.readLine()) != null) {
                 line = line.trim();
+                
+                // Skip empty lines and comments
                 if (line.isEmpty() || line.startsWith("#")) continue;
 
+                // Find the size of the 3D grid
                 if (line.startsWith("LUT_3D_SIZE")) {
-                    lutSize = Integer.parseInt(line.split(" ")[1]);
-                } else {
-                    // It's a color data line: R G B
-                    String[] rgb = line.split("\\s+");
-                    if (rgb.length >= 3) {
+                    String[] parts = line.split("\\s+");
+                    if (parts.length > 1) {
+                        lutSize = Integer.parseInt(parts[1]);
+                    }
+                    continue;
+                }
+                
+                // CRITICAL FIX: Skip any other text headers (TITLE, DOMAIN_MIN, etc.)
+                if (line.matches("^[a-zA-Z_]+.*")) {
+                    continue;
+                }
+
+                // If it survived the checks, it should be an R G B line
+                String[] rgb = line.split("\\s+");
+                if (rgb.length >= 3) {
+                    try {
                         int r = (int) (Float.parseFloat(rgb[0]) * 255);
                         int g = (int) (Float.parseFloat(rgb[1]) * 255);
                         int b = (int) (Float.parseFloat(rgb[2]) * 255);
                         
-                        // Clamp values just to be safe
+                        // Clamp values to prevent weird color wrapping
                         r = Math.max(0, Math.min(255, r));
                         g = Math.max(0, Math.min(255, g));
                         b = Math.max(0, Math.min(255, b));
                         
                         colors.add(Color.rgb(r, g, b));
+                    } catch (Exception e) {
+                        // If parsing the numbers fails, safely ignore the line
                     }
                 }
             }
             br.close();
 
-            if (lutSize > 0 && colors.size() == lutSize * lutSize * lutSize) {
-                lutPixels = new int[colors.size()];
-                for (int i = 0; i < colors.size(); i++) {
+            // Validate that we got all the colors we need for the grid
+            int expectedColors = lutSize * lutSize * lutSize;
+            if (lutSize > 0 && colors.size() >= expectedColors) {
+                lutPixels = new int[expectedColors];
+                for (int i = 0; i < expectedColors; i++) {
                     lutPixels[i] = colors.get(i);
                 }
                 return true;
