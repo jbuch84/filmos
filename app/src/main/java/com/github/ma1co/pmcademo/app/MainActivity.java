@@ -8,7 +8,6 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
-import android.util.Pair;
 import android.view.KeyEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -91,7 +90,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                         }
                     }
                 }
-                m_handler.postDelayed(this, 2000); // 2 sec poll for total stability
+                m_handler.postDelayed(this, 2000);
             }
         }, 2000);
     }
@@ -108,9 +107,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                     if (line.startsWith("LUT_3D_SIZE")) {
                         size = Integer.parseInt(line.split("\\s+")[1]);
                         data = new float[size * size * size * 3];
-                    } else if (line.length() > 0 && Character.isDigit(line.charAt(0))) {
+                    } else if (line.length() > 0 && Character.isDigit(line.charAt(0)) && data != null) {
                         String[] p = line.split("\\s+");
-                        if (p.length >= 3 && data != null) {
+                        if (p.length >= 3) {
                             data[idx++] = Float.parseFloat(p[0]);
                             data[idx++] = Float.parseFloat(p[1]);
                             data[idx++] = Float.parseFloat(p[2]);
@@ -122,7 +121,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         }
         int mapColor(int color) {
             if (size == 0 || data == null) return color;
-            // The percentage-based mapping works regardless of bit-depth!
             float r = (Color.red(color) / 255.0f) * (size - 1);
             float g = (Color.green(color) / 255.0f) * (size - 1);
             float b = (Color.blue(color) / 255.0f) * (size - 1);
@@ -138,47 +136,34 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
         @Override protected void onPreExecute() { 
             isBaking = true;
-            tvRecipe.setText("BAKING (6MP PROXY)...");
+            tvRecipe.setText("TINY BAKE (PROOF OF CONCEPT)...");
             tvRecipe.setTextColor(Color.RED);
-            // CRITICAL: Fully release hardware to give Android all the RAM
-            if (mCameraEx != null) {
-                m_autoReviewControl.setPictureReviewTime(m_pictureReviewTime);
-                mCameraEx.release();
-                mCameraEx = null;
-                mCamera = null;
-            }
-            mSurfaceView.setVisibility(View.INVISIBLE);
-            System.gc(); 
         }
 
         @Override protected Boolean doInBackground(Void... voids) {
             try {
-                Thread.sleep(1000); // Wait for Sony's own save to finish
+                // DON'T release hardware yet, just try a tiny 1MP image
                 File lutFile = new File("/sdcard/LUTS/" + recipeList.get(recipeIndex));
                 CubeLUT lut = new CubeLUT(lutFile);
                 File original = new File(SONY_PATH, fileName);
 
                 BitmapFactory.Options opt = new BitmapFactory.Options();
-                opt.inSampleSize = 2; // 6MP to fit in small RAM windows
+                opt.inSampleSize = 8; // ULTRA TINY (1MP) - Use almost zero RAM
                 opt.inPreferredConfig = Bitmap.Config.RGB_565;
                 opt.inMutable = true;
                 
                 Bitmap bmp = BitmapFactory.decodeFile(original.getAbsolutePath(), opt);
                 if (bmp != null) {
-                    int width = bmp.getWidth();
-                    int height = bmp.getHeight();
-                    int[] row = new int[width]; 
-                    for (int y = 0; y < height; y++) {
-                        bmp.getPixels(row, 0, width, 0, y, width, 1);
-                        for (int x = 0; x < width; x++) { row[x] = lut.mapColor(row[x]); }
-                        bmp.setPixels(row, 0, width, 0, y, width, 1);
+                    for (int y = 0; y < bmp.getHeight(); y++) {
+                        for (int x = 0; x < bmp.getWidth(); x++) {
+                            bmp.setPixel(x, y, lut.mapColor(bmp.getPixel(x, y)));
+                        }
                     }
-                    File cooked = new File(SONY_PATH, "COOKED_" + fileName);
+                    File cooked = new File(SONY_PATH, "TINY_" + fileName);
                     FileOutputStream fos = new FileOutputStream(cooked);
-                    bmp.compress(Bitmap.CompressFormat.JPEG, 90, fos);
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 80, fos);
                     fos.close();
                     bmp.recycle();
-                    sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(cooked)));
                     return true;
                 }
             } catch (Exception e) {}
@@ -187,14 +172,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
         @Override protected void onPostExecute(Boolean success) {
             isBaking = false;
-            mSurfaceView.setVisibility(View.VISIBLE);
-            // Re-open hardware after processing is done
-            reopenCamera();
             updateRecipeDisplay();
             setDialMode(mDialMode);
         }
     }
 
+    // --- STANDARD CAMERA METHODS ---
     private void reopenCamera() {
         try {
             mCameraEx = CameraEx.open(0, null);
@@ -210,13 +193,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         } catch (Exception e) {}
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        reopenCamera();
-        sendSonyBroadcast(true); 
-    }
-
+    @Override protected void onResume() { super.onResume(); reopenCamera(); sendSonyBroadcast(true); }
     private void syncUI() {
         if (mCamera == null) return;
         try {
@@ -226,13 +203,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             if (speed.first == 1 && speed.second != 1) tvShutter.setText(speed.first + "/" + speed.second);
             else tvShutter.setText(speed.first + "\"");
             tvAperture.setText("f/" + (pm.getAperture() / 100.0f));
-            tvISO.setText(curIso == 0 ? "ISO AUTO" : "ISO " + curIso);
-            tvExposure.setText(String.format("%.1f", curExpComp * expStep));
+            tvISO.setText("ISO " + pm.getISOSensitivity());
+            tvExposure.setText(String.format("%.1f", p.getExposureCompensation() * p.getExposureCompensationStep()));
         } catch (Exception e) {}
     }
-
-    @Override
-    public boolean onKeyDown(int keyCode, KeyEvent event) {
+    @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
         int scanCode = event.getScanCode();
         if (scanCode == ScalarInput.ISV_KEY_DELETE) { exitApp(); return true; }
         if (scanCode == ScalarInput.ISV_KEY_DOWN) { cycleMode(); return true; }
@@ -240,93 +215,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         if (scanCode == ScalarInput.ISV_DIAL_1_COUNTERCW) { handleInput(-1); return true; }
         return super.onKeyDown(keyCode, event);
     }
-
     private void handleInput(int delta) {
         if (mCameraEx == null || isBaking) return;
         try {
             Camera.Parameters p = mCamera.getParameters();
-            if (mDialMode == DialMode.shutter) {
-                if (delta > 0) mCameraEx.incrementShutterSpeed(); else mCameraEx.decrementShutterSpeed();
-            } else if (mDialMode == DialMode.aperture) {
-                if (delta > 0) mCameraEx.incrementAperture(); else mCameraEx.decrementAperture();
-            } else if (mDialMode == DialMode.iso) {
-                int idx = supportedIsos.indexOf(curIso);
-                int next = Math.max(0, Math.min(supportedIsos.size() - 1, idx + delta));
-                curIso = supportedIsos.get(next);
-                CameraEx.ParametersModifier pm = mCameraEx.createParametersModifier(p);
-                pm.setISOSensitivity(curIso);
-                mCamera.setParameters(p);
-            } else if (mDialMode == DialMode.exposure) {
-                curExpComp = Math.max(p.getMinExposureCompensation(), Math.min(p.getMaxExposureCompensation(), curExpComp + delta));
-                p.setExposureCompensation(curExpComp);
-                mCamera.setParameters(p);
-            } else if (mDialMode == DialMode.recipe) {
-                recipeIndex = (recipeIndex + delta + recipeList.size()) % recipeList.size();
-                updateRecipeDisplay();
-            }
+            if (mDialMode == DialMode.shutter) { if (delta > 0) mCameraEx.incrementShutterSpeed(); else mCameraEx.decrementShutterSpeed(); }
+            else if (mDialMode == DialMode.aperture) { if (delta > 0) mCameraEx.incrementAperture(); else mCameraEx.decrementAperture(); }
+            else if (mDialMode == DialMode.recipe) { recipeIndex = (recipeIndex + delta + recipeList.size()) % recipeList.size(); updateRecipeDisplay(); }
             syncUI();
         } catch (Exception e) {}
     }
-
-    private void cycleMode() {
-        if (isBaking) return;
-        DialMode[] modes = DialMode.values();
-        int next = (mDialMode.ordinal() + 1) % modes.length;
-        setDialMode(modes[next]);
-    }
-
-    private void setDialMode(DialMode mode) {
-        mDialMode = mode;
-        tvShutter.setTextColor(mode == DialMode.shutter ? Color.GREEN : Color.WHITE);
-        tvAperture.setTextColor(mode == DialMode.aperture ? Color.GREEN : Color.WHITE);
-        tvISO.setTextColor(mode == DialMode.iso ? Color.GREEN : Color.WHITE);
-        tvExposure.setTextColor(mode == DialMode.exposure ? Color.GREEN : Color.WHITE);
-        updateRecipeDisplay();
-    }
-
-    private void scanRecipes() {
-        recipeList.clear();
-        recipeList.add("NONE (DEFAULT)");
-        File lutDir = new File("/sdcard/LUTS");
-        if (lutDir.exists()) {
-            File[] files = lutDir.listFiles();
-            if (files != null) {
-                for (File f : files) {
-                    if (!f.getName().startsWith("_") && f.getName().toUpperCase().contains("CUB")) recipeList.add(f.getName());
-                }
-            }
-        }
-        updateRecipeDisplay();
-    }
-
-    private void updateRecipeDisplay() {
-        String name = recipeList.get(recipeIndex);
-        String display = name.split("\\.")[0].toUpperCase();
-        tvRecipe.setText("<  " + display + "  >");
-        tvRecipe.setTextColor(mDialMode == DialMode.recipe ? Color.GREEN : Color.WHITE);
-    }
-
-    private void sendSonyBroadcast(boolean active) {
-        Intent intent = new Intent("com.android.server.DAConnectionManagerService.AppInfoReceive");
-        intent.putExtra("package_name", getPackageName());
-        intent.putExtra("resume_key", active ? new String[]{"on"} : new String[]{});
-        sendBroadcast(intent);
-    }
-
-    private void exitApp() {
-        m_handler.removeCallbacksAndMessages(null);
-        Intent intent = new Intent("com.android.server.DAConnectionManagerService.AppInfoReceive");
-        intent.putExtra("package_name", getPackageName());
-        intent.putExtra("class_name", getClass().getName());
-        intent.putExtra("pullingback_key", new String[] {});
-        intent.putExtra("resume_key", new String[] {});
-        sendBroadcast(intent);
-        finish();
-    }
-
+    private void cycleMode() { if (isBaking) return; DialMode[] modes = DialMode.values(); int next = (mDialMode.ordinal() + 1) % modes.length; setDialMode(modes[next]); }
+    private void setDialMode(DialMode mode) { mDialMode = mode; tvShutter.setTextColor(mode == DialMode.shutter ? Color.GREEN : Color.WHITE); tvAperture.setTextColor(mode == DialMode.aperture ? Color.GREEN : Color.WHITE); updateRecipeDisplay(); }
+    private void scanRecipes() { recipeList.clear(); recipeList.add("NONE (DEFAULT)"); File lutDir = new File("/sdcard/LUTS"); if (lutDir.exists()) { File[] files = lutDir.listFiles(); if (files != null) { for (File f : files) { if (!f.getName().startsWith("_") && f.getName().toUpperCase().contains("CUB")) recipeList.add(f.getName()); } } } updateRecipeDisplay(); }
+    private void updateRecipeDisplay() { String name = recipeList.get(recipeIndex); String display = name.split("\\.")[0].toUpperCase(); tvRecipe.setText("<  " + display + "  >"); tvRecipe.setTextColor(mDialMode == DialMode.recipe ? Color.GREEN : Color.WHITE); }
+    private void sendSonyBroadcast(boolean active) { Intent intent = new Intent("com.android.server.DAConnectionManagerService.AppInfoReceive"); intent.putExtra("package_name", getPackageName()); intent.putExtra("resume_key", active ? new String[]{"on"} : new String[]{}); sendBroadcast(intent); }
+    private void exitApp() { m_handler.removeCallbacksAndMessages(null); Intent intent = new Intent("com.android.server.DAConnectionManagerService.AppInfoReceive"); intent.putExtra("package_name", getPackageName()); intent.putExtra("class_name", getClass().getName()); intent.putExtra("pullingback_key", new String[] {}); intent.putExtra("resume_key", new String[] {}); sendBroadcast(intent); finish(); }
     @Override public void onShutterSpeedChange(CameraEx.ShutterSpeedInfo info, CameraEx camera) { syncUI(); }
     @Override public void surfaceCreated(SurfaceHolder h) { try { if (mCamera != null) { mCamera.setPreviewDisplay(h); mCamera.startPreview(); syncUI(); } } catch (Exception e) {} }
-    @Override protected void onPause() { super.onPause(); m_handler.removeCallbacksAndMessages(null); if (mCameraEx != null) { m_autoReviewControl.setPictureReviewTime(m_pictureReviewTime); mCameraEx.release(); mCameraEx = null; } }
+    @Override protected void onPause() { super.onPause(); if (mCameraEx != null) { m_autoReviewControl.setPictureReviewTime(m_pictureReviewTime); mCameraEx.release(); } }
     @Override public void surfaceChanged(SurfaceHolder h, int f, int w, int h1) {}
     @Override public void surfaceDestroyed(SurfaceHolder h) {}
 }
