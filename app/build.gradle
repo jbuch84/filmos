@@ -14,12 +14,10 @@ android {
 
     sourceSets {
         main {
-            // This is the fix: include the local stubs folder
+            // This pulls the Sony hardware definitions from your stubs folder
             java.srcDirs = ['src/main/java', 'src/main/stubs']
         }
     }
 }
 
-dependencies {
-    // No external libraries needed with the stubs method
-}
+dependencies {}
