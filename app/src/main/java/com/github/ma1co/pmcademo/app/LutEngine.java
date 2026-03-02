@@ -35,11 +35,10 @@ public class LutEngine {
                 if (line.isEmpty() || line.startsWith("#")) continue;
 
                 if (line.startsWith("LUT_3D_SIZE")) {
-                    String[] parts = line.split("\\s+");
+                    String[] parts = line.split(" ");
                     if (parts.length > 1) {
-                        lutSize = Integer.parseInt(parts[1]);
+                        lutSize = Integer.parseInt(parts[parts.length - 1]);
                         expectedColors = lutSize * lutSize * lutSize;
-                        // EXTREME SPEED: Pre-allocate memory instantly
                         lutR = new int[expectedColors];
                         lutG = new int[expectedColors];
                         lutB = new int[expectedColors];
@@ -47,29 +46,35 @@ public class LutEngine {
                     continue;
                 }
                 
-                // Fast check to skip text headers
                 char firstChar = line.charAt(0);
                 if (firstChar < '0' || firstChar > '9') continue;
 
                 if (idx < expectedColors) {
-                    String[] rgb = line.split("\\s+");
-                    if (rgb.length >= 3) {
-                        try {
-                            float r = Float.parseFloat(rgb[0]) * 255;
-                            float g = Float.parseFloat(rgb[1]) * 255;
-                            float b = Float.parseFloat(rgb[2]) * 255;
-                            
-                            lutR[idx] = (int) Math.max(0, Math.min(255, r));
-                            lutG[idx] = (int) Math.max(0, Math.min(255, g));
-                            lutB[idx] = (int) Math.max(0, Math.min(255, b));
-                            idx++;
-                        } catch (Exception e) {}
+                    // EXTREME SPEED PARSER: No Regex, No String Arrays
+                    float[] vals = new float[3];
+                    int valIdx = 0;
+                    int start = 0;
+                    int len = line.length();
+                    
+                    while (start < len && valIdx < 3) {
+                        while (start < len && line.charAt(start) == ' ') start++;
+                        if (start >= len) break;
+                        int end = start;
+                        while (end < len && line.charAt(end) != ' ') end++;
+                        vals[valIdx++] = Float.parseFloat(line.substring(start, end));
+                        start = end;
+                    }
+                    
+                    if (valIdx == 3) {
+                        lutR[idx] = (int) Math.max(0, Math.min(255, vals[0] * 255.0f));
+                        lutG[idx] = (int) Math.max(0, Math.min(255, vals[1] * 255.0f));
+                        lutB[idx] = (int) Math.max(0, Math.min(255, vals[2] * 255.0f));
+                        idx++;
                     }
                 }
             }
             br.close();
 
-            // Fault-tolerant padding if file was truncated
             while (idx > 0 && idx < expectedColors) {
                 lutR[idx] = lutR[idx - 1];
                 lutG[idx] = lutG[idx - 1];
@@ -140,6 +145,7 @@ public class LutEngine {
                 row[x] = (0xFF << 24) | (outR << 16) | (outG << 8) | outB;
             }
             bitmap.setPixels(row, 0, width, 0, y, width, 1);
+            if (callback != null) callback.onProgress((y * 100) / height);
         }
     }
 }

@@ -47,6 +47,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private long lastNewestFileTime = 0;
 
     public enum DialMode { shutter, aperture, iso, exposure, recipe, quality }
+    // Starts on Recipe by default
     private DialMode mDialMode = DialMode.recipe;
 
     @Override
@@ -240,7 +241,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                     Bitmap mutableStrip = strip.copy(Bitmap.Config.RGB_565, true);
                     strip.recycle();
 
-                    mEngine.applyLutToBitmap(mutableStrip, null);
+                    mEngine.applyLutToBitmap(mutableStrip, new LutEngine.ProgressCallback() {
+                        public void onProgress(int percent) {} 
+                    });
                     
                     canvas.drawBitmap(mutableStrip, 0, destY, null);
                     destY += mutableStrip.getHeight();
@@ -250,13 +253,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 }
                 decoder.recycle();
 
-                // EXACT SAME LOGIC AS THE OLD 'COOKED' FOLDER
+                // DEDICATED ROOT PROCESSED FOLDER
                 File rootDir = Environment.getExternalStorageDirectory();
                 File processedDir = new File(rootDir, "PROCESSED");
                 if (!processedDir.exists()) {
                     processedDir.mkdirs();
                 }
                 
+                // EXACT ORIGINAL FILE NAME
                 String newName = original.getName();
                 File outFile = new File(processedDir, newName);
 
@@ -279,7 +283,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         @Override protected void onPostExecute(String result) {
             isProcessing = false;
             if (mCameraEx != null) mCameraEx.startDirectShutter();
-            tvStatus.setText("STATUS: " + result);
+            tvStatus.setText(result);
             tvStatus.setTextColor(result.startsWith("SUCCESS") ? Color.GREEN : Color.RED);
         }
     }
