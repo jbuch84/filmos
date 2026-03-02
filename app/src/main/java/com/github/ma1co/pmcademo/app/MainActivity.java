@@ -58,10 +58,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             mCameraEx = CameraEx.open(0, null);
             mCamera = mCameraEx.getNormalCamera();
             
-            // 1. Initialize Shutter FIRST to keep AF alive
             mCameraEx.startDirectShutter();
             
-            // 2. Setup review control but DON'T restore manual focus
             m_autoReviewControl = new CameraEx.AutoPictureReviewControl();
             mCameraEx.setAutoPictureReviewControl(m_autoReviewControl);
             m_pictureReviewTime = m_autoReviewControl.getPictureReviewTime();
@@ -69,11 +67,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
             mCameraEx.setShutterSpeedChangeListener(this);
             
-            setupObserver();
-            // 3. Send handshake AFTER hardware is initialized
+            setupRecursiveObserver();
             sendSonyBroadcast(true); 
             syncUI();
         } catch (Exception e) {}
+    }
+
+    private void setupRecursiveObserver() {
+        // Watch the PARENT DCIM folder to catch 100MSDCF, 101MSDCF, etc.
+        String dcimRoot = "/sdcard/DCIM";
+        if (dcimObserver != null) dcimObserver.stopWatching();
+        
+        dcimObserver = new FileObserver(dcimRoot, FileObserver.CREATE | FileObserver.MOVED_TO | FileObserver.CLOSE_WRITE) {
+            @Override
+            public void onEvent(int event, final String path) {
+                // If a new file is detected anywhere in DCIM
+                if (path != null && path.toUpperCase().endsWith(".JPG")) {
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() { new BakeTask(path).execute(); }
+                    });
+                }
+            }
+        };
+        dcimObserver.startWatching();
     }
 
     private class BakeTask extends AsyncTask<Void, Void, Boolean> {
@@ -81,6 +97,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         BakeTask(String name) { this.fileName = name; }
         @Override
         protected void onPreExecute() {
+            // HEARTBEAT: Show that the app saw the file
             tvRecipe.setText("BAKING: " + fileName);
             tvRecipe.setTextColor(Color.RED);
         }
@@ -93,22 +110,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             updateRecipeDisplay();
             setDialMode(mDialMode);
         }
-    }
-
-    private void setupObserver() {
-        String path = "/sdcard/DCIM/100MSDCF";
-        if (dcimObserver != null) dcimObserver.stopWatching();
-        dcimObserver = new FileObserver(path, FileObserver.CLOSE_WRITE) {
-            @Override
-            public void onEvent(int event, final String file) {
-                if (file != null && file.toUpperCase().endsWith(".JPG")) {
-                    runOnUiThread(new Runnable() {
-                        @Override public void run() { new BakeTask(file).execute(); }
-                    });
-                }
-            }
-        };
-        dcimObserver.startWatching();
     }
 
     private void scanRecipes() {
