@@ -7,7 +7,7 @@ import android.hardware.Camera;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.os.FileObserver;
+import android.os.Handler;
 import android.util.Pair;
 import android.view.KeyEvent;
 import android.view.SurfaceHolder;
@@ -17,6 +17,7 @@ import com.sony.scalar.hardware.CameraEx;
 import com.sony.scalar.sysutil.ScalarInput;
 import java.io.*;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 
 public class MainActivity extends Activity implements SurfaceHolder.Callback, CameraEx.ShutterSpeedChangeListener {
@@ -28,8 +29,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private TextView tvShutter, tvAperture, tvISO, tvExposure, tvRecipe;
     private ArrayList<String> recipeList = new ArrayList<String>();
     private int recipeIndex = 0;
-    private FileObserver dcimObserver;
+    
     private final String SONY_PATH = "/sdcard/DCIM/100MSDCF";
+    private HashSet<String> knownFiles = new HashSet<String>();
+    private Handler m_handler = new Handler();
+    private boolean isBaking = false;
 
     enum DialMode { shutter, aperture, iso, exposure, recipe }
     private DialMode mDialMode = DialMode.shutter;
@@ -49,20 +53,51 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         tvExposure = (TextView) findViewById(R.id.tvExposure);
         tvRecipe = (TextView) findViewById(R.id.tvRecipe);
         
+        initializeFileLibrary();
         scanRecipes();
         setDialMode(DialMode.shutter);
     }
 
-    // --- HIGH-PERFORMANCE LUT ENGINE ---
+    private void initializeFileLibrary() {
+        File dir = new File(SONY_PATH);
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File f : files) knownFiles.add(f.getName());
+        }
+        startHunterLoop();
+    }
+
+    private void startHunterLoop() {
+        m_handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!isBaking && recipeIndex > 0) {
+                    File dir = new File(SONY_PATH);
+                    File[] files = dir.listFiles();
+                    if (files != null) {
+                        for (File f : files) {
+                            String name = f.getName();
+                            if (name.toUpperCase().endsWith(".JPG") && !name.startsWith("COOKED_") && !knownFiles.contains(name)) {
+                                knownFiles.add(name);
+                                new BakeTask(name).execute();
+                                break; 
+                            }
+                        }
+                    }
+                }
+                m_handler.postDelayed(this, 1000); // Check every second
+            }
+        }, 1000);
+    }
+
+    // --- LUT ENGINE (SAME AS BEFORE) ---
     private class CubeLUT {
         int size = 0;
         float[] data;
-
         CubeLUT(File file) {
             try {
                 BufferedReader br = new BufferedReader(new FileReader(file));
-                String line;
-                int idx = 0;
+                String line; int idx = 0;
                 while ((line = br.readLine()) != null) {
                     line = line.trim();
                     if (line.startsWith("LUT_3D_SIZE")) {
@@ -80,13 +115,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 br.close();
             } catch (Exception e) {}
         }
-
         int mapColor(int color) {
             if (size == 0) return color;
             float r = (Color.red(color) / 255.0f) * (size - 1);
             float g = (Color.green(color) / 255.0f) * (size - 1);
             float b = (Color.blue(color) / 255.0f) * (size - 1);
-            
             int x = (int)r; int y = (int)g; int z = (int)b;
             int offset = (x + size * (y + size * z)) * 3;
             return Color.rgb((int)(data[offset]*255), (int)(data[offset+1]*255), (int)(data[offset+2]*255));
@@ -96,66 +129,42 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private class BakeTask extends AsyncTask<Void, Void, Boolean> {
         String fileName;
         BakeTask(String name) { this.fileName = name; }
-
-        @Override protected void onPreExecute() {
-            tvRecipe.setText("BAKING: " + fileName);
+        @Override protected void onPreExecute() { 
+            isBaking = true;
+            tvRecipe.setText("COOKING: " + fileName);
             tvRecipe.setTextColor(Color.RED);
         }
-
         @Override protected Boolean doInBackground(Void... voids) {
             try {
                 File lutFile = new File("/sdcard/LUTS/" + recipeList.get(recipeIndex));
                 CubeLUT lut = new CubeLUT(lutFile);
                 File original = new File(SONY_PATH, fileName);
                 
-                BitmapFactory.Options options = new BitmapFactory.Options();
-                options.inMutable = true;
-                Bitmap bmp = BitmapFactory.decodeFile(original.getAbsolutePath(), options);
+                BitmapFactory.Options opt = new BitmapFactory.Options();
+                opt.inMutable = true;
+                Bitmap bmp = BitmapFactory.decodeFile(original.getAbsolutePath(), opt);
                 
                 if (bmp != null) {
-                    // Pixel processing loop
                     int[] pixels = new int[bmp.getWidth() * bmp.getHeight()];
                     bmp.getPixels(pixels, 0, bmp.getWidth(), 0, 0, bmp.getWidth(), bmp.getHeight());
-                    
-                    for (int i = 0; i < pixels.length; i++) {
-                        pixels[i] = lut.mapColor(pixels[i]);
-                    }
-                    
+                    for (int i = 0; i < pixels.length; i++) pixels[i] = lut.mapColor(pixels[i]);
                     bmp.setPixels(pixels, 0, bmp.getWidth(), 0, 0, bmp.getWidth(), bmp.getHeight());
                     
                     File cooked = new File(SONY_PATH, "COOKED_" + fileName);
                     FileOutputStream fos = new FileOutputStream(cooked);
                     bmp.compress(Bitmap.CompressFormat.JPEG, 95, fos);
                     fos.close();
-                    
                     sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(cooked)));
                     return true;
                 }
             } catch (Exception e) {}
             return false;
         }
-
         @Override protected void onPostExecute(Boolean success) {
+            isBaking = false;
             updateRecipeDisplay();
             setDialMode(mDialMode);
         }
-    }
-
-    private void setupObserver() {
-        if (dcimObserver != null) dcimObserver.stopWatching();
-        dcimObserver = new FileObserver(SONY_PATH, FileObserver.CLOSE_WRITE) {
-            @Override
-            public void onEvent(int event, final String file) {
-                if (file != null && file.toUpperCase().endsWith(".JPG") && !file.startsWith("COOKED_")) {
-                    if (recipeIndex > 0) {
-                        runOnUiThread(new Runnable() {
-                            @Override public void run() { new BakeTask(file).execute(); }
-                        });
-                    }
-                }
-            }
-        };
-        dcimObserver.startWatching();
     }
 
     @Override
@@ -165,14 +174,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             mCameraEx = CameraEx.open(0, null);
             mCamera = mCameraEx.getNormalCamera();
             mCameraEx.startDirectShutter();
-            
             m_autoReviewControl = new CameraEx.AutoPictureReviewControl();
             mCameraEx.setAutoPictureReviewControl(m_autoReviewControl);
             m_pictureReviewTime = m_autoReviewControl.getPictureReviewTime();
             m_autoReviewControl.setPictureReviewTime(0);
-
             mCameraEx.setShutterSpeedChangeListener(this);
-            setupObserver();
             sendSonyBroadcast(true); 
             syncUI();
         } catch (Exception e) {}
@@ -206,7 +212,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         if (mCameraEx == null) return;
         try {
             Camera.Parameters p = mCamera.getParameters();
-            CameraEx.ParametersModifier pm = mCameraEx.createParametersModifier(p);
             if (mDialMode == DialMode.shutter) {
                 if (delta > 0) mCameraEx.incrementShutterSpeed(); else mCameraEx.decrementShutterSpeed();
             } else if (mDialMode == DialMode.aperture) {
@@ -244,8 +249,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             File[] files = lutDir.listFiles();
             if (files != null) {
                 for (File f : files) {
-                    if (!f.getName().startsWith("_") && f.getName().toUpperCase().contains("CUB")) 
-                        recipeList.add(f.getName());
+                    if (!f.getName().startsWith("_") && f.getName().toUpperCase().contains("CUB")) recipeList.add(f.getName());
                 }
             }
         }
@@ -267,6 +271,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     }
 
     private void exitApp() {
+        m_handler.removeCallbacksAndMessages(null);
         Intent intent = new Intent("com.android.server.DAConnectionManagerService.AppInfoReceive");
         intent.putExtra("package_name", getPackageName());
         intent.putExtra("class_name", getClass().getName());
@@ -278,7 +283,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
     @Override public void onShutterSpeedChange(CameraEx.ShutterSpeedInfo info, CameraEx camera) { syncUI(); }
     @Override public void surfaceCreated(SurfaceHolder h) { try { if (mCamera != null) { mCamera.setPreviewDisplay(h); mCamera.startPreview(); syncUI(); } } catch (Exception e) {} }
-    @Override protected void onPause() { super.onPause(); if (dcimObserver != null) dcimObserver.stopWatching(); if (mCameraEx != null) { m_autoReviewControl.setPictureReviewTime(m_pictureReviewTime); mCameraEx.release(); mCameraEx = null; } }
+    @Override protected void onPause() { super.onPause(); m_handler.removeCallbacksAndMessages(null); if (mCameraEx != null) { m_autoReviewControl.setPictureReviewTime(m_pictureReviewTime); mCameraEx.release(); mCameraEx = null; } }
     @Override public void surfaceChanged(SurfaceHolder h, int f, int w, int h1) {}
     @Override public void surfaceDestroyed(SurfaceHolder h) {}
 }
