@@ -54,41 +54,48 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         recipeList.clear();
         recipeList.add("NONE (DEFAULT)");
 
-        // SONY REMOVABLE SD SCAN: Iterate through all hardware mount points
+        // 1. Direct check standard paths
+        String[] roots = {"/mnt/sdcard", "/storage/sdcard0", "/storage/sdcard1", "/mnt/storage/sdcard1", "/storage/external_SD"};
         File foundDir = null;
-        String[] hardwareRoots = {"/mnt", "/storage"};
-        
-        for (String root : hardwareRoots) {
-            File rootDir = new File(root);
-            File[] subs = rootDir.listFiles();
-            if (subs != null) {
-                for (File sub : subs) {
-                    // Look for /LUTs inside any mounted drive
-                    File test = new File(sub, "LUTs");
-                    if (test.exists() && test.isDirectory()) {
-                        foundDir = test;
-                        break;
+        for (String root : roots) {
+            File t = new File(root, "LUTs");
+            if (t.exists() && t.isDirectory()) { foundDir = t; break; }
+        }
+
+        // 2. Deep scan: find any folder containing DCIM (the SD card signature)
+        if (foundDir == null) {
+            String[] probe = {"/mnt", "/storage"};
+            for (String p : probe) {
+                File dir = new File(p);
+                File[] list = dir.listFiles();
+                if (list != null) {
+                    for (File f : list) {
+                        if (new File(f, "DCIM").exists()) {
+                            File lut = new File(f, "LUTs");
+                            if (lut.exists()) { foundDir = lut; break; }
+                        }
                     }
                 }
+                if (foundDir != null) break;
             }
-            if (foundDir != null) break;
         }
 
         if (foundDir != null) {
             File[] files = foundDir.listFiles();
             if (files != null) {
                 for (File f : files) {
-                    String name = f.getName();
-                    if (name.toLowerCase().endsWith(".cube") || name.toLowerCase().endsWith(".png")) {
-                        recipeList.add(name);
-                    }
+                    String name = f.getName().toLowerCase();
+                    if (name.endsWith(".cube") || name.endsWith(".png")) recipeList.add(f.getName());
                 }
             }
         }
 
         if (recipeList.size() <= 1) {
-            // Displays the physical path where the card is mounted if it can find it
-            tvRecipe.setText("PLACE LUTS ON SD CARD ROOT");
+            // DEBUG: Show available mount points on screen to help us find the card
+            String mnt = "";
+            String[] list = new File("/mnt").list();
+            if (list != null) for (String s : list) mnt += s + " ";
+            tvRecipe.setText("FOLDERS FOUND: " + mnt);
         } else {
             updateRecipeDisplay();
         }
@@ -106,11 +113,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             mCameraEx = CameraEx.open(0, null);
             mCamera = mCameraEx.getNormalCamera();
             mCameraEx.startDirectShutter();
-            
             CameraEx.ParametersModifier pm = mCameraEx.createParametersModifier(mCamera.getParameters());
             supportedIsos = (List<Integer>) pm.getSupportedISOSensitivities();
             curIso = pm.getISOSensitivity();
-
             notifySonyStatus(true);
             syncUI();
         } catch (Exception e) {}
@@ -133,15 +138,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         int scanCode = event.getScanCode();
-        if (scanCode == ScalarInput.ISV_KEY_DELETE) {
-            notifySonyStatus(false);
-            finish();
-            return true;
-        }
-        if (scanCode == ScalarInput.ISV_KEY_DOWN) {
-            cycleMode();
-            return true;
-        }
+        if (scanCode == ScalarInput.ISV_KEY_DELETE) { notifySonyStatus(false); finish(); return true; }
+        if (scanCode == ScalarInput.ISV_KEY_DOWN) { cycleMode(); return true; }
         if (scanCode == ScalarInput.ISV_DIAL_1_CLOCKWISE) { handleInput(1); return true; }
         if (scanCode == ScalarInput.ISV_DIAL_1_COUNTERCW) { handleInput(-1); return true; }
         return super.onKeyDown(keyCode, event);
