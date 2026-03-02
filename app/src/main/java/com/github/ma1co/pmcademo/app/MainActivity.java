@@ -8,64 +8,70 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import com.sony.scalar.hardware.CameraEx;
 import com.sony.scalar.sysutil.ScalarInput;
+import java.io.IOException;
 
 public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private CameraEx mCameraEx;
-    private Camera mCamera;
+    private SurfaceHolder mSurfaceHolder;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        SurfaceView sv = new SurfaceView(this);
-        sv.getHolder().addCallback(this);
-        setContentView(sv);
+        
+        SurfaceView surfaceView = new SurfaceView(this);
+        mSurfaceHolder = surfaceView.getHolder();
+        mSurfaceHolder.addCallback(this);
+        
+        // BETTERMANUAL FIX 1: Required for a5100 sensor handoff
+        mSurfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
+        
+        setContentView(surfaceView);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        try {
-            mCameraEx = CameraEx.open(0, null);
-            mCamera = mCameraEx.getNormalCamera();
-        } catch (Exception e) {}
-    }
-
-    @Override
-    public boolean onKeyDown(int keyCode, KeyEvent event) {
-        // This restores the "Emergency Exit" using the Trash Button
-        if (keyCode == ScalarInput.ISV_KEY_DELETE || keyCode == KeyEvent.KEYCODE_BACK) {
-            finish();
-            return true;
-        }
-        
-        // This is where we will listen for the Shutter (S2) to trigger the LUT baker
-        if (keyCode == ScalarInput.ISV_KEY_S2) {
-            // Future: triggerBaker();
-            return false; // Let the camera still take the picture
-        }
-
-        return super.onKeyDown(keyCode, event);
+        // BETTERMANUAL FIX 2: Open hardware and start direct shutter immediately
+        mCameraEx = CameraEx.open(0, null);
+        mCameraEx.startDirectShutter();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        if (mCamera != null) {
-            mCamera.stopPreview();
-            mCamera.release();
+        if (mCameraEx != null) {
+            mCameraEx.getNormalCamera().stopPreview();
             mCameraEx.release();
-            mCamera = null;
+            mCameraEx = null;
         }
     }
 
-    public void surfaceCreated(SurfaceHolder h) {
-        try { 
-            if (mCamera != null) {
-                mCamera.setPreviewDisplay(h); 
-                mCamera.startPreview(); 
-            }
-        } catch (Exception e) {}
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // Trash button exit
+        if (keyCode == ScalarInput.ISV_KEY_DELETE || keyCode == KeyEvent.KEYCODE_BACK) {
+            finish();
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
     }
-    public void surfaceChanged(SurfaceHolder h, int f, int w, int h2) {}
-    public void surfaceDestroyed(SurfaceHolder h) {}
+
+    @Override
+    public void surfaceCreated(SurfaceHolder holder) {
+        try {
+            if (mCameraEx != null) {
+                // BETTERMANUAL FIX 3: Pull the normal camera instance from the Sony wrapper
+                Camera cam = mCameraEx.getNormalCamera();
+                cam.setPreviewDisplay(holder);
+                cam.startPreview();
+            }
+        } catch (IOException e) {
+            // Sensor bind failed
+        }
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {}
 }
