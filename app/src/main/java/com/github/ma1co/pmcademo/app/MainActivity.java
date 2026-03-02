@@ -8,7 +8,6 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.FileObserver;
 import android.util.Pair;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -34,8 +33,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     
     private ArrayList<String> recipeList = new ArrayList<String>();
     private int recipeIndex = 0;
-    
-    private int qualityIndex = 0; 
+    private int qualityIndex = 0; // 0 = 1.5MP, 1 = 6.0MP
     
     private boolean isProcessing = false;
     private boolean isReady = false; 
@@ -66,8 +64,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         
         ViewGroup contentRoot = (ViewGroup) findViewById(android.R.id.content);
         
+        // STATUS UI (Top Left)
         tvStatus = new TextView(this);
-        tvStatus.setText("STATUS: STANDBY");
+        tvStatus.setText("VERSION: 0.9.0-BETA");
         tvStatus.setTextColor(Color.LTGRAY);
         tvStatus.setTextSize(18); 
         FrameLayout.LayoutParams statusParams = new FrameLayout.LayoutParams(
@@ -75,6 +74,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         statusParams.setMargins(30, 80, 0, 0);
         contentRoot.addView(tvStatus, statusParams);
 
+        // QUALITY UI (Top Right)
         tvQuality = new TextView(this);
         tvQuality.setText("SIZE: PROXY (1.5MP)");
         tvQuality.setTextColor(Color.LTGRAY);
@@ -90,6 +90,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         
         scanRecipes();
         setDialMode(mDialMode);
+    }
+
+    // THE EXIF METADATA INJECTOR
+    private void copyExif(String sourcePath, String destPath) {
+        try {
+            android.media.ExifInterface sourceExif = new android.media.ExifInterface(sourcePath);
+            android.media.ExifInterface destExif = new android.media.ExifInterface(destPath);
+            
+            String[] tags = new String[] {
+                "FNumber", "ExposureTime", "ISOSpeedRatings", "FocalLength", 
+                "DateTime", "Make", "Model", "WhiteBalance", "Flash"
+            };
+
+            for (String tag : tags) {
+                String value = sourceExif.getAttribute(tag);
+                if (value != null) {
+                    destExif.setAttribute(tag, value);
+                }
+            }
+            destExif.saveAttributes();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private void startAutoProcessPolling() {
@@ -109,7 +132,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                                     File newest = null;
                                     long maxModified = 0;
                                     for (File f : files) {
-                                        if (f.getName().toUpperCase().endsWith(".JPG")) {
+                                        if (f.getName().toUpperCase().endsWith(".JPG") && !f.getName().startsWith("PRCS")) {
                                             if (f.lastModified() > maxModified) {
                                                 maxModified = f.lastModified();
                                                 newest = f;
@@ -170,7 +193,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
         @Override protected void onPostExecute(Boolean success) {
             if (isCancelled()) return; 
-            
             if (mCameraEx != null) mCameraEx.startDirectShutter();
 
             if (success) {
@@ -178,7 +200,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 tvStatus.setText("STATUS: READY TO SHOOT");
                 tvStatus.setTextColor(Color.GREEN);
             } else {
-                tvStatus.setText("STATUS: BAD LUT FILE");
+                tvStatus.setText("STATUS: ERROR LOADING LUT");
                 tvStatus.setTextColor(Color.RED);
             }
         }
@@ -202,26 +224,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
         @Override protected String doInBackground(String... params) {
             try {
-                File original = null;
-                if (params != null && params.length > 0) {
-                    original = new File(params[0]);
-                } else {
-                    return "ERR: NO FILE PROVIDED";
-                }
-                if (original == null || !original.exists()) return "ERR: NO JPG FOUND";
+                File original = new File(params[0]);
+                if (!original.exists()) return "ERR: FILE MISSING";
 
                 int sample = (qualityIndex == 1) ? 2 : 4; 
                 
                 BitmapFactory.Options boundsOpt = new BitmapFactory.Options();
                 boundsOpt.inJustDecodeBounds = true;
                 BitmapFactory.decodeFile(original.getAbsolutePath(), boundsOpt);
-                int rawWidth = boundsOpt.outWidth;
-                int rawHeight = boundsOpt.outHeight;
 
-                int targetW = rawWidth / sample;
-                int targetH = rawHeight / sample;
+                int targetW = boundsOpt.outWidth / sample;
+                int targetH = boundsOpt.outHeight / sample;
 
-                // RESTORED TRUE COLOR: ARGB_8888 eliminates banding
+                // FULL ARGB_8888 FOR MAX QUALITY (NO BANDING)
                 Bitmap finalBmp = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
                 Canvas canvas = new Canvas(finalBmp);
 
@@ -230,49 +245,44 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 stripOpt.inSampleSize = sample;
                 stripOpt.inPreferredConfig = Bitmap.Config.ARGB_8888;
 
-                int stripHeight = (rawHeight / 10 / sample) * sample; 
+                int stripHeight = (boundsOpt.outHeight / 10 / sample) * sample; 
                 int destY = 0;
 
-                for (int y = 0; y < rawHeight; y += stripHeight) {
-                    int h = Math.min(stripHeight, rawHeight - y);
-                    Rect rect = new Rect(0, y, rawWidth, y + h);
-                    
-                    Bitmap strip = decoder.decodeRegion(rect, stripOpt);
+                for (int y = 0; y < boundsOpt.outHeight; y += stripHeight) {
+                    int h = Math.min(stripHeight, boundsOpt.outHeight - y);
+                    Bitmap strip = decoder.decodeRegion(new Rect(0, y, boundsOpt.outWidth, y + h), stripOpt);
                     Bitmap mutableStrip = strip.copy(Bitmap.Config.ARGB_8888, true);
                     strip.recycle();
 
-                    mEngine.applyLutToBitmap(mutableStrip, new LutEngine.ProgressCallback() {
-                        public void onProgress(int percent) {} 
-                    });
+                    mEngine.applyLutToBitmap(mutableStrip, null);
                     
                     canvas.drawBitmap(mutableStrip, 0, destY, null);
                     destY += mutableStrip.getHeight();
                     mutableStrip.recycle();
 
-                    publishProgress((int) (((float) (y + h) / rawHeight) * 100));
+                    publishProgress((int) (((float) (y + h) / boundsOpt.outHeight) * 100));
                 }
                 decoder.recycle();
 
                 File rootDir = Environment.getExternalStorageDirectory();
                 File processedDir = new File(rootDir, "GRADED");
-                if (!processedDir.exists()) {
-                    processedDir.mkdirs();
-                }
+                if (!processedDir.exists()) processedDir.mkdirs();
                 
-                String newName = original.getName();
-                File outFile = new File(processedDir, newName);
+                File outFile = new File(processedDir, original.getName());
 
                 FileOutputStream fos = new FileOutputStream(outFile);
-                finalBmp.compress(Bitmap.CompressFormat.JPEG, 95, fos); 
+                // BUMPED TO 98% FOR PROFESSIONAL GRADIENTS
+                finalBmp.compress(Bitmap.CompressFormat.JPEG, 98, fos); 
                 fos.flush();
                 fos.close();
                 finalBmp.recycle();
 
+                // RUN EXIF INJECTOR BEFORE BROADCAST
+                copyExif(original.getAbsolutePath(), outFile.getAbsolutePath());
+
                 sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(outFile)));
                 return "SUCCESS: SAVED";
                 
-            } catch (OutOfMemoryError oom) {
-                return "ERR: OUT OF MEMORY";
             } catch (Throwable t) {
                 return "CRASH: " + t.getMessage();
             }
@@ -320,14 +330,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             } else if (mDialMode == DialMode.recipe) {
                 recipeIndex = (recipeIndex + d + recipeList.size()) % recipeList.size();
                 updateRecipeDisplay();
-                
                 if (currentPreloadTask != null) currentPreloadTask.cancel(true);
                 if (recipeIndex > 0) {
                     currentPreloadTask = new PreloadLutTask();
                     currentPreloadTask.execute(recipeIndex);
                 } else {
                     isReady = false;
-                    tvStatus.setText("STATUS: RAW (NO LUT)");
+                    tvStatus.setText("STATUS: RAW MODE");
                     tvStatus.setTextColor(Color.LTGRAY);
                 }
             } else if (mDialMode == DialMode.quality) {
@@ -370,12 +379,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         recipeList.add("NONE"); 
         File lutDir = new File(Environment.getExternalStorageDirectory(), "LUTS");
         if (!lutDir.exists()) lutDir = new File("/storage/sdcard0/LUTS");
-        
         if (lutDir.exists() && lutDir.listFiles() != null) {
             for (File f : lutDir.listFiles()) {
                 if (f.length() < 10240) continue; 
-                String name = f.getName().toUpperCase();
-                if (name.contains("CUB")) recipeList.add(f.getName());
+                if (f.getName().toUpperCase().contains("CUB")) recipeList.add(f.getName());
             }
         }
         updateRecipeDisplay(); 
