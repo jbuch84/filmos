@@ -53,44 +53,37 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         recipeList.clear();
         recipeList.add("NONE (DEFAULT)");
 
-        File foundDir = null;
-        // THE BRUTE FORCE SCAN: Including the hidden /media_rw path
-        String[] hardwarePaths = {"/media_rw", "/mnt", "/storage"};
+        // TARGETED SCAN: Explicitly look at the path identified in the Root Dirs list
+        File lutDir = new File("/sdcard/LUTs");
         
-        for (String base : hardwarePaths) {
-            File baseDir = new File(base);
-            File[] subs = baseDir.listFiles();
-            if (subs != null) {
-                for (File sub : subs) {
-                    // Check for /LUTs directly in the subfolder
-                    File test = new File(sub, "LUTs");
-                    if (test.exists() && test.isDirectory()) {
-                        foundDir = test;
-                        break;
-                    }
-                }
-            }
-            if (foundDir != null) break;
+        // Case-insensitive fallback
+        if (!lutDir.exists()) {
+            lutDir = new File("/sdcard/luts");
         }
 
-        if (foundDir != null) {
-            File[] files = foundDir.listFiles();
+        if (lutDir.exists() && lutDir.isDirectory()) {
+            File[] files = lutDir.listFiles();
             if (files != null) {
                 for (File f : files) {
                     String n = f.getName().toLowerCase();
-                    if (n.endsWith(".cube") || n.endsWith(".png")) recipeList.add(f.getName());
+                    if (n.endsWith(".cube") || n.endsWith(".png")) {
+                        recipeList.add(f.getName());
+                    }
                 }
             }
         }
 
         if (recipeList.size() <= 1) {
-            // DEBUG: List every single folder in the root so we can pick the right one
-            String rootDirs = "";
-            File[] roots = new File("/").listFiles();
-            if (roots != null) {
-                for (File r : roots) if (r.isDirectory()) rootDirs += r.getName() + " ";
+            // EXPLORER MODE: If LUTs not found, list what IS inside /sdcard
+            String sdContents = "";
+            File sdRoot = new File("/sdcard");
+            String[] list = sdRoot.list();
+            if (list != null) {
+                for (String s : list) sdContents += s + " ";
+            } else {
+                sdContents = "SDCARD UNREADABLE";
             }
-            tvRecipe.setText("ROOT DIRS: " + rootDirs);
+            tvRecipe.setText("SDCARD CONTAINS: " + sdContents);
         } else {
             updateRecipeDisplay();
         }
@@ -108,9 +101,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
             mCameraEx = CameraEx.open(0, null);
             mCamera = mCameraEx.getNormalCamera();
             mCameraEx.startDirectShutter();
+            
             CameraEx.ParametersModifier pm = mCameraEx.createParametersModifier(mCamera.getParameters());
             supportedIsos = (List<Integer>) pm.getSupportedISOSensitivities();
             curIso = pm.getISOSensitivity();
+
             notifySonyStatus(true);
             syncUI();
         } catch (Exception e) {}
@@ -121,9 +116,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         try {
             Camera.Parameters p = mCamera.getParameters();
             CameraEx.ParametersModifier pm = mCameraEx.createParametersModifier(p);
+            
             Pair<Integer, Integer> speed = pm.getShutterSpeed();
             if (speed.first >= speed.second) tvShutter.setText((speed.first / speed.second) + "\"");
             else tvShutter.setText(speed.first + "/" + speed.second);
+            
             tvAperture.setText("f/" + (pm.getAperture() / 100.0f));
             tvISO.setText(curIso == 0 ? "ISO AUTO" : "ISO " + curIso);
             tvExposure.setText(String.format("%.1f", p.getExposureCompensation() * p.getExposureCompensationStep()));
@@ -133,8 +130,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         int scanCode = event.getScanCode();
-        if (scanCode == ScalarInput.ISV_KEY_DELETE) { notifySonyStatus(false); finish(); return true; }
-        if (scanCode == ScalarInput.ISV_KEY_DOWN) { cycleMode(); return true; }
+        if (scanCode == ScalarInput.ISV_KEY_DELETE) {
+            notifySonyStatus(false);
+            finish();
+            return true;
+        }
+        if (scanCode == ScalarInput.ISV_KEY_DOWN) {
+            cycleMode();
+            return true;
+        }
         if (scanCode == ScalarInput.ISV_DIAL_1_CLOCKWISE) { handleInput(1); return true; }
         if (scanCode == ScalarInput.ISV_DIAL_1_COUNTERCW) { handleInput(-1); return true; }
         return super.onKeyDown(keyCode, event);
