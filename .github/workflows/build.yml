@@ -6,39 +6,31 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    # We need Java 17 just for one second to generate the wrapper if it's missing
-    - name: Set up Java 17 (Bootstrap)
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-
-    - name: Ensure Gradle Wrapper Exists
-      run: |
-        if [ ! -f gradlew ]; then
-          gradle wrapper --gradle-version 4.10.3
-        fi
-        chmod +x gradlew
-
-    # Now we switch back to the "Sony-Friendly" Java 8
     - name: Set up Java 8
       uses: actions/setup-java@v3
       with:
         java-version: '8'
         distribution: 'temurin'
 
-    - name: Hide Modern SDKs
+    - name: Setup Android SDK & Vintage NDK
       run: |
-        rm -rf $ANDROID_SDK_ROOT/platforms/android-3*
-        rm -rf $ANDROID_SDK_ROOT/build-tools/3*
-        rm -rf $ANDROID_SDK_ROOT/cmdline-tools
-
-    - name: Create local.properties
-      run: |
+        # Force pointing to the NDK version pre-installed on the runner
         echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/21.4.7075529" > local.properties
         echo "sdk.dir=$ANDROID_SDK_ROOT" >> local.properties
+        # Clear out modern tools that cause the 34x/35x errors
+        rm -rf $ANDROID_SDK_ROOT/platforms/android-3*
+        rm -rf $ANDROID_SDK_ROOT/build-tools/3*
 
-    - name: Build APK
+    - name: Manually Generate Wrapper
+      run: |
+        # This downloads the correct old Gradle directly instead of using the system one
+        wget https://services.gradle.org/distributions/gradle-4.10.3-bin.zip
+        unzip -q gradle-4.10.3-bin.zip
+        export PATH=$PWD/gradle-4.10.3/bin:$PATH
+        gradle wrapper --gradle-version 4.10.3
+        chmod +x gradlew
+
+    - name: Build APK with Native Engine
       run: ./gradlew assembleDebug --stacktrace
 
     - name: Upload Result
