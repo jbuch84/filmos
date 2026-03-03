@@ -18,29 +18,16 @@ struct my_error_mgr {
     jmp_buf setjmp_buffer;
 };
 
-// -------------------------------------------------------------
-// SAFETY MUZZLES: Prevent libjpeg from crashing the camera 
-// by trying to write to a non-existent Linux Console/stderr
-// -------------------------------------------------------------
 METHODDEF(void) my_error_exit (j_common_ptr cinfo) {
     LOGE("CRITICAL: LibJpeg threw an internal error!");
     my_error_mgr * myerr = (my_error_mgr *) cinfo->err;
     longjmp(myerr->setjmp_buffer, 1);
 }
-
-METHODDEF(void) my_emit_message (j_common_ptr cinfo, int msg_level) {
-    // Muzzled. Do nothing.
-}
-
-METHODDEF(void) my_output_message (j_common_ptr cinfo) {
-    // Muzzled. Do nothing.
-}
-// -------------------------------------------------------------
-
+METHODDEF(void) my_emit_message (j_common_ptr cinfo, int msg_level) {}
+METHODDEF(void) my_output_message (j_common_ptr cinfo) {}
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject, jstring path) {
-    LOGE("C++: loadLutNative Started");
     const char *file_path = env->GetStringUTFChars(path, NULL);
     FILE *file = fopen(file_path, "r");
     env->ReleaseStringUTFChars(path, file_path);
@@ -70,8 +57,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject,
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, jobject, jstring inPath, jstring outPath) {
-    LOGE("C++: --- SCANLINE ENGINE INITIATED ---");
+Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, jobject, jstring inPath, jstring outPath, jint scaleDenom) {
     if (nativeLutSize == 0) return JNI_FALSE;
 
     const char *in_file = env->GetStringUTFChars(inPath, NULL);
@@ -87,8 +73,6 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
         return JNI_FALSE;
     }
 
-    LOGE("C++: Allocating massive Jpeg Structs on HEAP to bypass Dalvik Stack Limits...");
-    
     struct jpeg_decompress_struct* cinfo_d = (struct jpeg_decompress_struct*) malloc(sizeof(struct jpeg_decompress_struct));
     struct my_error_mgr* jerr_d = (struct my_error_mgr*) malloc(sizeof(struct my_error_mgr));
     
@@ -97,22 +81,17 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
 
     int* map = (int*) malloc(256 * sizeof(int));
 
-    if (!cinfo_d || !jerr_d || !cinfo_c || !jerr_c || !map) {
-        LOGE("C++: malloc FAILED! The camera's heap is full.");
-        return JNI_FALSE;
-    }
+    if (!cinfo_d || !jerr_d || !cinfo_c || !jerr_c || !map) return JNI_FALSE;
 
     memset(cinfo_d, 0, sizeof(struct jpeg_decompress_struct));
     memset(cinfo_c, 0, sizeof(struct jpeg_compress_struct));
 
-    LOGE("C++: Setting up Decompressor Error Handler");
     cinfo_d->err = jpeg_std_error(&jerr_d->pub);
     jerr_d->pub.error_exit = my_error_exit;
-    jerr_d->pub.emit_message = my_emit_message;     // Muzzle
-    jerr_d->pub.output_message = my_output_message; // Muzzle
+    jerr_d->pub.emit_message = my_emit_message;     
+    jerr_d->pub.output_message = my_output_message; 
     
     if (setjmp(jerr_d->setjmp_buffer)) {
-        LOGE("C++: FATAL JUMP - Decompressor crashed!");
         jpeg_destroy_decompress(cinfo_d);
         free(cinfo_d); free(jerr_d); free(cinfo_c); free(jerr_c); free(map);
         fclose(infile); fclose(outfile);
@@ -121,23 +100,23 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
         return JNI_FALSE;
     }
     
-    LOGE("C++: Calling jpeg_create_decompress...");
     jpeg_create_decompress(cinfo_d);
-    LOGE("C++: Decompressor created successfully! Architecture Matched!");
-    
     jpeg_stdio_src(cinfo_d, infile);
     jpeg_read_header(cinfo_d, TRUE);
+    
+    // MAGICAL HARDWARE FRACTIONAL SCALING
+    cinfo_d->scale_num = 1;
+    cinfo_d->scale_denom = scaleDenom;
     cinfo_d->out_color_space = JCS_RGB; 
+    
     jpeg_start_decompress(cinfo_d);
 
-    LOGE("C++: Setup Compressor Error Handler");
     cinfo_c->err = jpeg_std_error(&jerr_c->pub);
     jerr_c->pub.error_exit = my_error_exit;
-    jerr_c->pub.emit_message = my_emit_message;     // Muzzle
-    jerr_c->pub.output_message = my_output_message; // Muzzle
+    jerr_c->pub.emit_message = my_emit_message;     
+    jerr_c->pub.output_message = my_output_message; 
     
     if (setjmp(jerr_c->setjmp_buffer)) {
-        LOGE("C++: FATAL JUMP - Compressor crashed!");
         jpeg_destroy_compress(cinfo_c);
         jpeg_destroy_decompress(cinfo_d);
         free(cinfo_d); free(jerr_d); free(cinfo_c); free(jerr_c); free(map);
@@ -147,10 +126,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
         return JNI_FALSE;
     }
     
-    LOGE("C++: Calling jpeg_create_compress...");
     jpeg_create_compress(cinfo_c);
-    LOGE("C++: Compressor created successfully!");
-
     jpeg_stdio_dest(cinfo_c, outfile);
     
     cinfo_c->image_width = cinfo_d->output_width;
@@ -168,11 +144,13 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     int lutSize2 = nativeLutSize * nativeLutSize;
     int row_stride = cinfo_d->output_width * cinfo_d->output_components;
     
-    LOGE("C++: Allocating 1-Row Line Buffer...");
     JSAMPARRAY buffer = (*cinfo_d->mem->alloc_sarray)((j_common_ptr) cinfo_d, JPOOL_IMAGE, row_stride, 1);
 
-    LOGE("C++: Entering 24MP Scanline Loop...");
-    int rows_processed = 0;
+    // CACHED RAW POINTERS FOR MAXIMUM SPEED
+    const int* pR = nativeLutR.data();
+    const int* pG = nativeLutG.data();
+    const int* pB = nativeLutB.data();
+
     while (cinfo_d->output_scanline < cinfo_d->output_height) {
         jpeg_read_scanlines(cinfo_d, buffer, 1);
         unsigned char* row = buffer[0];
@@ -203,9 +181,9 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
             int i001 = x0 + y0_idx + z1_idx; int i101 = x1 + y0_idx + z1_idx;
             int i011 = x0 + y1_idx + z1_idx; int i111 = x1 + y1_idx + z1_idx;
 
-            int outR = (nativeLutR[i000]*w000 + nativeLutR[i100]*w100 + nativeLutR[i010]*w010 + nativeLutR[i110]*w110 + nativeLutR[i001]*w001 + nativeLutR[i101]*w101 + nativeLutR[i011]*w011 + nativeLutR[i111]*w111) >> 21;
-            int outG = (nativeLutG[i000]*w000 + nativeLutG[i100]*w100 + nativeLutG[i010]*w010 + nativeLutG[i110]*w110 + nativeLutG[i001]*w001 + nativeLutG[i101]*w101 + nativeLutG[i011]*w011 + nativeLutG[i111]*w111) >> 21;
-            int outB = (nativeLutB[i000]*w000 + nativeLutB[i100]*w100 + nativeLutB[i010]*w010 + nativeLutB[i110]*w110 + nativeLutB[i001]*w001 + nativeLutB[i101]*w101 + nativeLutB[i011]*w011 + nativeLutB[i111]*w111) >> 21;
+            int outR = (pR[i000]*w000 + pR[i100]*w100 + pR[i010]*w010 + pR[i110]*w110 + pR[i001]*w001 + pR[i101]*w101 + pR[i011]*w011 + pR[i111]*w111) >> 21;
+            int outG = (pG[i000]*w000 + pG[i100]*w100 + pG[i010]*w010 + pG[i110]*w110 + pG[i001]*w001 + pG[i101]*w101 + pG[i011]*w011 + pG[i111]*w111) >> 21;
+            int outB = (pB[i000]*w000 + pB[i100]*w100 + pB[i010]*w010 + pB[i110]*w110 + pB[i001]*w001 + pB[i101]*w101 + pB[i011]*w011 + pB[i111]*w111) >> 21;
 
             row[x]   = outR > 255 ? 255 : (outR < 0 ? 0 : outR);
             row[x+1] = outG > 255 ? 255 : (outG < 0 ? 0 : outG);
@@ -213,12 +191,8 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
         }
         
         jpeg_write_scanlines(cinfo_c, buffer, 1);
-        rows_processed++;
-        if (rows_processed == 1000) LOGE("C++: 1000 rows processed...");
-        if (rows_processed == 3000) LOGE("C++: 3000 rows processed...");
     }
 
-    LOGE("C++: Scanline Loop Finished. Cleaning up Heap Memory.");
     jpeg_finish_compress(cinfo_c);
     jpeg_destroy_compress(cinfo_c);
     jpeg_finish_decompress(cinfo_d);
@@ -231,6 +205,5 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
 
     env->ReleaseStringUTFChars(inPath, in_file);
     env->ReleaseStringUTFChars(outPath, out_file);
-    LOGE("C++: --- ENGINE FINISHED SUCCESSFULLY ---");
     return JNI_TRUE;
 }

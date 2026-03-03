@@ -33,6 +33,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     
     private ArrayList<String> recipeList = new ArrayList<String>();
     private int recipeIndex = 0;
+    private int qualityIndex = 1; // 0 = 1.5MP, 1 = 6MP, 2 = 24MP
     
     private boolean isProcessing = false;
     private boolean isReady = false; 
@@ -43,7 +44,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private boolean isPolling = false;
     private long lastNewestFileTime = 0;
 
-    public enum DialMode { shutter, aperture, iso, exposure, recipe }
+    // Added Quality to Dial
+    public enum DialMode { shutter, aperture, iso, exposure, recipe, quality }
     private DialMode mDialMode = DialMode.recipe;
 
     @Override
@@ -75,7 +77,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         contentRoot.addView(tvStatus, statusParams);
 
         tvQuality = new TextView(this);
-        tvQuality.setText("ENGINE: 24MP SCANLINE");
+        tvQuality.setText("SIZE: HIGH (6MP)");
         tvQuality.setTextColor(Color.LTGRAY);
         tvQuality.setTextSize(18); 
         FrameLayout.LayoutParams qualityParams = new FrameLayout.LayoutParams(
@@ -113,7 +115,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
     private void startAutoProcessPolling() {
         isPolling = true;
-        Log.e("COOKBOOK_LOG", "JAVA: Polling Thread Started");
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -142,7 +143,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                                         } else if (maxModified > lastNewestFileTime) {
                                             lastNewestFileTime = maxModified;
                                             final String path = newest.getAbsolutePath();
-                                            Log.e("COOKBOOK_LOG", "JAVA: New File Detected! " + path);
                                             runOnUiThread(new Runnable() {
                                                 @Override
                                                 public void run() {
@@ -165,7 +165,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private class PreloadLutTask extends AsyncTask<Integer, Void, Boolean> {
         @Override protected void onPreExecute() {
             isReady = false;
-            Log.e("COOKBOOK_LOG", "JAVA: Preloading LUT...");
             if (mCameraEx != null) {
                 mCameraEx.stopDirectShutter(new CameraEx.DirectShutterStoppedCallback() {
                     @Override public void onShutterStopped(CameraEx cameraEx) {}
@@ -195,11 +194,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
             if (success) {
                 isReady = true;
-                Log.e("COOKBOOK_LOG", "JAVA: LUT Preloaded Successfully");
                 tvStatus.setText("STATUS: ENGINE READY");
                 tvStatus.setTextColor(Color.GREEN);
             } else {
-                Log.e("COOKBOOK_LOG", "JAVA: LUT Preload FAILED");
                 tvStatus.setText("STATUS: ERROR LOADING LUT");
                 tvStatus.setTextColor(Color.RED);
             }
@@ -209,7 +206,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private class ProcessTask extends AsyncTask<String, Integer, String> {
         @Override protected void onPreExecute() { 
             isProcessing = true;
-            Log.e("COOKBOOK_LOG", "JAVA: ProcessTask PreExecute. Stopping Camera Direct Shutter.");
             if (mCameraEx != null) {
                 mCameraEx.stopDirectShutter(new CameraEx.DirectShutterStoppedCallback() {
                     @Override public void onShutterStopped(CameraEx cameraEx) {}
@@ -222,10 +218,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         @Override protected String doInBackground(String... params) {
             try {
                 File original = new File(params[0]);
-                Log.e("COOKBOOK_LOG", "JAVA: doInBackground Started. File: " + original.getAbsolutePath());
                 if (!original.exists()) return "ERR: FILE MISSING";
 
-                Log.e("COOKBOOK_LOG", "JAVA: Entering Spin-Lock to wait for Camera to finish writing SD card.");
                 long lastSize = -1;
                 int timeout = 0;
                 while (timeout < 20) {
@@ -236,41 +230,36 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                     timeout++;
                 }
 
-                if (timeout >= 20) {
-                    Log.e("COOKBOOK_LOG", "JAVA: Spin-Lock TIMED OUT.");
-                    return "ERR: WRITE TIMEOUT";
-                }
-                
-                Log.e("COOKBOOK_LOG", "JAVA: Spin-Lock complete. Final File Size: " + lastSize);
+                if (timeout >= 20) return "ERR: WRITE TIMEOUT";
+
+                int scale = 2; // Default HIGH (6MP)
+                if (qualityIndex == 0) scale = 4; // PROXY (1.5MP)
+                else if (qualityIndex == 2) scale = 1; // ULTRA (24MP)
 
                 File rootDir = Environment.getExternalStorageDirectory();
                 File outDir = new File(rootDir, "GRADED");
                 if (!outDir.exists()) outDir.mkdirs();
                 File outFile = new File(outDir, original.getName());
 
-                Log.e("COOKBOOK_LOG", "JAVA: Calling C++ applyLutToJpeg...");
-                boolean success = mEngine.applyLutToJpeg(original.getAbsolutePath(), outFile.getAbsolutePath());
-                Log.e("COOKBOOK_LOG", "JAVA: C++ Returned: " + success);
+                // Pass the requested scale down to C++
+                boolean success = mEngine.applyLutToJpeg(original.getAbsolutePath(), outFile.getAbsolutePath(), scale);
 
-                if (!success) {
-                    return "CRASH: C++ DECODE FAILED";
-                }
+                if (!success) return "CRASH: C++ DECODE FAILED";
 
-                Log.e("COOKBOOK_LOG", "JAVA: Copying EXIF data...");
                 copyExif(original.getAbsolutePath(), outFile.getAbsolutePath());
                 sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(outFile)));
                 
-                return "SUCCESS: SAVED 24MP";
+                if (scale == 4) return "SUCCESS: SAVED 1.5MP";
+                else if (scale == 2) return "SUCCESS: SAVED 6MP";
+                else return "SUCCESS: SAVED 24MP";
                 
             } catch (Throwable t) {
-                Log.e("COOKBOOK_LOG", "JAVA THROWABLE EXCEPTION: " + t.getMessage());
                 return "ERR: " + t.getMessage();
             }
         }
 
         @Override protected void onPostExecute(String result) {
             isProcessing = false;
-            Log.e("COOKBOOK_LOG", "JAVA: ProcessTask Complete. Result: " + result);
             if (mCameraEx != null) mCameraEx.startDirectShutter();
             tvStatus.setText(result);
             tvStatus.setTextColor(result.startsWith("SUCCESS") ? Color.GREEN : Color.RED);
@@ -320,6 +309,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                     tvStatus.setText("STATUS: RAW MODE");
                     tvStatus.setTextColor(Color.LTGRAY);
                 }
+            } else if (mDialMode == DialMode.quality) {
+                qualityIndex = (qualityIndex + d + 3) % 3;
+                if (qualityIndex == 0) tvQuality.setText("SIZE: PROXY (1.5MP)");
+                else if (qualityIndex == 1) tvQuality.setText("SIZE: HIGH (6MP)");
+                else tvQuality.setText("SIZE: ULTRA (24MP)");
             }
             syncUI();
         } catch (Exception e) {}
@@ -350,6 +344,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         tvISO.setTextColor(m == DialMode.iso ? g : w);
         tvExposure.setTextColor(m == DialMode.exposure ? g : w);
         tvRecipe.setTextColor(m == DialMode.recipe ? g : w);
+        tvQuality.setTextColor(m == DialMode.quality ? g : Color.LTGRAY);
         updateRecipeDisplay(); 
     }
     
