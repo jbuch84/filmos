@@ -3,32 +3,22 @@ package com.github.ma1co.pmcademo.app;
 import java.io.File;
 
 public class LutEngine {
-
-    static {
-        System.loadLibrary("native-lib");
-    }
-
+    static { System.loadLibrary("native-lib"); }
     private String currentLutName = "";
-
     private native boolean loadLutNative(String filePath);
-    // Added Magic Variables to the JNI bridge
-    private native boolean processImageNative(String inPath, String outPath, int scaleDenom, int opacity, int grain, int vignette);
+    private native boolean processImageNative(String inPath, String outPath, int scaleDenom, int opacity, int grain, int vignette, int rollOff);
 
-    public String getCurrentLutName() {
-        return currentLutName;
-    }
+    public String getCurrentLutName() { return currentLutName; }
 
     public boolean loadLut(File cubeFile, String lutName) {
         if (lutName.equals(currentLutName)) return true;
-
         if (loadLutNative(cubeFile.getAbsolutePath())) {
-            currentLutName = lutName;
-            return true;
+            currentLutName = lutName; return true;
         }
         return false;
     }
 
-    public boolean applyLutToJpeg(String inPath, String outPath, int scaleDenom, int opacity, int grain, int vignette) {
-        return processImageNative(inPath, outPath, scaleDenom, opacity, grain, vignette);
+    public boolean applyLutToJpeg(String inPath, String outPath, int scaleDenom, int opacity, int grain, int vignette, int rollOff) {
+        return processImageNative(inPath, outPath, scaleDenom, opacity, grain, vignette, rollOff);
     }
 }

@@ -28,17 +28,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private CameraEx mCameraEx;
     private Camera mCamera;
     private SurfaceView mSurfaceView;
-    private TextView tvShutter, tvAperture, tvISO, tvExposure, tvRecipe;
-    private TextView tvStatus, tvQuality, tvEffects; 
+    private TextView tvShutter, tvAperture, tvISO, tvExposure, tvRecipe, tvStatus, tvQuality, tvEffects; 
     
     private ArrayList<String> recipeList = new ArrayList<String>();
     private int recipeIndex = 0;
     private int qualityIndex = 1; // 0 = PROXY, 1 = HIGH, 2 = ULTRA
     
-    // NEW MAGIC VARIABLES
-    private int valOpacity = 256; // 256 = 100%
-    private int valGrain = 0;     // 0 = Off, 100 = Max
-    private int valVignette = 0;  // 0 = Off, 256 = Max
+    // NEW CLEAN 0-100 UI SLIDERS
+    private int valOpacity = 100;
+    private int valGrain = 0;   
+    private int valVignette = 0;
+    private int valRollOff = 0;
 
     private boolean isProcessing = false;
     private boolean isReady = false; 
@@ -48,7 +48,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private boolean isPolling = false;
     private long lastNewestFileTime = 0;
 
-    public enum DialMode { shutter, aperture, iso, exposure, recipe, quality, opacity, grain, vignette }
+    public enum DialMode { shutter, aperture, iso, exposure, recipe, quality, opacity, grain, vignette, rolloff }
     private DialMode mDialMode = DialMode.recipe;
 
     @Override
@@ -67,7 +67,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         tvRecipe = (TextView) findViewById(R.id.tvRecipe);
         
         ViewGroup contentRoot = (ViewGroup) findViewById(android.R.id.content);
-        
         tvStatus = new TextView(this);
         tvStatus.setText("STATUS: STANDBY");
         tvStatus.setTextColor(Color.LTGRAY);
@@ -86,7 +85,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
         tvEffects = new TextView(this);
         updateEffectsDisplay();
-        tvEffects.setTextSize(18); 
+        tvEffects.setTextColor(Color.LTGRAY);
+        tvEffects.setTextSize(16); 
         FrameLayout.LayoutParams fxParams = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.RIGHT);
         fxParams.setMargins(0, 0, 30, 80);
         contentRoot.addView(tvEffects, fxParams);
@@ -99,8 +99,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     }
 
     private void updateEffectsDisplay() {
-        int opacPct = (int)((valOpacity / 256.0f) * 100);
-        tvEffects.setText("OPAC: " + opacPct + "% | GRN: " + valGrain + " | VIG: " + valVignette);
+        tvEffects.setText("OPAC: " + valOpacity + "% | GRN: " + valGrain + " | VIG: " + valVignette + " | ROLL: " + valRollOff);
     }
 
     private void startAutoProcessPolling() {
@@ -110,25 +109,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             public void run() {
                 while (isPolling) {
                     try {
-                        Thread.sleep(300); 
-                        if (!isProcessing && isReady && recipeIndex > 0) {
-                            File dcim = new File(Environment.getExternalStorageDirectory(), "DCIM");
-                            File sonyDir = new File(dcim, "100MSDCF");
-                            if (sonyDir.exists()) {
-                                File[] files = sonyDir.listFiles();
-                                if (files != null && files.length > 0) {
-                                    File newest = null; long maxModified = 0;
-                                    for (File f : files) {
-                                        if (f.getName().toUpperCase().endsWith(".JPG") && !f.getName().startsWith("PRCS")) {
-                                            if (f.lastModified() > maxModified) {
-                                                maxModified = f.lastModified(); newest = f;
-                                            }
-                                        }
+                        Thread.sleep(500); 
+                        // ALWAYS search for new files, regardless of LUT
+                        File dcim = new File(Environment.getExternalStorageDirectory(), "DCIM");
+                        File sonyDir = new File(dcim, "100MSDCF");
+                        if (sonyDir.exists()) {
+                            File[] files = sonyDir.listFiles();
+                            if (files != null && files.length > 0) {
+                                File newest = null; long maxModified = 0;
+                                for (File f : files) {
+                                    if (f.getName().toUpperCase().endsWith(".JPG") && !f.getName().startsWith("PRCS") && !f.getName().startsWith("GRADED")) {
+                                        if (f.lastModified() > maxModified) { maxModified = f.lastModified(); newest = f; }
                                     }
-                                    if (newest != null) {
-                                        if (lastNewestFileTime == 0) lastNewestFileTime = maxModified; 
-                                        else if (maxModified > lastNewestFileTime) {
-                                            lastNewestFileTime = maxModified;
+                                }
+                                if (newest != null) {
+                                    if (lastNewestFileTime == 0) {
+                                        lastNewestFileTime = maxModified; // Startup state
+                                    } else if (maxModified > lastNewestFileTime) {
+                                        lastNewestFileTime = maxModified;
+                                        // TRIGGER PROCESS IF READY OR IF "NONE" IS SELECTED
+                                        if (!isProcessing && (isReady || recipeIndex == 0)) {
                                             final String path = newest.getAbsolutePath();
                                             runOnUiThread(new Runnable() {
                                                 @Override public void run() { if (!isProcessing) new ProcessTask().execute(path); }
@@ -175,21 +175,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 if (!original.exists()) return "ERR: FILE MISSING";
 
                 long lastSize = -1; int timeout = 0;
-                while (timeout < 100) {
+                while (timeout < 20) {
                     long currentSize = original.length();
                     if (currentSize > 0 && currentSize == lastSize) break;
                     lastSize = currentSize;
-                    Thread.sleep(100); timeout++;
+                    Thread.sleep(500); timeout++;
                 }
-                if (timeout >= 100) return "ERR: WRITE TIMEOUT";
+                if (timeout >= 20) return "ERR: WRITE TIMEOUT";
 
                 int scale = (qualityIndex == 0) ? 4 : (qualityIndex == 2 ? 1 : 2);
                 File outDir = new File(Environment.getExternalStorageDirectory(), "GRADED");
                 if (!outDir.exists()) outDir.mkdirs();
                 File outFile = new File(outDir, original.getName());
 
-                // PASSING THE MAGIC VARIABLES TO C++
-                if (mEngine.applyLutToJpeg(original.getAbsolutePath(), outFile.getAbsolutePath(), scale, valOpacity, valGrain, valVignette)) {
+                // Injecting all parameters to C++
+                if (mEngine.applyLutToJpeg(original.getAbsolutePath(), outFile.getAbsolutePath(), scale, valOpacity, valGrain, valVignette, valRollOff)) {
+                    copyExif(original.getAbsolutePath(), outFile.getAbsolutePath());
                     sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(outFile)));
                     return "SUCCESS: SAVED " + (scale==1?"24MP":(scale==2?"6MP":"1.5MP"));
                 }
@@ -201,6 +202,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             if (mCameraEx != null) mCameraEx.startDirectShutter();
             tvStatus.setText(result); tvStatus.setTextColor(result.startsWith("SUCCESS") ? Color.GREEN : Color.RED);
         }
+    }
+
+    private void copyExif(String sourcePath, String destPath) {
+        try {
+            android.media.ExifInterface sourceExif = new android.media.ExifInterface(sourcePath);
+            android.media.ExifInterface destExif = new android.media.ExifInterface(destPath);
+            String[] tags = {"FNumber", "ExposureTime", "ISOSpeedRatings", "FocalLength", "DateTime", "Make", "Model", "WhiteBalance", "Flash"};
+            for (String tag : tags) { String value = sourceExif.getAttribute(tag); if (value != null) destExif.setAttribute(tag, value); }
+            destExif.saveAttributes();
+        } catch (IOException e) {}
     }
 
     @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
@@ -237,9 +248,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 qualityIndex = (qualityIndex + d + 3) % 3;
                 tvQuality.setText("SIZE: " + (qualityIndex==0?"PROXY (1.5MP)":(qualityIndex==2?"ULTRA (24MP)":"HIGH (6MP)")));
             }
-            else if (mDialMode == DialMode.opacity) { valOpacity = Math.max(0, Math.min(256, valOpacity + (d * 12))); updateEffectsDisplay(); }
-            else if (mDialMode == DialMode.grain) { valGrain = Math.max(0, Math.min(100, valGrain + (d * 5))); updateEffectsDisplay(); }
-            else if (mDialMode == DialMode.vignette) { valVignette = Math.max(0, Math.min(256, valVignette + (d * 12))); updateEffectsDisplay(); }
+            else if (mDialMode == DialMode.opacity) { valOpacity = Math.max(0, Math.min(100, valOpacity + (d * 10))); updateEffectsDisplay(); }
+            else if (mDialMode == DialMode.grain) { valGrain = Math.max(0, Math.min(100, valGrain + (d * 10))); updateEffectsDisplay(); }
+            else if (mDialMode == DialMode.vignette) { valVignette = Math.max(0, Math.min(100, valVignette + (d * 10))); updateEffectsDisplay(); }
+            else if (mDialMode == DialMode.rolloff) { valRollOff = Math.max(0, Math.min(100, valRollOff + (d * 10))); updateEffectsDisplay(); }
             syncUI();
         } catch (Exception e) {}
     }
@@ -264,7 +276,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         tvShutter.setTextColor(m==DialMode.shutter?g:w); tvAperture.setTextColor(m==DialMode.aperture?g:w);
         tvISO.setTextColor(m==DialMode.iso?g:w); tvExposure.setTextColor(m==DialMode.exposure?g:w);
         tvRecipe.setTextColor(m==DialMode.recipe?g:w); tvQuality.setTextColor(m==DialMode.quality?g:lt);
-        tvEffects.setTextColor((m==DialMode.opacity || m==DialMode.grain || m==DialMode.vignette) ? g : lt);
+        tvEffects.setTextColor((m==DialMode.opacity || m==DialMode.grain || m==DialMode.vignette || m==DialMode.rolloff) ? g : lt);
         updateRecipeDisplay(); 
     }
     private void scanRecipes() { 
