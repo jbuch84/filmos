@@ -51,15 +51,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         setContentView(R.layout.activity_main);
 
         // ==========================================
-        // THE BLACK BOX FLIGHT RECORDER
+        // THE BLACK BOX FLIGHT RECORDER (BACKGROUND THREAD)
         // ==========================================
-        try {
-            File logFile = new File(Environment.getExternalStorageDirectory(), "JPG_Cookbook_CrashLog.txt");
-            Runtime.getRuntime().exec("logcat -c"); // Clear old history
-            Runtime.getRuntime().exec("logcat -f " + logFile.getAbsolutePath()); // Stream live OS logs to SD Card
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Runtime.getRuntime().exec("logcat -c").waitFor(); // Clear old logs
+                    Process process = Runtime.getRuntime().exec("logcat"); // Start reading live logs
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+                    File logFile = new File(Environment.getExternalStorageDirectory(), "JPG_Cookbook_CrashLog.txt");
+                    FileOutputStream fos = new FileOutputStream(logFile, false); 
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        fos.write((line + "\n").getBytes());
+                        fos.flush();
+                    }
+                } catch (Exception e) {}
+            }
+        }).start();
         // ==========================================
         
         mSurfaceView = (SurfaceView) findViewById(R.id.surfaceView);
