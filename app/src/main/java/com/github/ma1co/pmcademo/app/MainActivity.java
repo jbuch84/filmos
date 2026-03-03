@@ -72,7 +72,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         contentRoot.addView(tvStatus, statusParams);
 
         tvQuality = new TextView(this);
-        tvQuality.setText("ENGINE: NATIVE C++ (FULL RES)");
+        tvQuality.setText("ENGINE: NATIVE C++ (ABSOLUTE ZERO)");
         tvQuality.setTextColor(Color.LTGRAY);
         tvQuality.setTextSize(18); 
         FrameLayout.LayoutParams qualityParams = new FrameLayout.LayoutParams(
@@ -136,7 +136,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                                         if (lastNewestFileTime == 0) {
                                             lastNewestFileTime = maxModified; 
                                         } else if (maxModified > lastNewestFileTime) {
-                                            Thread.sleep(2000); 
                                             lastNewestFileTime = maxModified;
                                             final String path = newest.getAbsolutePath();
                                             runOnUiThread(new Runnable() {
@@ -216,35 +215,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 File original = new File(params[0]);
                 if (!original.exists()) return "ERR: FILE MISSING";
 
-                // 1. READ FILE WITHOUT DOUBLING MEMORY
-                // RandomAccessFile uses exactly the file length, avoiding OOM spikes
-                RandomAccessFile f = new RandomAccessFile(original, "r");
-                byte[] rawJpegBytes = new byte[(int)f.length()];
-                f.readFully(rawJpegBytes);
-                f.close();
-
-                // 2. NATIVE PROCESSING
-                byte[] processedJpegBytes = mEngine.applyLutToJpeg(rawJpegBytes);
-                
-                // Allow Garbage Collector to clean up the raw bytes immediately
-                rawJpegBytes = null; 
-
-                if (processedJpegBytes == null) {
-                    return "CRASH: STB DECODE FAILURE";
+                // THE FILE LOCK FIX: Wait until the camera actually finishes writing the file!
+                long lastSize = -1;
+                while (true) {
+                    long currentSize = original.length();
+                    if (currentSize > 0 && currentSize == lastSize) {
+                        break; // File size stopped growing, it is fully written
+                    }
+                    lastSize = currentSize;
+                    Thread.sleep(500); // Check every half second
                 }
 
-                // 3. SAVE FILE
                 File rootDir = Environment.getExternalStorageDirectory();
                 File outDir = new File(rootDir, "GRADED");
                 if (!outDir.exists()) outDir.mkdirs();
-                
                 File outFile = new File(outDir, original.getName());
-                FileOutputStream fos = new FileOutputStream(outFile);
-                fos.write(processedJpegBytes);
-                fos.flush();
-                fos.close();
 
-                // 4. FINALIZE
+                // Pass ONLY the paths. Java memory stays completely empty.
+                boolean success = mEngine.applyLutToJpeg(original.getAbsolutePath(), outFile.getAbsolutePath());
+
+                if (!success) {
+                    return "CRASH: STB NATIVE DECODE FAILURE";
+                }
+
                 copyExif(original.getAbsolutePath(), outFile.getAbsolutePath());
                 sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(outFile)));
                 

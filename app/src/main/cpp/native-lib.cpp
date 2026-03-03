@@ -14,16 +14,8 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-// Store LUT in native memory off the Java heap
 std::vector<int> nativeLutR, nativeLutG, nativeLutB;
 int nativeLutSize = 0;
-
-// Helper to push encoded JPEG bytes into memory
-void write_to_memory(void *context, void *data, int size) {
-    std::vector<unsigned char> *buffer = static_cast<std::vector<unsigned char>*>(context);
-    unsigned char* bytes = static_cast<unsigned char*>(data);
-    buffer->insert(buffer->end(), bytes, bytes + size);
-}
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject, jstring path) {
@@ -57,26 +49,24 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject,
     return nativeLutSize > 0 ? JNI_TRUE : JNI_FALSE;
 }
 
-extern "C" JNIEXPORT jbyteArray JNICALL
-Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, jobject, jbyteArray jpegData) {
-    if (nativeLutSize == 0) return NULL;
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, jobject, jstring inPath, jstring outPath) {
+    if (nativeLutSize == 0) return JNI_FALSE;
 
-    // 1. SAFE JNI READ: Copy bytes into C++ and immediately release the Android OS lock
-    int len = env->GetArrayLength(jpegData);
-    std::vector<unsigned char> jpegBuffer(len);
-    env->GetByteArrayRegion(jpegData, 0, len, reinterpret_cast<jbyte*>(jpegBuffer.data()));
+    const char *in_file = env->GetStringUTFChars(inPath, NULL);
+    const char *out_file = env->GetStringUTFChars(outPath, NULL);
 
-    // 2. Decode JPEG directly in Native Memory
+    // 1. ABSOLUTE ZERO: C++ reads directly from disk. Java memory is completely bypassed.
     int width, height, channels;
-    unsigned char* img = stbi_load_from_memory(jpegBuffer.data(), len, &width, &height, &channels, 3);
-    
-    // Clear the compressed buffer immediately to free up camera RAM
-    jpegBuffer.clear(); 
-    jpegBuffer.shrink_to_fit();
+    unsigned char* img = stbi_load(in_file, &width, &height, &channels, 3);
 
-    if (!img) return NULL;
+    if (!img) {
+        LOGE("STB failed to decode image. Possibly incomplete file.");
+        env->ReleaseStringUTFChars(inPath, in_file);
+        env->ReleaseStringUTFChars(outPath, out_file);
+        return JNI_FALSE;
+    }
 
-    // 3. Prevent Segfaults by padding vectors if the LUT file was missing data
     int expectedSize = nativeLutSize * nativeLutSize * nativeLutSize;
     if (nativeLutR.size() < expectedSize) {
         nativeLutR.resize(expectedSize, 0);
@@ -93,12 +83,9 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     int lutSize2 = nativeLutSize * nativeLutSize;
     int totalPixels = width * height;
 
-    // 4. THE MAXIMUM VELOCITY INTEGER LOOP
+    // 2. THE INTEGER MATH LOOP
     for (int i = 0; i < totalPixels * 3; i += 3) {
-        int r = img[i];
-        int g = img[i+1];
-        int b = img[i+2];
-
+        int r = img[i]; int g = img[i+1]; int b = img[i+2];
         int fX = map[r]; int fY = map[g]; int fZ = map[b];
 
         int x0 = fX >> 7; int y0 = fY >> 7; int z0 = fZ >> 7;
@@ -127,13 +114,12 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
         img[i+2] = (nativeLutB[i000]*w000 + nativeLutB[i100]*w100 + nativeLutB[i010]*w010 + nativeLutB[i110]*w110 + nativeLutB[i001]*w001 + nativeLutB[i101]*w101 + nativeLutB[i011]*w011 + nativeLutB[i111]*w111) >> 21;
     }
 
-    // 5. Encode to JPEG at 95% quality
-    std::vector<unsigned char> out_buf;
-    stbi_write_jpg_to_func(write_to_memory, &out_buf, width, height, 3, img, 95);
+    // 3. C++ writes the file back to the SD card. 
+    int write_success = stbi_write_jpg(out_file, width, height, 3, img, 95);
     stbi_image_free(img);
 
-    // 6. Return safely to Java
-    jbyteArray ret = env->NewByteArray(out_buf.size());
-    env->SetByteArrayRegion(ret, 0, out_buf.size(), reinterpret_cast<const jbyte*>(out_buf.data()));
-    return ret;
+    env->ReleaseStringUTFChars(inPath, in_file);
+    env->ReleaseStringUTFChars(outPath, out_file);
+
+    return write_success != 0 ? JNI_TRUE : JNI_FALSE;
 }

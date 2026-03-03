@@ -11,7 +11,9 @@ public class LutEngine {
     private String currentLutName = "";
 
     private native boolean loadLutNative(String filePath);
-    private native byte[] processImageNative(byte[] jpegData);
+    
+    // Now just passes file paths. No memory allocation!
+    private native boolean processImageNative(String inPath, String outPath);
 
     public String getCurrentLutName() {
         return currentLutName;
@@ -27,8 +29,7 @@ public class LutEngine {
         return false;
     }
 
-    public byte[] applyLutToJpeg(byte[] rawJpegData) {
-        if (rawJpegData == null || rawJpegData.length == 0) return null;
-        return processImageNative(rawJpegData);
+    public boolean applyLutToJpeg(String inPath, String outPath) {
+        return processImageNative(inPath, outPath);
     }
 }
