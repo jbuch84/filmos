@@ -1,6 +1,5 @@
 package com.github.ma1co.pmcademo.app;
 
-import android.graphics.Bitmap;
 import java.io.File;
 
 public class LutEngine {
@@ -12,7 +11,7 @@ public class LutEngine {
     private String currentLutName = "";
 
     private native boolean loadLutNative(String filePath);
-    private native boolean applyLutNative(Bitmap bitmap);
+    private native boolean processImageNative(String inPath, String outPath);
 
     public String getCurrentLutName() {
         return currentLutName;
@@ -28,8 +27,7 @@ public class LutEngine {
         return false;
     }
 
-    public boolean applyLutToBitmap(Bitmap bitmap) {
-        if (bitmap == null) return false;
-        return applyLutNative(bitmap);
+    public boolean applyLutToJpeg(String inPath, String outPath) {
+        return processImageNative(inPath, outPath);
     }
 }

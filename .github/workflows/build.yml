@@ -6,6 +6,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Download libjpeg-turbo Source
+      run: |
+        cd app/src/main/cpp
+        wget -q https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/tags/2.1.5.1.tar.gz
+        tar -xzf 2.1.5.1.tar.gz
+        mv libjpeg-turbo-2.1.5.1 libjpeg-turbo
+
     - name: Create Clean Room SDK & NDK
       run: |
         mkdir $HOME/clean-sdk

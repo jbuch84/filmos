@@ -1,11 +1,26 @@
 #include <jni.h>
-#include <android/bitmap.h>
 #include <vector>
 #include <stdio.h>
 #include <string.h>
+#include <setjmp.h>
+#include "jpeglib.h"
+#include <android/log.h>
+
+#define LOG_TAG "NDK_ENGINE"
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 std::vector<int> nativeLutR, nativeLutG, nativeLutB;
 int nativeLutSize = 0;
+
+struct my_error_mgr {
+    struct jpeg_error_mgr pub;
+    jmp_buf setjmp_buffer;
+};
+
+METHODDEF(void) my_error_exit (j_common_ptr cinfo) {
+    my_error_mgr * myerr = (my_error_mgr *) cinfo->err;
+    longjmp(myerr->setjmp_buffer, 1);
+}
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject, jstring path) {
@@ -16,7 +31,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject,
 
     nativeLutR.clear(); nativeLutG.clear(); nativeLutB.clear();
     nativeLutSize = 0;
-    
+
     char line[256];
     while(fgets(line, sizeof(line), file)) {
         if (strncmp(line, "LUT_3D_SIZE", 11) == 0) {
@@ -38,32 +53,97 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject,
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_github_ma1co_pmcademo_app_LutEngine_applyLutNative(JNIEnv* env, jobject, jobject bitmap) {
+Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, jobject, jstring inPath, jstring outPath) {
     if (nativeLutSize == 0) return JNI_FALSE;
 
-    AndroidBitmapInfo info;
-    void* pixels;
-    if (AndroidBitmap_getInfo(env, bitmap, &info) < 0) return JNI_FALSE;
-    if (AndroidBitmap_lockPixels(env, bitmap, &pixels) < 0) return JNI_FALSE;
+    const char *in_file = env->GetStringUTFChars(inPath, NULL);
+    const char *out_file = env->GetStringUTFChars(outPath, NULL);
 
-    int width = info.width;
-    int height = info.height;
-    int lutSize2 = nativeLutSize * nativeLutSize;
-    int lutMax = nativeLutSize - 1;
-    uint32_t* line = (uint32_t*) pixels;
+    FILE *infile = fopen(in_file, "rb");
+    if (!infile) {
+        env->ReleaseStringUTFChars(inPath, in_file);
+        env->ReleaseStringUTFChars(outPath, out_file);
+        return JNI_FALSE;
+    }
+
+    FILE *outfile = fopen(out_file, "wb");
+    if (!outfile) {
+        fclose(infile);
+        env->ReleaseStringUTFChars(inPath, in_file);
+        env->ReleaseStringUTFChars(outPath, out_file);
+        return JNI_FALSE;
+    }
+
+    // 1. Setup Reader
+    struct jpeg_decompress_struct cinfo_d;
+    struct my_error_mgr jerr_d;
+    cinfo_d.err = jpeg_std_error(&jerr_d.pub);
+    jerr_d.pub.error_exit = my_error_exit;
+    
+    if (setjmp(jerr_d.setjmp_buffer)) {
+        jpeg_destroy_decompress(&cinfo_d);
+        fclose(infile); fclose(outfile);
+        env->ReleaseStringUTFChars(inPath, in_file);
+        env->ReleaseStringUTFChars(outPath, out_file);
+        return JNI_FALSE;
+    }
+    
+    jpeg_create_decompress(&cinfo_d);
+    jpeg_stdio_src(&cinfo_d, infile);
+    jpeg_read_header(&cinfo_d, TRUE);
+    cinfo_d.out_color_space = JCS_RGB; 
+    jpeg_start_decompress(&cinfo_d);
+
+    // 2. Setup Writer
+    struct jpeg_compress_struct cinfo_c;
+    struct my_error_mgr jerr_c;
+    cinfo_c.err = jpeg_std_error(&jerr_c.pub);
+    jerr_c.pub.error_exit = my_error_exit;
+    
+    if (setjmp(jerr_c.setjmp_buffer)) {
+        jpeg_destroy_compress(&cinfo_c);
+        jpeg_destroy_decompress(&cinfo_d);
+        fclose(infile); fclose(outfile);
+        env->ReleaseStringUTFChars(inPath, in_file);
+        env->ReleaseStringUTFChars(outPath, out_file);
+        return JNI_FALSE;
+    }
+    
+    jpeg_create_compress(&cinfo_c);
+    jpeg_stdio_dest(&cinfo_c, outfile);
+    
+    cinfo_c.image_width = cinfo_d.output_width;
+    cinfo_c.image_height = cinfo_d.output_height;
+    cinfo_c.input_components = 3;
+    cinfo_c.in_color_space = JCS_RGB;
+    jpeg_set_defaults(&cinfo_c);
+    jpeg_set_quality(&cinfo_c, 95, TRUE);
+    jpeg_start_compress(&cinfo_c, TRUE);
+
+    int expectedSize = nativeLutSize * nativeLutSize * nativeLutSize;
+    if (nativeLutR.size() < expectedSize) {
+        nativeLutR.resize(expectedSize, 0);
+        nativeLutG.resize(expectedSize, 0);
+        nativeLutB.resize(expectedSize, 0);
+    }
 
     int map[256];
+    int lutMax = nativeLutSize - 1;
     for (int i = 0; i < 256; i++) {
         map[i] = (i * lutMax * 128) / 255;
     }
+    int lutSize2 = nativeLutSize * nativeLutSize;
+    int row_stride = cinfo_d.output_width * cinfo_d.output_components;
+    
+    JSAMPARRAY buffer = (*cinfo_d.mem->alloc_sarray)((j_common_ptr) &cinfo_d, JPOOL_IMAGE, row_stride, 1);
 
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            uint32_t pixel = line[y * width + x];
-            
-            int r = (pixel >> 16) & 0xFF;
-            int g = (pixel >> 8) & 0xFF;
-            int b = pixel & 0xFF;
+    // 4. SCANLINE LOOP (Low Memory Mode)
+    while (cinfo_d.output_scanline < cinfo_d.output_height) {
+        jpeg_read_scanlines(&cinfo_d, buffer, 1);
+        unsigned char* row = buffer[0];
+
+        for (int x = 0; x < row_stride; x += 3) {
+            int r = row[x]; int g = row[x+1]; int b = row[x+2];
 
             int fX = map[r]; int fY = map[g]; int fZ = map[b];
 
@@ -92,9 +172,24 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_applyLutNative(JNIEnv* env, jobject
             int outG = (nativeLutG[i000]*w000 + nativeLutG[i100]*w100 + nativeLutG[i010]*w010 + nativeLutG[i110]*w110 + nativeLutG[i001]*w001 + nativeLutG[i101]*w101 + nativeLutG[i011]*w011 + nativeLutG[i111]*w111) >> 21;
             int outB = (nativeLutB[i000]*w000 + nativeLutB[i100]*w100 + nativeLutB[i010]*w010 + nativeLutB[i110]*w110 + nativeLutB[i001]*w001 + nativeLutB[i101]*w101 + nativeLutB[i011]*w011 + nativeLutB[i111]*w111) >> 21;
 
-            line[y * width + x] = (0xFF << 24) | (outR << 16) | (outG << 8) | outB;
+            row[x]   = outR > 255 ? 255 : (outR < 0 ? 0 : outR);
+            row[x+1] = outG > 255 ? 255 : (outG < 0 ? 0 : outG);
+            row[x+2] = outB > 255 ? 255 : (outB < 0 ? 0 : outB);
         }
+        
+        jpeg_write_scanlines(&cinfo_c, buffer, 1);
     }
-    AndroidBitmap_unlockPixels(env, bitmap);
+
+    // 5. Cleanup
+    jpeg_finish_compress(&cinfo_c);
+    jpeg_destroy_compress(&cinfo_c);
+    jpeg_finish_decompress(&cinfo_d);
+    jpeg_destroy_decompress(&cinfo_d);
+    
+    fclose(infile);
+    fclose(outfile);
+
+    env->ReleaseStringUTFChars(inPath, in_file);
+    env->ReleaseStringUTFChars(outPath, out_file);
     return JNI_TRUE;
 }

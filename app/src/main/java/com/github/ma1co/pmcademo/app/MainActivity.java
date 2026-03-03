@@ -3,8 +3,6 @@ package com.github.ma1co.pmcademo.app;
 import com.jpgcookbook.sony.R;
 import android.app.Activity;
 import android.content.Intent;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.hardware.Camera;
 import android.net.Uri;
@@ -34,7 +32,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     
     private ArrayList<String> recipeList = new ArrayList<String>();
     private int recipeIndex = 0;
-    private int qualityIndex = 1; // 0 = 1.5MP, 1 = 6MP, 2 = 24MP
     
     private boolean isProcessing = false;
     private boolean isReady = false; 
@@ -45,7 +42,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private boolean isPolling = false;
     private long lastNewestFileTime = 0;
 
-    public enum DialMode { shutter, aperture, iso, exposure, recipe, quality }
+    public enum DialMode { shutter, aperture, iso, exposure, recipe }
     private DialMode mDialMode = DialMode.recipe;
 
     @Override
@@ -75,7 +72,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         contentRoot.addView(tvStatus, statusParams);
 
         tvQuality = new TextView(this);
-        tvQuality.setText("SIZE: HIGH (6MP)");
+        tvQuality.setText("ENGINE: 24MP SCANLINE");
         tvQuality.setTextColor(Color.LTGRAY);
         tvQuality.setTextSize(18); 
         FrameLayout.LayoutParams qualityParams = new FrameLayout.LayoutParams(
@@ -209,7 +206,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                     @Override public void onShutterStopped(CameraEx cameraEx) {}
                 });
             }
-            tvStatus.setText("STATUS: HYBRID PROCESSING...");
+            tvStatus.setText("STATUS: SCANLINE PROCESSING...");
             tvStatus.setTextColor(Color.YELLOW);
         }
 
@@ -218,7 +215,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 File original = new File(params[0]);
                 if (!original.exists()) return "ERR: FILE MISSING";
 
-                // Spin-Lock Timeout Check
                 long lastSize = -1;
                 int timeout = 0;
                 while (timeout < 20) {
@@ -231,44 +227,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
                 if (timeout >= 20) return "ERR: WRITE TIMEOUT";
 
-                int sample = 2; // Default HIGH (6MP)
-                if (qualityIndex == 0) sample = 4; // PROXY (1.5MP)
-                else if (qualityIndex == 2) sample = 1; // ULTRA (24MP)
-
-                BitmapFactory.Options opts = new BitmapFactory.Options();
-                opts.inSampleSize = sample;
-                opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
-                
-                // THE API 10 FIX: Decode immutably, then safely copy to a mutable canvas
-                Bitmap rawBmp = BitmapFactory.decodeFile(original.getAbsolutePath(), opts);
-                if (rawBmp == null) return "ERR: HW LIMIT (LOWER SIZE ON DIAL)";
-
-                // Clone to an editable format and instantly recycle the original to save memory
-                Bitmap bmp = rawBmp.copy(Bitmap.Config.ARGB_8888, true);
-                rawBmp.recycle(); 
-
-                // Send the mutable canvas to the Native C++ Engine
-                boolean success = mEngine.applyLutToBitmap(bmp);
-                if (!success) {
-                    bmp.recycle();
-                    return "CRASH: C++ EDITOR FAILED";
-                }
-
                 File rootDir = Environment.getExternalStorageDirectory();
                 File outDir = new File(rootDir, "GRADED");
                 if (!outDir.exists()) outDir.mkdirs();
                 File outFile = new File(outDir, original.getName());
 
-                FileOutputStream fos = new FileOutputStream(outFile);
-                bmp.compress(Bitmap.CompressFormat.JPEG, 95, fos);
-                fos.flush(); 
-                fos.close();
-                bmp.recycle();
+                // Zero memory overhead - purely native strings
+                boolean success = mEngine.applyLutToJpeg(original.getAbsolutePath(), outFile.getAbsolutePath());
+
+                if (!success) {
+                    return "CRASH: C++ DECODE FAILED";
+                }
 
                 copyExif(original.getAbsolutePath(), outFile.getAbsolutePath());
                 sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(outFile)));
                 
-                return "SUCCESS: SAVED RECIPE";
+                return "SUCCESS: SAVED 24MP";
                 
             } catch (Throwable t) {
                 return "ERR: " + t.getMessage();
@@ -326,11 +300,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                     tvStatus.setText("STATUS: RAW MODE");
                     tvStatus.setTextColor(Color.LTGRAY);
                 }
-            } else if (mDialMode == DialMode.quality) {
-                qualityIndex = (qualityIndex + d + 3) % 3;
-                if (qualityIndex == 0) tvQuality.setText("SIZE: PROXY (1.5MP)");
-                else if (qualityIndex == 1) tvQuality.setText("SIZE: HIGH (6MP)");
-                else tvQuality.setText("SIZE: ULTRA (24MP)");
             }
             syncUI();
         } catch (Exception e) {}
@@ -361,7 +330,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         tvISO.setTextColor(m == DialMode.iso ? g : w);
         tvExposure.setTextColor(m == DialMode.exposure ? g : w);
         tvRecipe.setTextColor(m == DialMode.recipe ? g : w);
-        tvQuality.setTextColor(m == DialMode.quality ? g : Color.LTGRAY);
         updateRecipeDisplay(); 
     }
     
