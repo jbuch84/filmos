@@ -6,15 +6,23 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Set up Java 8
+    # STEP A: Use Java 17 briefly to install the NDK
+    - name: Set up Java 17 (For NDK Install)
       uses: actions/setup-java@v3
       with:
-        java-version: '8'
+        java-version: '17'
         distribution: 'temurin'
 
     - name: Install Vintage NDK
       run: |
         echo "y" | ${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager --install "ndk;21.4.7075529" --sdk_root=${ANDROID_SDK_ROOT}
+
+    # STEP B: Switch back to Java 8 for the actual Camera App build
+    - name: Set up Java 8 (For Camera App Build)
+      uses: actions/setup-java@v3
+      with:
+        java-version: '8'
+        distribution: 'temurin'
 
     - name: Purge Modern SDKs
       run: |
