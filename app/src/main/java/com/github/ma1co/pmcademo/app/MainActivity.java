@@ -208,8 +208,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             return true;
         }
 
-        // TOGGLE HUD DISPLAY
-        if (sc == ScalarInput.ISV_KEY_DISPLAY) {
+        // TOGGLE HUD DISPLAY (Mapped to the Center "ENTER" button instead of DISP)
+        if (sc == ScalarInput.ISV_KEY_ENTER) {
             if(!isMenuOpen) {
                 displayState = (displayState == 0) ? 1 : 0;
                 mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE);
@@ -318,23 +318,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 while (isPolling) {
                     try {
                         Thread.sleep(300); 
-                        if (!isProcessing && isReady) {
-                            File sonyDir = new File(sonyDCIMPath);
-                            if (sonyDir.exists()) {
-                                File[] files = sonyDir.listFiles();
-                                if (files != null && files.length > 0) {
-                                    File newest = null; long maxModified = 0;
-                                    for (File f : files) {
-                                        if (f.getName().toUpperCase().endsWith(".JPG") && !f.getName().startsWith("PRCS") && !f.getName().startsWith("GRADED")) {
-                                            if (f.lastModified() > maxModified) { maxModified = f.lastModified(); newest = f; }
-                                        }
+                        // ALWAYS search for new files, regardless of LUT
+                        File dcim = new File(Environment.getExternalStorageDirectory(), "DCIM");
+                        File sonyDir = new File(dcim, "100MSDCF");
+                        if (sonyDir.exists()) {
+                            File[] files = sonyDir.listFiles();
+                            if (files != null && files.length > 0) {
+                                File newest = null; long maxModified = 0;
+                                for (File f : files) {
+                                    if (f.getName().toUpperCase().endsWith(".JPG") && !f.getName().startsWith("PRCS") && !f.getName().startsWith("GRADED")) {
+                                        if (f.lastModified() > maxModified) { maxModified = f.lastModified(); newest = f; }
                                     }
-                                    if (newest != null) {
-                                        if (lastNewestFileTime == 0) lastNewestFileTime = maxModified; 
-                                        else if (maxModified > lastNewestFileTime) {
-                                            lastNewestFileTime = maxModified;
+                                }
+                                if (newest != null) {
+                                    if (lastNewestFileTime == 0) {
+                                        lastNewestFileTime = maxModified; // Startup state
+                                    } else if (maxModified > lastNewestFileTime) {
+                                        lastNewestFileTime = maxModified;
+                                        // TRIGGER PROCESS IF READY OR IF "NONE" IS SELECTED
+                                        if (!isProcessing && (isReady || profiles[currentSlot].lutIndex == 0)) {
                                             final String path = newest.getAbsolutePath();
-                                            runOnUiThread(new Runnable() { @Override public void run() { if (!isProcessing) new ProcessTask().execute(path); } });
+                                            runOnUiThread(new Runnable() {
+                                                @Override public void run() { if (!isProcessing) new ProcessTask().execute(path); }
+                                            });
                                         }
                                     }
                                 }
@@ -395,7 +401,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         @Override protected void onPostExecute(String result) {
             isProcessing = false;
             tvTopStatus.setTextColor(Color.WHITE);
-            updateMainHUD(); 
+            updateMainHUD(); // Resets back to standard view
         }
     }
 
