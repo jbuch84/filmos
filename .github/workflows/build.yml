@@ -12,6 +12,9 @@ jobs:
         java-version: '8'
         distribution: 'temurin'
 
+    - name: Install NDK
+      run: echo "y" | sudo ${ANDROID_HOME}/tools/bin/sdkmanager --install "ndk;21.4.7075529"
+
     - name: Purge Modern SDKs
       run: |
         sudo rm -rf $ANDROID_HOME/platforms/android-3*
@@ -23,6 +26,8 @@ jobs:
         gradle-version: 4.10.3
 
     - name: Build APK
+      env:
+        ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/21.4.7075529
       run: |
         gradle wrapper --gradle-version 4.10.3
         chmod +x gradlew

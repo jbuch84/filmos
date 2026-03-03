@@ -18,13 +18,16 @@ android {
         versionCode 1
         versionName "1.0-NDK"
 
-        // This is the legacy NDK block - more stable for old plugins
-        ndk {
-            abiFilters "armeabi-v7a"
+        // Tells the old compiler to focus on the camera CPU
+        externalNativeBuild {
+            cmake {
+                cppFlags "-O3 -mfpu=neon"
+                abiFilters "armeabi-v7a"
+            }
         }
     }
 
-    // Points directly to our C++ blueprints
+    // Points to our C++ blueprints
     externalNativeBuild {
         cmake {
             path "src/main/cpp/CMakeLists.txt"
