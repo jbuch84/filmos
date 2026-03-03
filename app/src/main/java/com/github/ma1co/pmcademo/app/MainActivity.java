@@ -231,7 +231,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
                 if (timeout >= 20) return "ERR: WRITE TIMEOUT";
 
-                // Map user dial to Android scaling rules
                 int sample = 2; // Default HIGH (6MP)
                 if (qualityIndex == 0) sample = 4; // PROXY (1.5MP)
                 else if (qualityIndex == 2) sample = 1; // ULTRA (24MP)
@@ -239,12 +238,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 BitmapFactory.Options opts = new BitmapFactory.Options();
                 opts.inSampleSize = sample;
                 opts.inPreferredConfig = Bitmap.Config.ARGB_8888;
-                opts.inMutable = true; // Required so C++ can edit the memory directly!
                 
-                Bitmap bmp = BitmapFactory.decodeFile(original.getAbsolutePath(), opts);
-                if (bmp == null) return "ERR: HW LIMIT (LOWER SIZE ON DIAL)";
+                // THE API 10 FIX: Decode immutably, then safely copy to a mutable canvas
+                Bitmap rawBmp = BitmapFactory.decodeFile(original.getAbsolutePath(), opts);
+                if (rawBmp == null) return "ERR: HW LIMIT (LOWER SIZE ON DIAL)";
 
-                // Send the canvas to the Native C++ Engine
+                // Clone to an editable format and instantly recycle the original to save memory
+                Bitmap bmp = rawBmp.copy(Bitmap.Config.ARGB_8888, true);
+                rawBmp.recycle(); 
+
+                // Send the mutable canvas to the Native C++ Engine
                 boolean success = mEngine.applyLutToBitmap(bmp);
                 if (!success) {
                     bmp.recycle();
