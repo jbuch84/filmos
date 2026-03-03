@@ -58,6 +58,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     if (nativeLutSize == 0) return JNI_FALSE;
     const char *in_file = env->GetStringUTFChars(inPath, NULL);
     const char *out_file = env->GetStringUTFChars(outPath, NULL);
+    
     FILE *infile = fopen(in_file, "rb");
     FILE *outfile = fopen(out_file, "wb");
     if (!infile || !outfile) {
@@ -70,7 +71,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     struct my_error_mgr* jerr_d = (struct my_error_mgr*) malloc(sizeof(struct my_error_mgr));
     struct jpeg_compress_struct* cinfo_c = (struct jpeg_compress_struct*) malloc(sizeof(struct jpeg_compress_struct));
     struct my_error_mgr* jerr_c = (struct my_error_mgr*) malloc(sizeof(struct my_error_mgr));
-    int* map = (int*) malloc(256 * sizeof(int)); // MOVED BACK UP
+    int* map = (int*) malloc(256 * sizeof(int));
 
     memset(cinfo_d, 0, sizeof(struct jpeg_decompress_struct));
     memset(cinfo_c, 0, sizeof(struct jpeg_compress_struct));
@@ -85,7 +86,10 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     }
     
     jpeg_create_decompress(cinfo_d);
+
+    // CRITICAL: Tell libjpeg to keep the EXIF breadcrumbs from the original file
     jpeg_save_markers(cinfo_d, JPEG_APP0 + 1, 0xFFFF); 
+
     jpeg_stdio_src(cinfo_d, infile);
     jpeg_read_header(cinfo_d, TRUE);
     cinfo_d->scale_num = 1;
@@ -112,6 +116,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     jpeg_set_defaults(cinfo_c);
     jpeg_set_quality(cinfo_c, 95, TRUE);
 
+    // CRITICAL: Blindly copy the original EXIF/Thumbnail into the cooked file
     jpeg_saved_marker_ptr marker = cinfo_d->marker_list;
     while (marker != NULL) {
         jpeg_write_marker(cinfo_c, marker->marker, marker->data, marker->data_length);
@@ -139,6 +144,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
             float dr = r_f - r0; float dg = g_f - g0; float db = b_f - b0;
             int i000 = r0 + g0 * nativeLutSize + b0 * lutSize2;
             int oR, oG, oB;
+            // High-Performance Tetrahedral Logic
             if (dr > dg) {
                 if (dg > db) { 
                     int i100 = (r0+1) + g0 * nativeLutSize + b0 * lutSize2;
@@ -192,6 +198,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
         }
         jpeg_write_scanlines(cinfo_c, buffer, 1);
     }
+
     jpeg_finish_compress(cinfo_c); jpeg_destroy_compress(cinfo_c);
     jpeg_finish_decompress(cinfo_d); jpeg_destroy_decompress(cinfo_d);
     free(cinfo_d); free(jerr_d); free(cinfo_c); free(jerr_c); free(map);

@@ -9,7 +9,6 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
-import android.os.FileObserver;
 import android.util.Log;
 import android.util.Pair;
 import android.view.Gravity;
@@ -34,32 +33,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private ArrayList<String> recipeList = new ArrayList<String>();
     private int recipeIndex = 0;
     private int qualityIndex = 1; 
+    
     private boolean isProcessing = false;
     private boolean isReady = false; 
     private LutEngine mEngine = new LutEngine();
     private PreloadLutTask currentPreloadTask = null; 
-    private SonyFileObserver mFileObserver;
-    private String sonyDCIMPath = "";
+    
+    private boolean isPolling = false;
+    private long lastNewestFileTime = 0;
 
     public enum DialMode { shutter, aperture, iso, exposure, recipe, quality }
     private DialMode mDialMode = DialMode.recipe;
-
-    private class SonyFileObserver extends FileObserver {
-        public SonyFileObserver(String path) {
-            super(path, FileObserver.CLOSE_WRITE);
-        }
-        @Override
-        public void onEvent(int event, final String path) {
-            if (path == null || isProcessing || !isReady || recipeIndex == 0) return;
-            if (path.toUpperCase().endsWith(".JPG") && !path.startsWith("PRCS")) {
-                Log.e("COOKBOOK_LOG", "JAVA: CLOSE_WRITE detected via FileObserver!");
-                final String fullPath = sonyDCIMPath + "/" + path;
-                runOnUiThread(new Runnable() {
-                    @Override public void run() { new ProcessTask().execute(fullPath); }
-                });
-            }
-        }
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -98,25 +82,42 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         
         scanRecipes();
         setDialMode(mDialMode);
+    }
 
-        // --- PATH SEARCHER: Ensure we find the real SD card folder ---
-        String[] possibleRoots = {
-            Environment.getExternalStorageDirectory().getAbsolutePath(),
-            "/mnt/sdcard",
-            "/storage/sdcard0",
-            "/sdcard"
-        };
-        for (String r : possibleRoots) {
-            File f = new File(r + "/DCIM/100MSDCF");
-            if (f.exists()) {
-                sonyDCIMPath = f.getAbsolutePath();
-                break;
+    private void startAutoProcessPolling() {
+        isPolling = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                while (isPolling) {
+                    try {
+                        Thread.sleep(500); // TURBO: 500ms poll
+                        if (!isProcessing && isReady && recipeIndex > 0) {
+                            File sonyDir = new File(Environment.getExternalStorageDirectory(), "DCIM/100MSDCF");
+                            if (sonyDir.exists()) {
+                                File[] files = sonyDir.listFiles();
+                                if (files != null && files.length > 0) {
+                                    File newest = null; long maxModified = 0;
+                                    for (File f : files) {
+                                        if (f.getName().toUpperCase().endsWith(".JPG") && !f.getName().startsWith("PRCS")) {
+                                            if (f.lastModified() > maxModified) { maxModified = f.lastModified(); newest = f; }
+                                        }
+                                    }
+                                    if (newest != null) {
+                                        if (lastNewestFileTime == 0) lastNewestFileTime = maxModified;
+                                        else if (maxModified > lastNewestFileTime) {
+                                            lastNewestFileTime = maxModified;
+                                            final String path = newest.getAbsolutePath();
+                                            runOnUiThread(new Runnable() { @Override public void run() { if (!isProcessing) new ProcessTask().execute(path); } });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {}
+                }
             }
-        }
-        if (sonyDCIMPath.isEmpty()) sonyDCIMPath = possibleRoots[0] + "/DCIM/100MSDCF";
-        
-        Log.e("COOKBOOK_LOG", "JAVA: Observing path: " + sonyDCIMPath);
-        mFileObserver = new SonyFileObserver(sonyDCIMPath);
+        }).start();
     }
 
     private class PreloadLutTask extends AsyncTask<Integer, Void, Boolean> {
@@ -126,17 +127,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             tvStatus.setTextColor(Color.CYAN);
         }
         @Override protected Boolean doInBackground(Integer... params) {
-            int index = params[0];
-            if (index > 0) {
-                File lutDir = new File(Environment.getExternalStorageDirectory(), "LUTS");
-                if (!lutDir.exists()) lutDir = new File("/storage/sdcard0/LUTS");
-                return mEngine.loadLut(new File(lutDir, recipeList.get(index)), recipeList.get(index));
-            }
-            return false;
+            File lutDir = new File(Environment.getExternalStorageDirectory(), "LUTS");
+            if (!lutDir.exists()) lutDir = new File("/storage/sdcard0/LUTS");
+            return mEngine.loadLut(new File(lutDir, recipeList.get(params[0])), recipeList.get(params[0]));
         }
         @Override protected void onPostExecute(Boolean success) {
             if (success) { isReady = true; tvStatus.setText("STATUS: READY"); tvStatus.setTextColor(Color.GREEN); }
-            else { tvStatus.setText("STATUS: LUT ERR"); tvStatus.setTextColor(Color.RED); }
         }
     }
 
@@ -150,12 +146,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             try {
                 File original = new File(params[0]);
                 int scale = (qualityIndex == 0) ? 4 : (qualityIndex == 2 ? 1 : 2);
-                File rootDir = Environment.getExternalStorageDirectory();
-                File outDir = new File(rootDir, "GRADED");
+                File outDir = new File(Environment.getExternalStorageDirectory(), "GRADED");
                 if (!outDir.exists()) outDir.mkdirs();
                 File outFile = new File(outDir, original.getName());
 
+                // No spin-lock needed anymore; C++ will wait if necessary or we can handle file locking there
                 if (mEngine.applyLutToJpeg(original.getAbsolutePath(), outFile.getAbsolutePath(), scale)) {
+                    // EXIF is already copied by C++ layer!
                     sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(outFile)));
                     return "SUCCESS: SAVED " + (scale==1?"24MP":(scale==2?"6MP":"1.5MP"));
                 }
@@ -197,7 +194,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 recipeIndex = (recipeIndex + d + recipeList.size()) % recipeList.size(); updateRecipeDisplay();
                 if (currentPreloadTask != null) currentPreloadTask.cancel(true);
                 if (recipeIndex > 0) { currentPreloadTask = new PreloadLutTask(); currentPreloadTask.execute(recipeIndex); }
-                else { isReady = false; tvStatus.setText("STATUS: RAW"); tvStatus.setTextColor(Color.LTGRAY); }
             }
             else if (mDialMode == DialMode.quality) {
                 qualityIndex = (qualityIndex + d + 3) % 3;
@@ -215,8 +211,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             Pair<Integer, Integer> speed = pm.getShutterSpeed();
             tvShutter.setText(speed.first == 1 && speed.second != 1 ? speed.first + "/" + speed.second : speed.first + "\"");
             tvAperture.setText("f/" + (pm.getAperture() / 100.0f));
-            int isoValue = pm.getISOSensitivity();
-            tvISO.setText(isoValue == 0 ? "ISO AUTO" : "ISO " + isoValue);
+            tvISO.setText(pm.getISOSensitivity() == 0 ? "ISO AUTO" : "ISO " + pm.getISOSensitivity());
             tvExposure.setText(String.format("%.1f", p.getExposureCompensation() * p.getExposureCompensationStep()));
         } catch (Exception e) {}
     }
@@ -249,8 +244,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             mCamera.setPreviewDisplay(h); mCamera.startPreview(); syncUI();
         } catch (Exception e) {} 
     }
-    @Override protected void onResume() { super.onResume(); if (mCamera != null) syncUI(); if (mFileObserver != null) mFileObserver.startWatching(); }
-    @Override protected void onPause() { super.onPause(); if (mCameraEx != null) mCameraEx.release(); if (mFileObserver != null) mFileObserver.stopWatching(); }
+    @Override protected void onResume() { super.onResume(); if (mCamera != null) syncUI(); startAutoProcessPolling(); }
+    @Override protected void onPause() { super.onPause(); if (mCameraEx != null) mCameraEx.release(); isPolling = false; }
     @Override public void onShutterSpeedChange(CameraEx.ShutterSpeedInfo i, CameraEx c) { syncUI(); }
     @Override public void surfaceChanged(SurfaceHolder h, int f, int w, int h1) {}
     @Override public void surfaceDestroyed(SurfaceHolder h) {}
