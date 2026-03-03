@@ -72,7 +72,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         contentRoot.addView(tvStatus, statusParams);
 
         tvQuality = new TextView(this);
-        // Updated to reflect the new Native capability
         tvQuality.setText("ENGINE: NATIVE C++ (FULL RES)");
         tvQuality.setTextColor(Color.LTGRAY);
         tvQuality.setTextSize(18); 
@@ -212,37 +211,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             tvStatus.setTextColor(Color.YELLOW);
         }
 
-        @Override protected void onProgressUpdate(Integer... values) {
-            // Unused since Native processing is a single instant step
-        }
-
         @Override protected String doInBackground(String... params) {
             try {
                 File original = new File(params[0]);
                 if (!original.exists()) return "ERR: FILE MISSING";
 
-                // 1. Read the raw compressed JPEG into a byte array
-                // A compressed 24MP JPEG is usually ~10MB, which easily fits in Java's RAM
-                ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                FileInputStream fis = new FileInputStream(original);
-                byte[] buffer = new byte[8192];
-                int read;
-                while ((read = fis.read(buffer)) != -1) {
-                    bos.write(buffer, 0, read);
-                }
-                fis.close();
-                byte[] rawJpegBytes = bos.toByteArray();
-                bos.close();
+                // 1. READ FILE WITHOUT DOUBLING MEMORY
+                // RandomAccessFile uses exactly the file length, avoiding OOM spikes
+                RandomAccessFile f = new RandomAccessFile(original, "r");
+                byte[] rawJpegBytes = new byte[(int)f.length()];
+                f.readFully(rawJpegBytes);
+                f.close();
 
-                // 2. Hand the raw bytes to the C++ Engine. 
-                // All decoding, math, and re-encoding happens instantly in native memory!
+                // 2. NATIVE PROCESSING
                 byte[] processedJpegBytes = mEngine.applyLutToJpeg(rawJpegBytes);
+                
+                // Allow Garbage Collector to clean up the raw bytes immediately
+                rawJpegBytes = null; 
 
                 if (processedJpegBytes == null) {
-                    return "CRASH: NATIVE C++ FAILURE";
+                    return "CRASH: STB DECODE FAILURE";
                 }
 
-                // 3. Save the returned bytes straight to the SD card
+                // 3. SAVE FILE
                 File rootDir = Environment.getExternalStorageDirectory();
                 File outDir = new File(rootDir, "GRADED");
                 if (!outDir.exists()) outDir.mkdirs();
@@ -253,11 +244,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 fos.flush();
                 fos.close();
 
-                // 4. Copy EXIF and notify the gallery
+                // 4. FINALIZE
                 copyExif(original.getAbsolutePath(), outFile.getAbsolutePath());
                 sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(outFile)));
                 
-                return "SUCCESS: SAVED 24MP";
+                return "SUCCESS: SAVED 24MP NATIVE";
                 
             } catch (Throwable t) {
                 return "ERR: " + t.getMessage();

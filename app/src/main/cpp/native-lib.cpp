@@ -61,16 +61,28 @@ extern "C" JNIEXPORT jbyteArray JNICALL
 Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, jobject, jbyteArray jpegData) {
     if (nativeLutSize == 0) return NULL;
 
-    // Grab raw JPEG bytes
+    // 1. SAFE JNI READ: Copy bytes into C++ and immediately release the Android OS lock
     int len = env->GetArrayLength(jpegData);
-    unsigned char* buf = (unsigned char*)env->GetPrimitiveArrayCritical(jpegData, 0);
+    std::vector<unsigned char> jpegBuffer(len);
+    env->GetByteArrayRegion(jpegData, 0, len, reinterpret_cast<jbyte*>(jpegBuffer.data()));
 
-    // Decode JPEG
+    // 2. Decode JPEG directly in Native Memory
     int width, height, channels;
-    unsigned char* img = stbi_load_from_memory(buf, len, &width, &height, &channels, 3);
-    env->ReleasePrimitiveArrayCritical(jpegData, buf, 0);
+    unsigned char* img = stbi_load_from_memory(jpegBuffer.data(), len, &width, &height, &channels, 3);
+    
+    // Clear the compressed buffer immediately to free up camera RAM
+    jpegBuffer.clear(); 
+    jpegBuffer.shrink_to_fit();
 
     if (!img) return NULL;
+
+    // 3. Prevent Segfaults by padding vectors if the LUT file was missing data
+    int expectedSize = nativeLutSize * nativeLutSize * nativeLutSize;
+    if (nativeLutR.size() < expectedSize) {
+        nativeLutR.resize(expectedSize, 0);
+        nativeLutG.resize(expectedSize, 0);
+        nativeLutB.resize(expectedSize, 0);
+    }
 
     int map[256];
     int lutMax = nativeLutSize - 1;
@@ -81,7 +93,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     int lutSize2 = nativeLutSize * nativeLutSize;
     int totalPixels = width * height;
 
-    // Apply LUT Math
+    // 4. THE MAXIMUM VELOCITY INTEGER LOOP
     for (int i = 0; i < totalPixels * 3; i += 3) {
         int r = img[i];
         int g = img[i+1];
@@ -115,12 +127,13 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
         img[i+2] = (nativeLutB[i000]*w000 + nativeLutB[i100]*w100 + nativeLutB[i010]*w010 + nativeLutB[i110]*w110 + nativeLutB[i001]*w001 + nativeLutB[i101]*w101 + nativeLutB[i011]*w011 + nativeLutB[i111]*w111) >> 21;
     }
 
-    // Encode to JPEG at 95% quality
+    // 5. Encode to JPEG at 95% quality
     std::vector<unsigned char> out_buf;
     stbi_write_jpg_to_func(write_to_memory, &out_buf, width, height, 3, img, 95);
     stbi_image_free(img);
 
+    // 6. Return safely to Java
     jbyteArray ret = env->NewByteArray(out_buf.size());
-    env->SetByteArrayRegion(ret, 0, out_buf.size(), (const jbyte*)out_buf.data());
+    env->SetByteArrayRegion(ret, 0, out_buf.size(), reinterpret_cast<const jbyte*>(out_buf.data()));
     return ret;
 }
