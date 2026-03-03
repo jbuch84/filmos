@@ -32,7 +32,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     
     private ArrayList<String> recipeList = new ArrayList<String>();
     private int recipeIndex = 0;
-    private int qualityIndex = 1; 
+    private int qualityIndex = 1; // 0 = PROXY, 1 = HIGH, 2 = ULTRA
     
     private boolean isProcessing = false;
     private boolean isReady = false; 
@@ -84,6 +84,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         setDialMode(mDialMode);
     }
 
+    // THE PROVEN POLLER
     private void startAutoProcessPolling() {
         isPolling = true;
         new Thread(new Runnable() {
@@ -91,24 +92,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             public void run() {
                 while (isPolling) {
                     try {
-                        Thread.sleep(500); // Higher frequency check
+                        Thread.sleep(1000); 
                         if (!isProcessing && isReady && recipeIndex > 0) {
-                            File dcim = new File(Environment.getExternalStorageDirectory(), "DCIM/100MSDCF");
-                            if (dcim.exists()) {
-                                File[] files = dcim.listFiles();
+                            File dcim = new File(Environment.getExternalStorageDirectory(), "DCIM");
+                            File sonyDir = new File(dcim, "100MSDCF");
+                            if (sonyDir.exists()) {
+                                File[] files = sonyDir.listFiles();
                                 if (files != null && files.length > 0) {
-                                    File newest = null; long maxMod = 0;
+                                    File newest = null; long maxModified = 0;
                                     for (File f : files) {
                                         if (f.getName().toUpperCase().endsWith(".JPG") && !f.getName().startsWith("PRCS")) {
-                                            if (f.lastModified() > maxMod) { maxMod = f.lastModified(); newest = f; }
+                                            if (f.lastModified() > maxModified) {
+                                                maxModified = f.lastModified(); newest = f;
+                                            }
                                         }
                                     }
                                     if (newest != null) {
-                                        if (lastNewestFileTime == 0) lastNewestFileTime = maxMod;
-                                        else if (maxMod > lastNewestFileTime) {
-                                            lastNewestFileTime = maxMod;
+                                        if (lastNewestFileTime == 0) lastNewestFileTime = maxModified; 
+                                        else if (maxModified > lastNewestFileTime) {
+                                            lastNewestFileTime = maxModified;
                                             final String path = newest.getAbsolutePath();
-                                            runOnUiThread(new Runnable() { @Override public void run() { if (!isProcessing) new ProcessTask().execute(path); } });
+                                            runOnUiThread(new Runnable() {
+                                                @Override public void run() { if (!isProcessing) new ProcessTask().execute(path); }
+                                            });
                                         }
                                     }
                                 }
@@ -123,8 +129,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private class PreloadLutTask extends AsyncTask<Integer, Void, Boolean> {
         @Override protected void onPreExecute() {
             isReady = false;
-            tvStatus.setText("STATUS: LOADING LUT...");
-            tvStatus.setTextColor(Color.CYAN);
+            if (mCameraEx != null) { mCameraEx.stopDirectShutter(new CameraEx.DirectShutterStoppedCallback() { @Override public void onShutterStopped(CameraEx cameraEx) {} }); }
+            tvStatus.setText("STATUS: PRELOADING C++..."); tvStatus.setTextColor(Color.CYAN);
         }
         @Override protected Boolean doInBackground(Integer... params) {
             File lutDir = new File(Environment.getExternalStorageDirectory(), "LUTS");
@@ -132,37 +138,52 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             return mEngine.loadLut(new File(lutDir, recipeList.get(params[0])), recipeList.get(params[0]));
         }
         @Override protected void onPostExecute(Boolean success) {
-            if (success) { isReady = true; tvStatus.setText("STATUS: READY"); tvStatus.setTextColor(Color.GREEN); }
+            if (isCancelled()) return; 
+            if (mCameraEx != null) mCameraEx.startDirectShutter();
+            if (success) { isReady = true; tvStatus.setText("STATUS: ENGINE READY"); tvStatus.setTextColor(Color.GREEN); }
+            else { tvStatus.setText("STATUS: ERROR"); tvStatus.setTextColor(Color.RED); }
         }
     }
 
     private class ProcessTask extends AsyncTask<String, Void, String> {
         @Override protected void onPreExecute() { 
             isProcessing = true;
-            tvStatus.setText("STATUS: PROCESSING...");
-            tvStatus.setTextColor(Color.YELLOW);
+            if (mCameraEx != null) { mCameraEx.stopDirectShutter(new CameraEx.DirectShutterStoppedCallback() { @Override public void onShutterStopped(CameraEx cameraEx) {} }); }
+            tvStatus.setText("STATUS: SCANLINE PROCESSING..."); tvStatus.setTextColor(Color.YELLOW);
         }
         @Override protected String doInBackground(String... params) {
             try {
                 File original = new File(params[0]);
+                if (!original.exists()) return "ERR: FILE MISSING";
+
+                // THE PROVEN SPIN-LOCK
+                long lastSize = -1;
+                int timeout = 0;
+                while (timeout < 20) {
+                    long currentSize = original.length();
+                    if (currentSize > 0 && currentSize == lastSize) break;
+                    lastSize = currentSize;
+                    Thread.sleep(500); timeout++;
+                }
+                if (timeout >= 20) return "ERR: WRITE TIMEOUT";
+
                 int scale = (qualityIndex == 0) ? 4 : (qualityIndex == 2 ? 1 : 2);
-                File rootDir = Environment.getExternalStorageDirectory();
-                File outDir = new File(rootDir, "GRADED");
+                File outDir = new File(Environment.getExternalStorageDirectory(), "GRADED");
                 if (!outDir.exists()) outDir.mkdirs();
                 File outFile = new File(outDir, original.getName());
 
                 if (mEngine.applyLutToJpeg(original.getAbsolutePath(), outFile.getAbsolutePath(), scale)) {
-                    copyExif(original.getAbsolutePath(), outFile.getAbsolutePath());
+                    copyExif(original.getAbsolutePath(), outFile.getAbsolutePath()); // THE PROVEN JAVA EXIF
                     sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(outFile)));
                     return "SUCCESS: SAVED " + (scale==1?"24MP":(scale==2?"6MP":"1.5MP"));
                 }
-                return "CRASH: C++ FAILED";
-            } catch (Exception e) { return "ERR: " + e.getMessage(); }
+                return "CRASH: C++ DECODE FAILED";
+            } catch (Throwable t) { return "ERR: " + t.getMessage(); }
         }
         @Override protected void onPostExecute(String result) {
             isProcessing = false;
-            tvStatus.setText(result);
-            tvStatus.setTextColor(result.startsWith("SUCCESS") ? Color.GREEN : Color.RED);
+            if (mCameraEx != null) mCameraEx.startDirectShutter();
+            tvStatus.setText(result); tvStatus.setTextColor(result.startsWith("SUCCESS") ? Color.GREEN : Color.RED);
         }
     }
 
@@ -171,10 +192,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             android.media.ExifInterface sourceExif = new android.media.ExifInterface(sourcePath);
             android.media.ExifInterface destExif = new android.media.ExifInterface(destPath);
             String[] tags = {"FNumber", "ExposureTime", "ISOSpeedRatings", "FocalLength", "DateTime", "Make", "Model", "WhiteBalance", "Flash"};
-            for (String tag : tags) {
-                String value = sourceExif.getAttribute(tag);
-                if (value != null) destExif.setAttribute(tag, value);
-            }
+            for (String tag : tags) { String value = sourceExif.getAttribute(tag); if (value != null) destExif.setAttribute(tag, value); }
             destExif.saveAttributes();
         } catch (IOException e) {}
     }
@@ -207,6 +225,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 recipeIndex = (recipeIndex + d + recipeList.size()) % recipeList.size(); updateRecipeDisplay();
                 if (currentPreloadTask != null) currentPreloadTask.cancel(true);
                 if (recipeIndex > 0) { currentPreloadTask = new PreloadLutTask(); currentPreloadTask.execute(recipeIndex); }
+                else { isReady = false; tvStatus.setText("STATUS: RAW"); tvStatus.setTextColor(Color.LTGRAY); }
             }
             else if (mDialMode == DialMode.quality) {
                 qualityIndex = (qualityIndex + d + 3) % 3;
@@ -224,7 +243,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             Pair<Integer, Integer> speed = pm.getShutterSpeed();
             tvShutter.setText(speed.first == 1 && speed.second != 1 ? speed.first + "/" + speed.second : speed.first + "\"");
             tvAperture.setText("f/" + (pm.getAperture() / 100.0f));
-            tvISO.setText(pm.getISOSensitivity() == 0 ? "ISO AUTO" : "ISO " + pm.getISOSensitivity());
+            int isoValue = pm.getISOSensitivity();
+            tvISO.setText(isoValue == 0 ? "ISO AUTO" : "ISO " + isoValue);
             tvExposure.setText(String.format("%.1f", p.getExposureCompensation() * p.getExposureCompensationStep()));
         } catch (Exception e) {}
     }

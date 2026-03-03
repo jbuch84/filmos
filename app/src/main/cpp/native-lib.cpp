@@ -73,6 +73,8 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     struct my_error_mgr* jerr_c = (struct my_error_mgr*) malloc(sizeof(struct my_error_mgr));
     int* map = (int*) malloc(256 * sizeof(int));
 
+    if (!cinfo_d || !jerr_d || !cinfo_c || !jerr_c || !map) return JNI_FALSE;
+
     memset(cinfo_d, 0, sizeof(struct jpeg_decompress_struct));
     memset(cinfo_c, 0, sizeof(struct jpeg_compress_struct));
 
@@ -86,12 +88,10 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     }
     
     jpeg_create_decompress(cinfo_d);
-
-    // CRITICAL: Tell libjpeg to keep the EXIF breadcrumbs from the original file
-    jpeg_save_markers(cinfo_d, JPEG_APP0 + 1, 0xFFFF); 
-
     jpeg_stdio_src(cinfo_d, infile);
     jpeg_read_header(cinfo_d, TRUE);
+    
+    // Fractional Scaling Support
     cinfo_d->scale_num = 1;
     cinfo_d->scale_denom = scaleDenom;
     cinfo_d->out_color_space = JCS_RGB; 
@@ -115,86 +115,55 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     cinfo_c->in_color_space = JCS_RGB;
     jpeg_set_defaults(cinfo_c);
     jpeg_set_quality(cinfo_c, 95, TRUE);
-
-    // CRITICAL: Blindly copy the original EXIF/Thumbnail into the cooked file
-    jpeg_saved_marker_ptr marker = cinfo_d->marker_list;
-    while (marker != NULL) {
-        jpeg_write_marker(cinfo_c, marker->marker, marker->data, marker->data_length);
-        marker = marker->next;
-    }
-
     jpeg_start_compress(cinfo_c, TRUE);
 
     int lutMax = nativeLutSize - 1;
     int lutSize2 = nativeLutSize * nativeLutSize;
+    for (int i = 0; i < 256; i++) { map[i] = (i * lutMax * 128) / 255; }
+    
     int row_stride = cinfo_d->output_width * cinfo_d->output_components;
     JSAMPARRAY buffer = (*cinfo_d->mem->alloc_sarray)((j_common_ptr) cinfo_d, JPOOL_IMAGE, row_stride, 1);
 
     const int* pR = &nativeLutR[0]; const int* pG = &nativeLutG[0]; const int* pB = &nativeLutB[0];
-    for (int i = 0; i < 256; i++) { map[i] = (i * lutMax * 128) / 255; }
 
+    // PROVEN TRILINEAR MATH
     while (cinfo_d->output_scanline < cinfo_d->output_height) {
         jpeg_read_scanlines(cinfo_d, buffer, 1);
         unsigned char* row = buffer[0];
+
         for (int x = 0; x < row_stride; x += 3) {
-            float r_f = (row[x] / 255.0f) * lutMax;
-            float g_f = (row[x+1] / 255.0f) * lutMax;
-            float b_f = (row[x+2] / 255.0f) * lutMax;
-            int r0 = (int)r_f; int g0 = (int)g_f; int b0 = (int)b_f;
-            float dr = r_f - r0; float dg = g_f - g0; float db = b_f - b0;
-            int i000 = r0 + g0 * nativeLutSize + b0 * lutSize2;
-            int oR, oG, oB;
-            // High-Performance Tetrahedral Logic
-            if (dr > dg) {
-                if (dg > db) { 
-                    int i100 = (r0+1) + g0 * nativeLutSize + b0 * lutSize2;
-                    int i110 = (r0+1) + (g0+1) * nativeLutSize + b0 * lutSize2;
-                    int i111 = (r0+1) + (g0+1) * nativeLutSize + (b0+1) * lutSize2;
-                    oR = pR[i000] + dr*(pR[i100]-pR[i000]) + dg*(pR[i110]-pR[i100]) + db*(pR[i111]-pR[i110]);
-                    oG = pG[i000] + dr*(pG[i100]-pG[i000]) + dg*(pG[i110]-pG[i000]) + db*(pG[i111]-pG[i110]);
-                    oB = pB[i000] + dr*(pB[i100]-pB[i000]) + dg*(pB[i110]-pB[i000]) + db*(pB[i111]-pB[i110]);
-                } else if (dr > db) {
-                    int i100 = (r0+1) + g0 * nativeLutSize + b0 * lutSize2;
-                    int i101 = (r0+1) + g0 * nativeLutSize + (b0+1) * lutSize2;
-                    int i111 = (r0+1) + (g0+1) * nativeLutSize + (b0+1) * lutSize2;
-                    oR = pR[i000] + dr*(pR[i100]-pR[i000]) + db*(pR[i101]-pR[i100]) + dg*(pR[i111]-pR[i101]);
-                    oG = pG[i000] + dr*(pG[i100]-pG[i000]) + db*(pG[i101]-pG[i100]) + dg*(pG[i111]-pG[i101]);
-                    oB = pB[i000] + dr*(pB[i100]-pB[i000]) + db*(pB[i101]-pB[i100]) + dg*(pB[i111]-pB[i101]);
-                } else {
-                    int i001 = r0 + g0 * nativeLutSize + (b0+1) * lutSize2;
-                    int i101 = (r0+1) + g0 * nativeLutSize + (b0+1) * lutSize2;
-                    int i111 = (r0+1) + (g0+1) * nativeLutSize + (b0+1) * lutSize2;
-                    oR = pR[i000] + db*(pR[i001]-pR[i000]) + dr*(pR[i101]-pR[i001]) + dg*(pR[i111]-pR[i101]);
-                    oG = pG[i000] + db*(pG[i001]-pG[i000]) + dr*(pG[i101]-pG[i001]) + dg*(pG[i111]-pG[i101]);
-                    oB = pB[i000] + db*(pB[i001]-pB[i000]) + dr*(pB[i101]-pB[i001]) + dg*(pB[i111]-pB[i101]);
-                }
-            } else {
-                if (db > dg) {
-                    int i001 = r0 + g0 * nativeLutSize + (b0+1) * lutSize2;
-                    int i011 = r0 + (g0+1) * nativeLutSize + (b0+1) * lutSize2;
-                    int i111 = (r0+1) + (g0+1) * nativeLutSize + (b0+1) * lutSize2;
-                    oR = pR[i000] + db*(pR[i001]-pR[i000]) + dg*(pR[i011]-pR[i001]) + dr*(pR[i111]-pR[i011]);
-                    oG = pG[i000] + db*(pG[i001]-pG[i000]) + dg*(pG[i011]-pG[i001]) + dr*(pG[i111]-pG[i011]);
-                    oB = pB[i000] + db*(pB[i001]-pB[i000]) + dg*(pB[i011]-pB[i001]) + dr*(pB[i111]-pB[i011]);
-                } else if (db > dr) {
-                    int i010 = r0 + (g0+1) * nativeLutSize + b0 * lutSize2;
-                    int i011 = r0 + (g0+1) * nativeLutSize + (b0+1) * lutSize2;
-                    int i111 = (r0+1) + (g0+1) * nativeLutSize + (b0+1) * lutSize2;
-                    oR = pR[i000] + dg*(pR[i010]-pR[i000]) + db*(pR[i011]-pR[i010]) + dr*(pR[i111]-pR[i011]);
-                    oG = pG[i000] + dg*(pG[i010]-pG[i000]) + db*(pG[i011]-pG[i010]) + dr*(pG[i111]-pG[i011]);
-                    oB = pB[i000] + dg*(pB[i010]-pB[i000]) + db*(pB[i011]-pB[i010]) + dr*(pB[i111]-pB[i011]);
-                } else {
-                    int i010 = r0 + (g0+1) * nativeLutSize + b0 * lutSize2;
-                    int i110 = (r0+1) + (g0+1) * nativeLutSize + b0 * lutSize2;
-                    int i111 = (r0+1) + (g0+1) * nativeLutSize + (b0+1) * lutSize2;
-                    oR = pR[i000] + dg*(pR[i010]-pR[i000]) + dr*(pR[i110]-pR[i010]) + db*(pR[i111]-pR[i110]);
-                    oG = pG[i000] + dg*(pG[i010]-pG[i000]) + dr*(pG[i110]-pG[i010]) + db*(pG[i111]-pG[i110]);
-                    oB = pB[i000] + dg*(pB[i010]-pB[i000]) + dr*(pB[i110]-pB[i010]) + db*(pB[i111]-pB[i110]);
-                }
-            }
-            row[x] = (unsigned char)(oR < 0 ? 0 : (oR > 255 ? 255 : oR));
-            row[x+1] = (unsigned char)(oG < 0 ? 0 : (oG > 255 ? 255 : oG));
-            row[x+2] = (unsigned char)(oB < 0 ? 0 : (oB > 255 ? 255 : oB));
+            int r = row[x]; int g = row[x+1]; int b = row[x+2];
+
+            int fX = map[r]; int fY = map[g]; int fZ = map[b];
+
+            int x0 = fX >> 7; int y0 = fY >> 7; int z0 = fZ >> 7;
+            int x1 = x0 + 1; if (x1 > lutMax) x1 = lutMax;
+            int y1 = y0 + 1; if (y1 > lutMax) y1 = lutMax;
+            int z1 = z0 + 1; if (z1 > lutMax) z1 = lutMax;
+
+            int dx = fX & 0x7F; int dy = fY & 0x7F; int dz = fZ & 0x7F;
+            int idx_x = 128 - dx; int idy = 128 - dy; int idz = 128 - dz;
+
+            int w000 = idx_x * idy * idz; int w100 = dx * idy * idz;
+            int w010 = idx_x * dy * idz;  int w110 = dx * dy * idz;
+            int w001 = idx_x * idy * dz;  int w101 = dx * idy * dz;
+            int w011 = idx_x * dy * dz;   int w111 = dx * dy * dz;
+
+            int y0_idx = y0 * nativeLutSize; int y1_idx = y1 * nativeLutSize;
+            int z0_idx = z0 * lutSize2;      int z1_idx = z1 * lutSize2;
+
+            int i000 = x0 + y0_idx + z0_idx; int i100 = x1 + y0_idx + z0_idx;
+            int i010 = x0 + y1_idx + z0_idx; int i110 = x1 + y1_idx + z0_idx;
+            int i001 = x0 + y0_idx + z1_idx; int i101 = x1 + y0_idx + z1_idx;
+            int i011 = x0 + y1_idx + z1_idx; int i111 = x1 + y1_idx + z1_idx;
+
+            int outR = (pR[i000]*w000 + pR[i100]*w100 + pR[i010]*w010 + pR[i110]*w110 + pR[i001]*w001 + pR[i101]*w101 + pR[i011]*w011 + pR[i111]*w111) >> 21;
+            int outG = (pG[i000]*w000 + pG[i100]*w100 + pG[i010]*w010 + pG[i110]*w110 + pG[i001]*w001 + pG[i101]*w101 + pG[i011]*w011 + pG[i111]*w111) >> 21;
+            int outB = (pB[i000]*w000 + pB[i100]*w100 + pB[i010]*w010 + pB[i110]*w110 + pB[i001]*w001 + pB[i101]*w101 + pB[i011]*w011 + pB[i111]*w111) >> 21;
+
+            row[x]   = outR > 255 ? 255 : (outR < 0 ? 0 : outR);
+            row[x+1] = outG > 255 ? 255 : (outG < 0 ? 0 : outG);
+            row[x+2] = outB > 255 ? 255 : (outB < 0 ? 0 : outB);
         }
         jpeg_write_scanlines(cinfo_c, buffer, 1);
     }
