@@ -417,4 +417,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     @Override public void onShutterSpeedChange(CameraEx.ShutterSpeedInfo i, CameraEx c) { syncUI(); }
     @Override public void surfaceChanged(SurfaceHolder h, int f, int w, int h1) {}
     @Override public void surfaceDestroyed(SurfaceHolder h) {}
+
+    // --- NEW NDK CODE BELOW ---
+    // This loads the C++ library when the app starts up
+    static {
+        System.loadLibrary("native-lib");
+    }
+    
+    // This defines the "Bridge" that lets Java talk to C++
+    public native String stringFromJNI();
+    // --- NEW NDK CODE ABOVE ---
 }
