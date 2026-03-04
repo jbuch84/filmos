@@ -5,8 +5,10 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.hardware.Camera;
 import android.media.ExifInterface;
@@ -26,8 +28,16 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.content.Context;
+
+// -----------------------------------------
+// SONY SCALAR & AF HUD IMPORTS
+// -----------------------------------------
 import com.sony.scalar.hardware.CameraEx;
 import com.sony.scalar.sysutil.ScalarInput;
+import com.sony.scalar.sysutil.ScalarWebAPI;
+import com.sony.scalar.sysutil.FocusArea;
+
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List; 
@@ -65,6 +75,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     
     private boolean isPolling = false;
     private long lastNewestFileTime = 0;
+
+    private FocusOverlayView afOverlay; // The Custom AF HUD
     
     private ArrayList<String> recipePaths = new ArrayList<String>();
     private ArrayList<String> recipeNames = new ArrayList<String>();
@@ -145,6 +157,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         FrameLayout.LayoutParams botParams = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
         botParams.setMargins(0, 0, 0, 30);
         mainUIContainer.addView(tvBottomBar, botParams);
+
+        // INSTANTIATE AND ADD THE AF OVERLAY (Sits exactly over the camera feed)
+        afOverlay = new FocusOverlayView(this);
+        mainUIContainer.addView(afOverlay, new FrameLayout.LayoutParams(-1, -1));
 
         menuContainer = new LinearLayout(this);
         menuContainer.setOrientation(LinearLayout.VERTICAL);
@@ -248,7 +264,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                               + apStr + " | " + speedStr + " | " + isoStr;
             tvPlaybackInfo.setText(metaText);
 
-            // DYNAMIC LCD THUMBNAIL SCALING (Sharp images, no pixelation)
+            // DYNAMIC LCD THUMBNAIL SCALING
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inJustDecodeBounds = true; 
             BitmapFactory.decodeFile(imgFile.getAbsolutePath(), options);
@@ -669,12 +685,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 CameraEx.AutoPictureReviewControl apr = new CameraEx.AutoPictureReviewControl();
                 mCameraEx.setAutoPictureReviewControl(apr); apr.setPictureReviewTime(0);
                 mCamera.setPreviewDisplay(mSurfaceView.getHolder()); mCamera.startPreview(); 
+                
+                if (afOverlay != null) afOverlay.startPolling(); // START AF HUD
+
                 updateMainHUD();
             } catch (Exception e) {} 
         }
     }
 
     private void closeCamera() {
+        if (afOverlay != null) afOverlay.stopPolling(); // STOP AF HUD
         if (mCameraEx != null) { mCameraEx.release(); mCameraEx = null; mCamera = null; }
     }
 
@@ -697,4 +717,80 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     
     @Override public void onShutterSpeedChange(CameraEx.ShutterSpeedInfo i, CameraEx c) { updateMainHUD(); }
     @Override public void surfaceChanged(SurfaceHolder h, int f, int w, int h1) {}
+
+
+    // =========================================================================
+    // CUSTOM AF HUD OVERLAY (Dynamic Scaling Auto-Box)
+    // =========================================================================
+    private class FocusOverlayView extends View {
+        private Paint greenPaint;
+        private boolean isPolling = false;
+
+        public FocusOverlayView(Context context) {
+            super(context);
+            greenPaint = new Paint();
+            greenPaint.setColor(Color.GREEN);
+            greenPaint.setStyle(Paint.Style.STROKE);
+            greenPaint.setStrokeWidth(6);
+            greenPaint.setAntiAlias(true);
+        }
+
+        public void startPolling() {
+            if (!isPolling) {
+                isPolling = true;
+                invalidate(); 
+            }
+        }
+
+        public void stopPolling() {
+            isPolling = false;
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            if (!isPolling) return;
+
+            try {
+                ScalarWebAPI scalar = ScalarWebAPI.getInstance(getContext());
+                
+                // afStatus == 1 usually means the lens is actively locked onto a target
+                if (scalar.getInt("afStatus") == 1) { 
+                    FocusArea[] areas = scalar.getFocusAreas();
+                    if (areas != null) {
+                        for (FocusArea area : areas) {
+                            
+                            float left = area.x;
+                            float top = area.y;
+                            float right = area.right;
+                            float bottom = area.bottom;
+
+                            // DYNAMIC MATH: Safely maps coordinates to the LCD whether 
+                            // the camera returns percentages (0-100), grids (0-1000), or raw pixels.
+                            if (right <= 100 && bottom <= 100) { 
+                                left = (area.x / 100f) * getWidth();
+                                top = (area.y / 100f) * getHeight();
+                                right = (area.right / 100f) * getWidth();
+                                bottom = (area.bottom / 100f) * getHeight();
+                            } else if (right <= 1000 && bottom <= 1000) { 
+                                left = (area.x / 1000f) * getWidth();
+                                top = (area.y / 1000f) * getHeight();
+                                right = (area.right / 1000f) * getWidth();
+                                bottom = (area.bottom / 1000f) * getHeight();
+                            } else if (right > 1000) { 
+                                left = (area.x / 6000f) * getWidth();
+                                top = (area.y / 4000f) * getHeight();
+                                right = (area.right / 6000f) * getWidth();
+                                bottom = (area.bottom / 4000f) * getHeight();
+                            }
+
+                            canvas.drawRect(left, top, right, bottom, greenPaint);
+                        }
+                    }
+                }
+            } catch (Exception e) {}
+
+            postInvalidateDelayed(100); // Loop this frame 10 times a second
+        }
+    }
 }
