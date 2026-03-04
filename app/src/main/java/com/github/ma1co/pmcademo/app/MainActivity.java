@@ -5,10 +5,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
-import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.hardware.Camera;
 import android.media.ExifInterface;
@@ -18,7 +16,6 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.FileObserver;
 import android.text.Html;
-import android.util.Log;
 import android.util.Pair;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -33,7 +30,6 @@ import android.content.Context;
 
 import com.sony.scalar.hardware.CameraEx;
 import com.sony.scalar.sysutil.ScalarInput;
-import com.sony.scalar.sysutil.ScalarWebAPI; // NATIVE IMPORT VIA OPENMEMORIES FRAMEWORK
 
 import java.io.*;
 import java.util.ArrayList;
@@ -408,7 +404,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         int sc = event.getScanCode();
         
         // -------------------------------------------------------------
-        // IMMERSIVE MODE & AF OVERLAY W/ SCALARWEBAPI
+        // IMMERSIVE MODE & MANUAL WRAPPER POLLING
         // -------------------------------------------------------------
         if (sc == ScalarInput.ISV_KEY_S1_1 && event.getRepeatCount() == 0) {
             if (displayState == 0 && !isMenuOpen && !isPlaybackMode) {
@@ -416,7 +412,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 tvBottomBar.setVisibility(View.GONE);
             }
             
-            // Trigger focus hardware, start pulling IPC data
             if (mCamera != null) { try { mCamera.autoFocus(null); } catch (Exception e) {} }
             if (afOverlay != null) { afOverlay.startPolling(); }
             
@@ -424,7 +419,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         }
 
         if (sc == ScalarInput.ISV_KEY_S1_2) {
-            return super.onKeyDown(keyCode, event);
+            return super.onKeyDown(keyCode, event); 
         }
 
         if (sc == ScalarInput.ISV_KEY_DELETE) { 
@@ -487,7 +482,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     @Override public boolean onKeyUp(int keyCode, KeyEvent event) {
         int sc = event.getScanCode();
         
-        // RESTORE IMMERSIVE MODE & KILL LOOP
         if (sc == ScalarInput.ISV_KEY_S1_1) {
             if (displayState == 0 && !isMenuOpen && !isPlaybackMode) {
                 tvTopStatus.setVisibility(View.VISIBLE);
@@ -748,97 +742,4 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     
     @Override public void onShutterSpeedChange(CameraEx.ShutterSpeedInfo i, CameraEx c) { updateMainHUD(); }
     @Override public void surfaceChanged(SurfaceHolder h, int f, int w, int h1) {}
-
-
-    // =========================================================================
-    // SCALARWEBAPI IPC WRAPPER & AF HUD
-    // =========================================================================
-    private class FocusOverlayView extends View {
-        private Paint paint;
-        private ScalarWebAPI scalar;
-        private boolean isPolling = false;
-
-        public FocusOverlayView(Context context) {
-            super(context);
-            paint = new Paint();
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(6);
-            paint.setAntiAlias(true);
-
-            try {
-                // Initialize the native OpenMemories IPC Daemon Wrapper
-                scalar = ScalarWebAPI.getInstance(context.getApplicationContext());
-                Log.i("COOKBOOK_AF", "SUCCESS: ScalarWebAPI Loaded Natively!");
-            } catch (Exception e) {
-                Log.e("COOKBOOK_AF", "Failed to init ScalarWebAPI: " + e.getMessage());
-            }
-        }
-
-        public void startPolling() {
-            if (!isPolling && scalar != null) {
-                isPolling = true;
-                invalidate();
-            }
-        }
-
-        public void stopPolling() {
-            isPolling = false;
-        }
-
-        public void clearBoxes() {
-            stopPolling();
-            invalidate();
-        }
-
-        @Override
-        protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
-            
-            if (!isPolling || scalar == null) return;
-
-            try {
-                // 1. Get AF Status (0 = Searching/Yellow, 1 = Locked/Green)
-                int afStatus = scalar.getInt("afStatus");
-                if (afStatus == 1) {
-                    paint.setColor(Color.GREEN);
-                } else {
-                    paint.setColor(Color.YELLOW);
-                }
-
-                // 2. Extract and draw the boxes directly using the framework!
-                Camera.Area[] areas = scalar.getFocusAreas();
-                if (areas != null && areas.length > 0) {
-                    for (Camera.Area area : areas) {
-                        
-                        // The framework maps them perfectly to standard Android Rects
-                        int left = area.rect.left;
-                        int top = area.rect.top;
-                        int right = area.rect.right;
-                        int bottom = area.rect.bottom;
-
-                        // Matrix conversion math (usually -1000 to +1000)
-                        float dLeft, dTop, dRight, dBottom;
-                        if (right <= 1000 && bottom <= 1000) { 
-                            dLeft = ((left + 1000) / 2000f) * getWidth();
-                            dTop = ((top + 1000) / 2000f) * getHeight();
-                            dRight = ((right + 1000) / 2000f) * getWidth();
-                            dBottom = ((bottom + 1000) / 2000f) * getHeight();
-                        } else { 
-                            // Fallback for absolute pixels
-                            dLeft = (left / 6000f) * getWidth();
-                            dTop = (top / 4000f) * getHeight();
-                            dRight = (right / 6000f) * getWidth();
-                            dBottom = (bottom / 4000f) * getHeight();
-                        }
-
-                        // Draw the box!
-                        canvas.drawRect(dLeft, dTop, dRight, dBottom, paint);
-                    }
-                }
-            } catch (Exception e) {}
-
-            // Poll the IPC Daemon at ~20 frames per second while S1 is held
-            postInvalidateDelayed(50);
-        }
-    }
 }

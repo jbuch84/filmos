@@ -19,14 +19,6 @@ android {
     }
 }
 
-repositories {
-    maven { url "https://jitpack.io" }
-    jcenter()
-    google()
-}
-
 dependencies {
-    // These pull ma1co's framework directly into your app build!
-    compileOnly 'com.github.ma1co.OpenMemories-Framework:stubs:-SNAPSHOT'
-    implementation 'com.github.ma1co.OpenMemories-Framework:framework:-SNAPSHOT'
+    // Keep empty to prevent GitHub Actions SDK crash
 }
