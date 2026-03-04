@@ -4,10 +4,8 @@ import com.jpgcookbook.sony.R;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
-import android.graphics.Matrix;
 import android.graphics.Typeface;
 import android.hardware.Camera;
 import android.media.ExifInterface;
@@ -26,14 +24,13 @@ import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import com.sony.scalar.hardware.CameraEx;
 import com.sony.scalar.sysutil.ScalarInput;
 import java.io.*;
 import java.util.ArrayList;
-import java.util.List;
 
 public class MainActivity extends Activity implements SurfaceHolder.Callback, CameraEx.ShutterSpeedChangeListener {
     private CameraEx mCameraEx;
@@ -41,23 +38,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private SurfaceView mSurfaceView;
     
     private FrameLayout mainUIContainer;
-    private LinearLayout menuContainer; // NO SCROLLVIEW. Pure static grid.
+    private ScrollView menuScrollView;
+    private LinearLayout menuContainer;
     private LinearLayout[] menuRows = new LinearLayout[11];
     private TextView[] menuLabels = new TextView[11];
     private TextView[] menuValues = new TextView[11];
     private TextView tvBottomBar, tvTopStatus; 
     
-    private FrameLayout playbackContainer;
-    private ImageView playbackImageView;
-    private TextView tvPlaybackInfo;
-    private List<File> playbackFiles = new ArrayList<File>();
-    private int playbackIndex = 0;
-    private Bitmap currentPlaybackBitmap = null;
-    
     private boolean isProcessing = false;
     private boolean isReady = false; 
     private boolean isMenuOpen = false;
-    private boolean isPlaybackMode = false;
     private int displayState = 0; 
     
     private LutEngine mEngine = new LutEngine();
@@ -113,7 +103,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         mSurfaceView.getHolder().addCallback(this);
         mSurfaceView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
         rootLayout.addView(mSurfaceView, new FrameLayout.LayoutParams(-1, -1));
-        setContentView(rootLayout); // EXPLICITLY OVERWRITES ANY OLD XML GHOST TEXT
+        setContentView(rootLayout); 
 
         scanRecipes();
         for(int i=0; i<10; i++) profiles[i] = new RTLProfile();
@@ -148,10 +138,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         botParams.setMargins(0, 0, 0, 30);
         mainUIContainer.addView(tvBottomBar, botParams);
 
-        // STATIC FULL-SCREEN TABLE MENU
+        menuScrollView = new ScrollView(this);
+        menuScrollView.setBackgroundColor(Color.argb(245, 10, 10, 10)); 
+        
         menuContainer = new LinearLayout(this);
         menuContainer.setOrientation(LinearLayout.VERTICAL);
-        menuContainer.setBackgroundColor(Color.argb(245, 10, 10, 10)); // 96% Dark bg hides background artifacts completely
         menuContainer.setPadding(30, 30, 30, 30);
         
         for (int i = 0; i < 11; i++) {
@@ -159,7 +150,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             menuRows[i].setOrientation(LinearLayout.HORIZONTAL);
             menuRows[i].setGravity(Gravity.CENTER_VERTICAL);
             
-            // WEIGHT=1 FORCES PERFECT FULL SCREEN SPACING
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, 0, 1.0f);
             menuContainer.addView(menuRows[i], rowParams);
             
@@ -177,80 +167,39 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             menuRows[i].addView(menuLabels[i], lpLabel);
             menuRows[i].addView(menuValues[i], lpVal);
         }
-        menuContainer.setVisibility(View.GONE);
-        rootLayout.addView(menuContainer, new FrameLayout.LayoutParams(-1, -1)); // FILL SCREEN
         
-        playbackContainer = new FrameLayout(this);
-        playbackContainer.setBackgroundColor(Color.BLACK);
-        playbackContainer.setVisibility(View.GONE);
-        
-        playbackImageView = new ImageView(this);
-        playbackImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        playbackContainer.addView(playbackImageView, new FrameLayout.LayoutParams(-1, -1));
-        
-        tvPlaybackInfo = new TextView(this);
-        tvPlaybackInfo.setTextColor(Color.WHITE);
-        tvPlaybackInfo.setTextSize(18);
-        tvPlaybackInfo.setShadowLayer(3, 0, 0, Color.BLACK);
-        FrameLayout.LayoutParams pbInfoParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT);
-        pbInfoParams.setMargins(0, 30, 30, 0);
-        playbackContainer.addView(tvPlaybackInfo, pbInfoParams);
-        
-        rootLayout.addView(playbackContainer, new FrameLayout.LayoutParams(-1, -1));
+        menuScrollView.addView(menuContainer);
+        menuScrollView.setVisibility(View.GONE);
+        rootLayout.addView(menuScrollView, new FrameLayout.LayoutParams(-1, -1));
 
         updateMainHUD();
         renderMenu();
     }
 
-    private void refreshPlaybackFiles() {
-        playbackFiles.clear();
+    // --- THE NATIVE SONY/ANDROID GALLERY LAUNCHER ---
+    private void launchNativeGallery() {
         File outDir = new File(Environment.getExternalStorageDirectory(), "GRADED");
         if (outDir.exists() && outDir.listFiles() != null) {
-            for (File f : outDir.listFiles()) if (f.getName().toUpperCase().endsWith(".JPG")) playbackFiles.add(f);
+            File newest = null;
+            long maxMod = 0;
+            for (File f : outDir.listFiles()) {
+                if (f.getName().toUpperCase().endsWith(".JPG") && f.lastModified() > maxMod) {
+                    maxMod = f.lastModified();
+                    newest = f;
+                }
+            }
+            if (newest != null) {
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                intent.setDataAndType(Uri.fromFile(newest), "image/jpeg");
+                try {
+                    startActivity(intent);
+                    return; // Successfully opened native hardware viewer
+                } catch (Exception e) {}
+            }
         }
-        java.util.Collections.sort(playbackFiles, new java.util.Comparator<File>() {
-            public int compare(File f1, File f2) { return Long.valueOf(f2.lastModified()).compareTo(f1.lastModified()); }
-        });
-    }
-
-    private void showPlaybackImage(int index) {
-        if (playbackFiles.isEmpty()) { tvPlaybackInfo.setText("NO GRADED PHOTOS"); return; }
-        if (index < 0) index = 0;
-        if (index >= playbackFiles.size()) index = playbackFiles.size() - 1;
-        playbackIndex = index;
-        File imgFile = playbackFiles.get(playbackIndex);
-        if (currentPlaybackBitmap != null && !currentPlaybackBitmap.isRecycled()) {
-            playbackImageView.setImageBitmap(null); currentPlaybackBitmap.recycle(); currentPlaybackBitmap = null;
-        }
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inJustDecodeBounds = true; BitmapFactory.decodeFile(imgFile.getAbsolutePath(), options);
-        int scale = 1; while ((options.outWidth / scale) > 1200 || (options.outHeight / scale) > 1200) scale *= 2;
-        options.inJustDecodeBounds = false; options.inSampleSize = scale;
-        try {
-            Bitmap rawBitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath(), options);
-            ExifInterface exif = new ExifInterface(imgFile.getAbsolutePath());
-            int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
-            int rotationAngle = 0;
-            if (orientation == ExifInterface.ORIENTATION_ROTATE_90) rotationAngle = 90;
-            else if (orientation == ExifInterface.ORIENTATION_ROTATE_180) rotationAngle = 180;
-            else if (orientation == ExifInterface.ORIENTATION_ROTATE_270) rotationAngle = 270;
-            if (rotationAngle != 0) {
-                Matrix matrix = new Matrix(); matrix.postRotate(rotationAngle);
-                currentPlaybackBitmap = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.getWidth(), rawBitmap.getHeight(), matrix, true);
-                if (currentPlaybackBitmap != rawBitmap) rawBitmap.recycle();
-            } else currentPlaybackBitmap = rawBitmap;
-            playbackImageView.setImageBitmap(currentPlaybackBitmap);
-            tvPlaybackInfo.setText((playbackIndex + 1) + " / " + playbackFiles.size() + "\n" + imgFile.getName());
-        } catch (Exception e) { tvPlaybackInfo.setText("DECODE ERROR"); }
-    }
-
-    private void exitPlayback() {
-        playbackContainer.setVisibility(View.GONE);
-        mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE);
-        isPlaybackMode = false;
-        if (currentPlaybackBitmap != null && !currentPlaybackBitmap.isRecycled()) {
-            playbackImageView.setImageBitmap(null); currentPlaybackBitmap.recycle(); currentPlaybackBitmap = null;
-        }
+        // If we get here, no photos exist
+        tvTopStatus.setText("NO GRADED PHOTOS");
+        tvTopStatus.setTextColor(Color.RED);
     }
 
     private File getLutDir() {
@@ -351,28 +300,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         }
     }
 
-    @Override public boolean onKeyUp(int keyCode, KeyEvent event) {
-        if (event.getScanCode() == ScalarInput.ISV_KEY_PLAY) return true; 
-        return super.onKeyUp(keyCode, event);
-    }
-
     @Override public boolean onKeyDown(int keyCode, KeyEvent event) {
         int sc = event.getScanCode();
         if (sc == ScalarInput.ISV_KEY_DELETE) { finish(); return true; }
 
-        if (isPlaybackMode) {
-            if (sc == ScalarInput.ISV_KEY_LEFT || sc == ScalarInput.ISV_DIAL_1_COUNTERCW) { showPlaybackImage(playbackIndex + 1); return true; }
-            if (sc == ScalarInput.ISV_KEY_RIGHT || sc == ScalarInput.ISV_DIAL_1_CLOCKWISE) { showPlaybackImage(playbackIndex - 1); return true; }
-            if (sc == ScalarInput.ISV_KEY_ENTER || sc == ScalarInput.ISV_KEY_MENU || sc == ScalarInput.ISV_KEY_PLAY) { exitPlayback(); return true; }
-            return true; 
-        }
-
         if (sc == ScalarInput.ISV_KEY_MENU) {
             isMenuOpen = !isMenuOpen;
             if (isMenuOpen) {
-                menuContainer.setVisibility(View.VISIBLE); mainUIContainer.setVisibility(View.GONE); renderMenu();
+                menuScrollView.setVisibility(View.VISIBLE); mainUIContainer.setVisibility(View.GONE); renderMenu();
             } else {
-                menuContainer.setVisibility(View.GONE); mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE);
+                menuScrollView.setVisibility(View.GONE); mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE);
                 savePreferences(); triggerLutPreload(); updateMainHUD();
             }
             return true;
@@ -381,11 +318,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         if (sc == ScalarInput.ISV_KEY_ENTER) {
             if(!isMenuOpen) {
                 if (mDialMode == DialMode.review) {
-                    isPlaybackMode = true; refreshPlaybackFiles();
-                    playbackContainer.setVisibility(View.VISIBLE); mainUIContainer.setVisibility(View.GONE); menuContainer.setVisibility(View.GONE);
-                    showPlaybackImage(0); 
+                    launchNativeGallery(); 
                 } else {
-                    displayState = (displayState == 0) ? 1 : 0; mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE);
+                    displayState = (displayState == 0) ? 1 : 0; 
+                    mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE);
                 }
             }
             return true;
@@ -446,6 +382,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             menuLabels[i].setTextColor(sel ? Color.BLACK : (i > 7 ? Color.DKGRAY : Color.WHITE));
             menuValues[i].setTextColor(sel ? Color.BLACK : (i > 7 ? Color.DKGRAY : Color.CYAN));
         }
+
+        menuScrollView.post(new Runnable() {
+            @Override public void run() {
+                if (menuRows[menuSelection] != null) {
+                    int targetTop = menuRows[menuSelection].getTop();
+                    int itemHeight = menuRows[menuSelection].getHeight();
+                    int scrollHeight = menuScrollView.getHeight();
+                    menuScrollView.smoothScrollTo(0, Math.max(0, targetTop - (scrollHeight / 2) + (itemHeight / 2)));
+                }
+            }
+        });
     }
 
     private void cycleMode(int dir) {
@@ -620,24 +567,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         }
     }
 
-    // THE EXIF FIX: Added TAG_ORIENTATION, Blocked Image Width/Length overwriting
+    // --- EXIF ASPECT RATIO SQUISH FIX ---
     private void copyExif(String sourcePath, String destPath) {
         try {
             android.media.ExifInterface sourceExif = new android.media.ExifInterface(sourcePath);
             android.media.ExifInterface destExif = new android.media.ExifInterface(destPath);
+            
+            // Explicit array of tags we WANT to copy (excludes dimensions to prevent squishing)
             String[] tags = {
-                ExifInterface.TAG_ORIENTATION, // CRITICAL FOR ASPECT RATIO/ROTATION FIX
-                ExifInterface.TAG_F_NUMBER,
-                ExifInterface.TAG_EXPOSURE_TIME,
-                ExifInterface.TAG_ISO,
-                ExifInterface.TAG_FOCAL_LENGTH,
-                ExifInterface.TAG_DATETIME,
-                ExifInterface.TAG_MAKE,
-                ExifInterface.TAG_MODEL,
-                ExifInterface.TAG_WHITE_BALANCE,
-                ExifInterface.TAG_FLASH
+                ExifInterface.TAG_ORIENTATION, 
+                "FNumber", "ExposureTime", "ISOSpeedRatings", 
+                "FocalLength", "DateTime", "Make", "Model", 
+                "WhiteBalance", "Flash"
             };
-            for (String tag : tags) { String value = sourceExif.getAttribute(tag); if (value != null) destExif.setAttribute(tag, value); }
+            for (String tag : tags) { 
+                String value = sourceExif.getAttribute(tag); 
+                if (value != null) destExif.setAttribute(tag, value); 
+            }
+            
+            // Calculate ACTUAL dimensions of new scaled JPEG and explicitly overwrite EXIF claims
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            opts.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(destPath, opts);
+            destExif.setAttribute("ImageWidth", String.valueOf(opts.outWidth));
+            destExif.setAttribute("ImageLength", String.valueOf(opts.outHeight));
+            
             destExif.saveAttributes();
         } catch (IOException e) {}
     }
