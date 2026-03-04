@@ -743,15 +743,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
 
     // =========================================================================
-    // CUSTOM AF HUD OVERLAY (PROXY INTERCEPTOR)
+    // CUSTOM AF HUD OVERLAY (PROXY INTERCEPTOR WITH AGGRESSIVE LOGGING)
     // =========================================================================
     private class FocusOverlayView extends View {
         private Paint greenPaint;
         private List<Object> currentRects = new ArrayList<Object>();
         
-        // Cached reflection fields for speed
-        private Field leftField, topField, rightField, bottomField;
-
         public FocusOverlayView(Context context) {
             super(context);
             greenPaint = new Paint();
@@ -759,43 +756,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             greenPaint.setStyle(Paint.Style.STROKE);
             greenPaint.setStrokeWidth(6);
             greenPaint.setAntiAlias(true);
-
-            try {
-                Class<?> rectClass = Class.forName("com.sony.scalar.hardware.CameraEx$FocusAreaRectInfo");
-                leftField = rectClass.getField("left");
-                topField = rectClass.getField("top");
-                rightField = rectClass.getField("right");
-                bottomField = rectClass.getField("bottom");
-            } catch (Exception e) {}
         }
 
         public void hookCamera(CameraEx cameraEx) {
             try {
-                // Find the listener interface
+                Log.i("COOKBOOK_AF", "Attempting to hook FocusAreaListener...");
                 Class<?> listenerInterface = Class.forName("com.sony.scalar.hardware.CameraEx$FocusAreaListener");
 
-                // Create a proxy object that implements the listener interface
                 Object proxyListener = Proxy.newProxyInstance(
                     listenerInterface.getClassLoader(),
                     new Class<?>[]{listenerInterface},
                     new InvocationHandler() {
                         @Override
                         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-                            if (method.getName().equals("onFocusAreaInfo")) {
-                                // args[0] is FocusAreaInfos
-                                Object focusAreaInfos = args[0];
-                                if (focusAreaInfos != null) {
-                                    // Extract the ArrayList of Rects
-                                    Field rectListField = focusAreaInfos.getClass().getField("focusAreaRectInfoList");
-                                    currentRects = (List<Object>) rectListField.get(focusAreaInfos);
-                                    
-                                    // Force the UI to redraw immediately on the main thread
-                                    post(new Runnable() {
-                                        @Override
-                                        public void run() {
-                                            invalidate();
-                                        }
-                                    });
+                            // LOG EVERYTHING THAT COMES THROUGH THE PROXY
+                            Log.i("COOKBOOK_AF", "PROXY FIRED! Method: " + method.getName());
+                            
+                            if (args != null && args.length > 0) {
+                                Log.i("COOKBOOK_AF", "Args[0] class: " + args[0].getClass().getName());
+                                
+                                // Dump all fields of whatever object the camera just handed us
+                                Field[] fields = args[0].getClass().getFields();
+                                for (Field f : fields) {
+                                    Log.i("COOKBOOK_AF", "Field found in payload: " + f.getName());
                                 }
                             }
                             return null;
@@ -803,11 +786,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                     }
                 );
 
-                // Inject our proxy listener into the live CameraEx object
                 Method setListenerMethod = cameraEx.getClass().getMethod("setFocusAreaListener", listenerInterface);
                 setListenerMethod.invoke(cameraEx, proxyListener);
+                Log.i("COOKBOOK_AF", "Successfully injected proxy listener!");
 
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                Log.e("COOKBOOK_AF", "Failed to hook listener: " + e.getMessage(), e);
+            }
         }
 
         public void clearBoxes() {
@@ -818,44 +803,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            
-            if (currentRects != null && !currentRects.isEmpty()) {
-                try {
-                    for (Object rectObj : currentRects) {
-                        int left = leftField.getInt(rectObj);
-                        int top = topField.getInt(rectObj);
-                        int right = rightField.getInt(rectObj);
-                        int bottom = bottomField.getInt(rectObj);
-
-                        // The coordinates coming out of FocusAreaInfos are usually Absolute Matrix (-1000 to +1000)
-                        // but sometimes they are absolute sensor pixels. We use our dynamic math to be safe.
-                        
-                        float dLeft, dTop, dRight, dBottom;
-
-                        if (right <= 100 && bottom <= 100) { 
-                            // Percentages
-                            dLeft = (left / 100f) * getWidth();
-                            dTop = (top / 100f) * getHeight();
-                            dRight = (right / 100f) * getWidth();
-                            dBottom = (bottom / 100f) * getHeight();
-                        } else if (right <= 1000 && bottom <= 1000) { 
-                            // Matrix
-                            dLeft = ((left + 1000) / 2000f) * getWidth();
-                            dTop = ((top + 1000) / 2000f) * getHeight();
-                            dRight = ((right + 1000) / 2000f) * getWidth();
-                            dBottom = ((bottom + 1000) / 2000f) * getHeight();
-                        } else { 
-                            // Absolute Sensor Pixels (Approximated 6000x4000)
-                            dLeft = (left / 6000f) * getWidth();
-                            dTop = (top / 4000f) * getHeight();
-                            dRight = (right / 6000f) * getWidth();
-                            dBottom = (bottom / 4000f) * getHeight();
-                        }
-
-                        canvas.drawRect(dLeft, dTop, dRight, dBottom, greenPaint);
-                    }
-                } catch (Exception e) {}
-            }
         }
     }
 }
