@@ -212,10 +212,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         });
     }
 
-    // =========================================================================
-    // EXIF & THUMBNAIL FIX: Correctly extracts the injected C++ metadata
-    // and dynamically downscales the graded photo for the review screen.
-    // =========================================================================
     private void showPlaybackImage(int index) {
         if (playbackFiles.isEmpty()) { tvPlaybackInfo.setText("NO GRADED PHOTOS"); return; }
         
@@ -235,7 +231,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             String speed = exif.getAttribute("ExposureTime");
             String iso = exif.getAttribute("ISOSpeedRatings");
             
-            // Format Shutter Speed (e.g. 0.008 -> 1/125s)
             String speedStr = "--s";
             if (speed != null) {
                 try {
@@ -245,7 +240,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 } catch (Exception e) {}
             }
             
-            // Format Aperture (e.g. 1.8)
             String apStr = fnum != null ? "f/" + fnum : "f/--";
             String isoStr = iso != null ? "ISO " + iso : "ISO --";
 
@@ -254,9 +248,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                               + apStr + " | " + speedStr + " | " + isoStr;
             tvPlaybackInfo.setText(metaText);
 
-            // 2. DYNAMICALLY DOWNSCALE THE GRADED THUMBNAIL (Saves RAM!)
+            // 2. DYNAMICALLY SCALE THE THUMBNAIL FOR MAXIMUM SHARPNESS
             BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inSampleSize = 8; // Shrink to 1/8th size for rapid LCD review
+            options.inJustDecodeBounds = true; 
+            BitmapFactory.decodeFile(imgFile.getAbsolutePath(), options);
+            
+            int scale = 1; 
+            // Ensures the generated preview matches the LCD screen size closely without crushing memory
+            while ((options.outWidth / scale) > 1200 || (options.outHeight / scale) > 1200) { 
+                scale *= 2; 
+            }
+            
+            options.inJustDecodeBounds = false; 
+            options.inSampleSize = scale;
+            options.inPreferQualityOverSpeed = true; // Use Bilinear filtering!
+            
             Bitmap rawBitmap = BitmapFactory.decodeFile(imgFile.getAbsolutePath(), options);
             
             int orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
@@ -269,6 +275,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             if (rotationAngle != 0) matrix.postRotate(rotationAngle);
             matrix.postScale(0.8888f, 1.0f); // SONY LCD ANAMORPHIC FIX
 
+            // The 'true' flag here enforces high-quality filtering during the matrix scale
             currentPlaybackBitmap = Bitmap.createBitmap(rawBitmap, 0, 0, rawBitmap.getWidth(), rawBitmap.getHeight(), matrix, true); 
             if (currentPlaybackBitmap != rawBitmap) rawBitmap.recycle();
             
@@ -645,7 +652,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
                 RTLProfile p = profiles[currentSlot];
                 if (mEngine.applyLutToJpeg(original.getAbsolutePath(), outFile.getAbsolutePath(), scale, p.opacity, p.grain * 20, p.grainSize, p.vignette * 20, p.rollOff * 20)) {
-                    // No longer calling Java EXIF copy here! The C++ engine handles it natively now.
                     sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(outFile)));
                     return "SAVED " + (scale==1?"24MP":(scale==2?"6MP":"1.5MP"));
                 }
