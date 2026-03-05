@@ -53,7 +53,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private TextView[] menuValues = new TextView[11];
     
     // UI Elements
-    private TextView tvBottomBar, tvTopStatus, tvBattery; 
+    private TextView tvBottomBar, tvTopStatus, tvBattery, tvMode, tvFocus, tvReview; 
     
     private FrameLayout playbackContainer;
     private ImageView playbackImageView;
@@ -109,15 +109,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     public static final int DIAL_MODE_REVIEW = 5;
     private int mDialMode = DIAL_MODE_RTL;
 
-    // --- BATTERY MONITOR ---
+    private int lastBatteryLevel = 100;
     private BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
             int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
             int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
-            if (level >= 0 && scale > 0 && tvBattery != null) {
-                int batteryPct = (level * 100) / scale;
-                tvBattery.setText(batteryPct + "%");
+            if (level >= 0 && scale > 0) {
+                lastBatteryLevel = (level * 100) / scale;
+                if (tvBattery != null) tvBattery.setText(lastBatteryLevel + "%");
             }
         }
     };
@@ -181,37 +181,71 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         mainUIContainer = new FrameLayout(this);
         rootLayout.addView(mainUIContainer, new FrameLayout.LayoutParams(-1, -1));
 
-        // 1. Top Status (Centered like Mockup)
+        // 1. Top Status (Centered & Bold)
         tvTopStatus = new TextView(this);
         tvTopStatus.setTextColor(Color.WHITE);
-        tvTopStatus.setTextSize(22); // Slightly larger
+        tvTopStatus.setTextSize(20);
         tvTopStatus.setTypeface(Typeface.DEFAULT_BOLD);
-        tvTopStatus.setGravity(Gravity.CENTER); // Center text alignment
-        tvTopStatus.setShadowLayer(4, 0, 0, Color.BLACK); // Stronger drop shadow
+        tvTopStatus.setGravity(Gravity.CENTER);
+        tvTopStatus.setShadowLayer(4, 0, 0, Color.BLACK);
         FrameLayout.LayoutParams topParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-        topParams.setMargins(0, 20, 0, 0); // Pushed down slightly from absolute top
+        topParams.setMargins(0, 15, 0, 0);
         mainUIContainer.addView(tvTopStatus, topParams);
 
-        // 2. Battery Percentage (Top Right)
+        // 2. Right Side Bar (Battery & Review)
+        LinearLayout rightBar = new LinearLayout(this);
+        rightBar.setOrientation(LinearLayout.VERTICAL);
+        rightBar.setGravity(Gravity.RIGHT);
+        
+        LinearLayout batteryArea = new LinearLayout(this);
+        batteryArea.setOrientation(LinearLayout.HORIZONTAL);
+        batteryArea.setGravity(Gravity.CENTER_VERTICAL);
+        
         tvBattery = new TextView(this);
         tvBattery.setTextColor(Color.WHITE);
-        tvBattery.setTextSize(20);
+        tvBattery.setTextSize(18);
         tvBattery.setTypeface(Typeface.DEFAULT_BOLD);
-        tvBattery.setShadowLayer(4, 0, 0, Color.BLACK);
-        FrameLayout.LayoutParams batParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT);
-        batParams.setMargins(0, 20, 20, 0);
-        mainUIContainer.addView(tvBattery, batParams);
+        tvBattery.setPadding(0, 0, 10, 0);
+        batteryArea.addView(tvBattery);
 
-        // 3. Bottom Bar (Centered, clean spacing)
+        View batteryIcon = new View(this) {
+            @Override protected void onDraw(Canvas canvas) { drawSonyBattery(canvas, this); }
+        };
+        batteryArea.addView(batteryIcon, new LinearLayout.LayoutParams(40, 22));
+        rightBar.addView(batteryArea);
+
+        tvReview = createSideIcon("REVIEW");
+        tvReview.setVisibility(View.GONE);
+        LinearLayout.LayoutParams rvParams = new LinearLayout.LayoutParams(-2, -2);
+        rvParams.setMargins(0, 20, 0, 0);
+        tvReview.setLayoutParams(rvParams);
+        rightBar.addView(tvReview);
+
+        FrameLayout.LayoutParams rightParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT);
+        rightParams.setMargins(0, 20, 20, 0);
+        mainUIContainer.addView(rightBar, rightParams);
+
+        // 3. Left Side Bar (PASM & Focus)
+        LinearLayout leftBar = new LinearLayout(this);
+        leftBar.setOrientation(LinearLayout.VERTICAL);
+        tvMode = createSideIcon("M");
+        leftBar.addView(tvMode);
+        tvFocus = createSideIcon("AF-S");
+        leftBar.addView(tvFocus);
+        FrameLayout.LayoutParams leftParams = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.LEFT);
+        leftParams.setMargins(20, 20, 0, 0);
+        mainUIContainer.addView(leftBar, leftParams);
+
+        // 4. Bottom Bar (Exposure Only - Large & Clean)
         tvBottomBar = new TextView(this);
-        tvBottomBar.setTextSize(24); // Larger font for exposure settings
+        tvBottomBar.setTextSize(26);
         tvBottomBar.setTypeface(Typeface.DEFAULT_BOLD);
         tvBottomBar.setShadowLayer(4, 0, 0, Color.BLACK);
-        FrameLayout.LayoutParams botParams = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        botParams.setMargins(0, 0, 0, 20);
+        tvBottomBar.setGravity(Gravity.CENTER_HORIZONTAL);
+        FrameLayout.LayoutParams botParams = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        botParams.setMargins(0, 0, 0, 25);
         mainUIContainer.addView(tvBottomBar, botParams);
 
-        // Focus Reticle
         afOverlay = new ProReticleView(this);
         mainUIContainer.addView(afOverlay, new FrameLayout.LayoutParams(-1, -1));
 
@@ -238,18 +272,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             menuValues[i].setTextSize(22);
             menuValues[i].setGravity(Gravity.RIGHT);
             
-            LinearLayout.LayoutParams lpLabel = new LinearLayout.LayoutParams(0, -2, 1.0f);
-            LinearLayout.LayoutParams lpVal = new LinearLayout.LayoutParams(-2, -2);
-            
-            menuRows[i].addView(menuLabels[i], lpLabel);
-            menuRows[i].addView(menuValues[i], lpVal);
+            menuRows[i].addView(menuLabels[i], new LinearLayout.LayoutParams(0, -2, 1.0f));
+            menuRows[i].addView(menuValues[i], new LinearLayout.LayoutParams(-2, -2));
 
             if (i < 10) {
                 View divider = new View(this);
                 divider.setBackgroundColor(Color.DKGRAY);
-                LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(-1, 1);
-                divParams.setMargins(0, 2, 0, 2);
-                menuContainer.addView(divider, divParams);
+                menuContainer.addView(divider, new LinearLayout.LayoutParams(-1, 1));
             }
         }
         
@@ -277,6 +306,28 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
         updateMainHUD();
         renderMenu();
+    }
+
+    private TextView createSideIcon(String text) {
+        TextView tv = new TextView(this);
+        tv.setText(text); tv.setTextColor(Color.WHITE); tv.setTextSize(16);
+        tv.setTypeface(Typeface.MONOSPACE); tv.setPadding(12, 6, 12, 6);
+        tv.setBackgroundColor(Color.argb(140, 40, 40, 40));
+        return tv;
+    }
+
+    private void drawSonyBattery(Canvas canvas, View v) {
+        Paint p = new Paint(); p.setAntiAlias(true); p.setStrokeWidth(2);
+        p.setColor(Color.WHITE); p.setStyle(Paint.Style.STROKE);
+        canvas.drawRect(2, 2, v.getWidth() - 6, v.getHeight() - 2, p);
+        p.setStyle(Paint.Style.FILL);
+        canvas.drawRect(v.getWidth() - 6, v.getHeight()/2 - 4, v.getWidth() - 2, v.getHeight()/2 + 4, p);
+        int barColor = (lastBatteryLevel < 15) ? Color.RED : Color.WHITE;
+        p.setColor(barColor);
+        int fillW = (v.getWidth() - 12);
+        if (lastBatteryLevel > 10) canvas.drawRect(6, 6, 6 + (fillW/3) - 2, v.getHeight() - 6, p);
+        if (lastBatteryLevel > 40) canvas.drawRect(6 + (fillW/3) + 2, 6, 6 + (2*fillW/3) - 2, v.getHeight() - 6, p);
+        if (lastBatteryLevel > 70) canvas.drawRect(6 + (2*fillW/3) + 2, 6, v.getWidth() - 10, v.getHeight() - 6, p);
     }
 
     private void refreshPlaybackFiles() {
@@ -492,13 +543,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 tvTopStatus.setVisibility(View.GONE);
                 tvBottomBar.setVisibility(View.GONE);
                 tvBattery.setVisibility(View.GONE);
+                tvMode.setVisibility(View.GONE);
+                tvFocus.setVisibility(View.GONE);
             }
             if (afOverlay != null) { afOverlay.startFocus(mCamera); }
             return super.onKeyDown(keyCode, event);
-        }
-
-        if (sc == ScalarInput.ISV_KEY_S1_2) {
-            return super.onKeyDown(keyCode, event); 
         }
 
         if (sc == ScalarInput.ISV_KEY_DELETE) { 
@@ -571,6 +620,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 tvTopStatus.setVisibility(View.VISIBLE);
                 tvBottomBar.setVisibility(View.VISIBLE);
                 tvBattery.setVisibility(View.VISIBLE);
+                tvMode.setVisibility(View.VISIBLE);
+                tvFocus.setVisibility(View.VISIBLE);
             }
             if (afOverlay != null) { afOverlay.stopFocus(mCamera); }
             return super.onKeyUp(keyCode, event);
@@ -671,43 +722,41 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
     private void updateMainHUD() {
         if(mCamera == null) return;
-        RTLProfile p = profiles[currentSlot];
-        String uiLutName = recipeNames.get(p.lutIndex);
-        tvTopStatus.setText("RTL " + (currentSlot + 1) + " [" + uiLutName + "]\n" + (isReady ? "READY" : "LOADING..."));
+        RTLProfile prof = profiles[currentSlot];
         
+        // Truncate LUT name and highlight green only in RTL dial mode
+        String rawName = recipeNames.get(prof.lutIndex);
+        String displayName = rawName.length() > 15 ? rawName.substring(0, 12) + "..." : rawName;
+        tvTopStatus.setText("RTL " + (currentSlot + 1) + " [" + displayName + "]\n" + (isReady ? "READY" : "LOADING..."));
+        tvTopStatus.setTextColor(mDialMode == DIAL_MODE_RTL ? Color.GREEN : Color.WHITE);
+        
+        // Right side review logic
+        tvReview.setVisibility(mDialMode == DIAL_MODE_REVIEW ? View.VISIBLE : View.GONE);
+        if(mDialMode == DIAL_MODE_REVIEW) tvReview.setBackgroundColor(Color.rgb(230, 50, 15)); 
+        else tvReview.setBackgroundColor(Color.argb(140, 40, 40, 40));
+
         try {
             Camera.Parameters params = mCamera.getParameters();
             CameraEx.ParametersModifier pm = mCameraEx.createParametersModifier(params);
             
-            // Format Shutter
             Pair<Integer, Integer> speed = pm.getShutterSpeed();
             String ss = speed.first == 1 && speed.second != 1 ? speed.first + "/" + speed.second : speed.first + "\"";
-            
-            // Format Aperture (Mockup format: f1.8)
             String ap = String.format("f%.1f", pm.getAperture() / 100.0f);
-            
-            // Format ISO (Mockup format: ISO 1600)
-            String iso = pm.getISOSensitivity() == 0 ? "ISO AUTO" : "ISO " + String.valueOf(pm.getISOSensitivity());
-            
-            // Format EV (Mockup format: ±0.0)
+            String iso = pm.getISOSensitivity() == 0 ? "ISO AUTO" : "ISO " + pm.getISOSensitivity();
             String exp = String.format("%+.1f", params.getExposureCompensation() * params.getExposureCompensationStep());
 
-            // Color definitions
-            String cAct = "<font color='#00FF00'>"; // Sony Highlight Green
-            String cDef = "<font color='#FFFFFF'>"; // Pure White
+            String cAct = "<font color='#00FF00'>"; 
+            String cDef = "<font color='#FFFFFF'>"; 
             String cEnd = "</font>";
-            String space = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"; // Space out the elements nicely
+            String space = "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"; 
 
-            // Build the string dynamically based on selected Dial Mode
-            String strRTL = (mDialMode == DIAL_MODE_RTL ? cAct : cDef) + "[RTL " + (currentSlot+1) + "]" + cEnd;
-            String strShutter = (mDialMode == DIAL_MODE_SHUTTER ? cAct : cDef) + ss + cEnd;
-            String strAp = (mDialMode == DIAL_MODE_APERTURE ? cAct : cDef) + ap + cEnd;
-            String strIso = (mDialMode == DIAL_MODE_ISO ? cAct : cDef) + iso + cEnd;
-            String strEv = (mDialMode == DIAL_MODE_EXPOSURE ? cAct : cDef) + exp + cEnd;
-            String strReview = (mDialMode == DIAL_MODE_REVIEW ? cAct : cDef) + "[REVIEW]" + cEnd;
+            StringBuilder sb = new StringBuilder();
+            sb.append(mDialMode == DIAL_MODE_SHUTTER ? cAct : cDef).append(ss).append(cEnd).append(space);
+            sb.append(mDialMode == DIAL_MODE_APERTURE ? cAct : cDef).append(ap).append(cEnd).append(space);
+            sb.append(mDialMode == DIAL_MODE_ISO ? cAct : cDef).append(iso).append(cEnd).append(space);
+            sb.append(mDialMode == DIAL_MODE_EXPOSURE ? cAct : cDef).append(exp).append(cEnd);
 
-            String html = strRTL + space + strShutter + space + strAp + space + strIso + space + strEv + space + strReview;
-            tvBottomBar.setText(Html.fromHtml(html));
+            tvBottomBar.setText(Html.fromHtml(sb.toString()));
         } catch (Exception e) {}
     }
 
@@ -897,10 +946,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         super.onResume(); 
         openCamera();
         if (mCamera != null) updateMainHUD(); 
-        
-        // Register Battery Monitor
         registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        
         startAutoProcessPolling(); 
     }
     
@@ -908,10 +954,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     protected void onPause() { 
         super.onPause(); 
         closeCamera(); 
-        
-        // Unregister Battery Monitor
         try { unregisterReceiver(batteryReceiver); } catch (Exception e) {}
-        
         isPolling = false; 
         savePreferences(); 
     }
@@ -919,9 +962,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     @Override public void onShutterSpeedChange(CameraEx.ShutterSpeedInfo i, CameraEx c) { updateMainHUD(); }
     @Override public void surfaceChanged(SurfaceHolder h, int f, int w, int h1) {}
 
-    // =========================================================================
-    // PRO RETICLE VIEW (Fixed Geometry)
-    // =========================================================================
     private class ProReticleView extends View {
         private Paint paint;
         public static final int STATE_IDLE = 0;
@@ -973,39 +1013,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             if (!isPolling) return;
-
             switch (fallbackState) {
                 case STATE_IDLE:      paint.setColor(Color.argb(100, 255, 255, 255)); break;
                 case STATE_SEARCHING: paint.setColor(Color.YELLOW); break;
                 case STATE_LOCKED:    paint.setColor(Color.GREEN); break;
                 case STATE_FAILED:    paint.setColor(Color.RED); break;
             }
-
             int cx = getWidth() / 2;
             int cy = getHeight() / 2;
-            int size = 60;
-            int bracket = 15;
-
-            // Top Left 
-            canvas.drawLine(cx - size, cy - size, cx - size + bracket, cy - size, paint);
-            canvas.drawLine(cx - size, cy - size, cx - size, cy - size + bracket, paint);
-            
-            // Top Right
-            canvas.drawLine(cx + size, cy - size, cx + size - bracket, cy - size, paint);
-            canvas.drawLine(cx + size, cy - size, cx + size, cy - size + bracket, paint);
-            
-            // Bottom Left
-            canvas.drawLine(cx - size, cy + size, cx - size + bracket, cy + size, paint);
-            canvas.drawLine(cx - size, cy + size, cx - size, cy + size - bracket, paint);
-            
-            // Bottom Right
-            canvas.drawLine(cx + size, cy + size, cx + size - bracket, cy + size, paint);
-            canvas.drawLine(cx + size, cy + size, cx + size, cy + size - bracket, paint);
-            
+            int size = 60, bracket = 15;
+            canvas.drawLine(cx-size, cy-size, cx-size+bracket, cy-size, paint);
+            canvas.drawLine(cx-size, cy-size, cx-size, cy-size+bracket, paint);
+            canvas.drawLine(cx+size, cy-size, cx+size-bracket, cy-size, paint);
+            canvas.drawLine(cx+size, cy-size, cx+size, cy-size+bracket, paint);
+            canvas.drawLine(cx-size, cy+size, cx-size+bracket, cy+size, paint);
+            canvas.drawLine(cx-size, cy+size, cx-size, cy+size-bracket, paint);
+            canvas.drawLine(cx+size, cy+size, cx+size-bracket, cy+size, paint);
+            canvas.drawLine(cx+size, cy+size, cx+size, cy+size-bracket, paint);
             paint.setStyle(Paint.Style.FILL);
             canvas.drawCircle(cx, cy, 3, paint);
             paint.setStyle(Paint.Style.STROKE);
-            
             postInvalidateDelayed(50);
         }
     }
