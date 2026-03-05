@@ -45,3 +45,4 @@ jobs:
       with:
         name: Sony-JPGCookbook-NDK
         path: app/build/outputs/apk/debug/*.apk
+# Forcing GitHub to trigger
