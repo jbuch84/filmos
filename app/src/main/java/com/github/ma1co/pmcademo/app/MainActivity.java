@@ -675,7 +675,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 mCamera.setParameters(p); 
             }
             else if (mDialMode == DIAL_MODE_PASM) {
-                // Safe PASM Filter logic
                 List<String> modes = p.getSupportedSceneModes();
                 if (modes != null) { 
                     List<String> validPasm = new ArrayList<String>();
@@ -741,10 +740,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 else tvFocusMode.setText(fMode.toUpperCase());
             }
 
-            // High-Speed Focus Meter Update
             if ("manual".equals(fMode)) {
                 float fAperture = pm.getAperture() / 100.0f;
-                // Ratio is constantly updated by the Sony Focus Listener in openCamera()
                 if (focusMeter != null) focusMeter.update(lastKnownFocusRatio, fAperture, true);
             } else {
                 if (focusMeter != null) focusMeter.update(0, 0, false);
@@ -809,15 +806,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 mCamera = mCameraEx.getNormalCamera();
                 mCameraEx.startDirectShutter(); 
                 
-                // Hardware Focus Listener - Sony pushes updates directly here!
-                mCameraEx.setFocusDriveListener(new CameraEx.FocusDriveListener() {
-                    @Override
-                    public void onFocusPositionChanged(CameraEx.FocusPosition pos, CameraEx cam) {
-                        if (pos != null && pos.maxPosition > 0) {
-                            lastKnownFocusRatio = (float) pos.currentPosition / pos.maxPosition;
+                // Hardware Focus Listener via Reflection
+                try {
+                    Class<?> listenerClass = Class.forName("com.sony.scalar.hardware.CameraEx$FocusDriveListener");
+                    Object proxy = java.lang.reflect.Proxy.newProxyInstance(
+                        getClass().getClassLoader(),
+                        new Class[] { listenerClass },
+                        new java.lang.reflect.InvocationHandler() {
+                            @Override
+                            public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] args) throws Throwable {
+                                if (method.getName().equals("onChanged") && args != null && args.length == 2) {
+                                    Object pos = args[0];
+                                    if (pos != null) {
+                                        int cur = pos.getClass().getField("currentPosition").getInt(pos);
+                                        int max = pos.getClass().getField("maxPosition").getInt(pos);
+                                        if (max > 0) {
+                                            lastKnownFocusRatio = (float) cur / max;
+                                        }
+                                    }
+                                }
+                                return null;
+                            }
                         }
-                    }
-                });
+                    );
+                    mCameraEx.getClass().getMethod("setFocusDriveListener", listenerClass).invoke(mCameraEx, proxy);
+                } catch (Exception e) {}
 
                 CameraEx.AutoPictureReviewControl apr = new CameraEx.AutoPictureReviewControl();
                 mCameraEx.setAutoPictureReviewControl(apr); 
@@ -918,7 +931,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             canvas.drawText("5m", pad + trackW * 0.75f, y - 20, textPaint);
             canvas.drawText("INF", w - pad, y - 20, textPaint);
 
-            // This ensures the blue bar is perfectly locked to the white needle
             float needleX = pad + (trackW * ratio);
 
             float baseDof = (aperture / 22.0f) * (trackW * 0.15f);
