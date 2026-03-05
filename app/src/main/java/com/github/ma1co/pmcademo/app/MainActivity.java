@@ -92,6 +92,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     public static final int DIAL_MODE_FOCUS = 7;
     private int mDialMode = DIAL_MODE_RTL;
 
+    private float lastKnownFocusRatio = 0.5f;
+
     private int lastBatteryLevel = 100;
     private BroadcastReceiver batteryReceiver = new BroadcastReceiver() {
         @Override
@@ -105,7 +107,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         }
     };
 
-    // Phase 3: High-Speed UI Polling (150ms)
     private Handler uiHandler = new Handler();
     private Runnable liveUpdater = new Runnable() {
         @Override
@@ -245,10 +246,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         leftParams.setMargins(20, 20, 0, 0);
         mainUIContainer.addView(leftBar, leftParams);
 
-        // Phase 3: Cinema Focus Meter
         focusMeter = new AdvancedFocusMeterView(this);
         FrameLayout.LayoutParams fmParams = new FrameLayout.LayoutParams(-1, 80, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        fmParams.setMargins(0, 0, 0, 100); // Sit right above bottom exposure text
+        fmParams.setMargins(0, 0, 0, 100); 
         mainUIContainer.addView(focusMeter, fmParams);
 
         tvBottomBar = new TextView(this);
@@ -675,13 +675,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 mCamera.setParameters(p); 
             }
             else if (mDialMode == DIAL_MODE_PASM) {
-                String[] pasm = {"manual", "aperture-priority", "shutter-priority", "program-auto", "auto"};
-                int idx = 0;
-                String cur = p.getSceneMode();
-                if (cur != null) { for(int i=0; i<pasm.length; i++) { if(pasm[i].equals(cur)) { idx = i; break; } } }
-                for(int i=1; i<=pasm.length; i++) {
-                    int next = (idx + (d > 0 ? i : -i) + pasm.length) % pasm.length;
-                    try { p.setSceneMode(pasm[next]); mCamera.setParameters(p); break; } catch (Exception e) {}
+                // Safe PASM Filter logic
+                List<String> modes = p.getSupportedSceneModes();
+                if (modes != null) { 
+                    List<String> validPasm = new ArrayList<String>();
+                    String[] desired = {"manual", "aperture-priority", "shutter-priority", "program-auto", "auto", "intelligent-active"};
+                    for(String m : desired) { if (modes.contains(m)) validPasm.add(m); }
+                    
+                    if(!validPasm.isEmpty()) {
+                        int idx = validPasm.indexOf(p.getSceneMode());
+                        if (idx == -1) idx = 0; 
+                        p.setSceneMode(validPasm.get((idx + d + validPasm.size()) % validPasm.size())); 
+                        mCamera.setParameters(p); 
+                    }
                 }
             }
             else if (mDialMode == DIAL_MODE_FOCUS) {
@@ -693,30 +699,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             }
             updateMainHUD();
         } catch (Exception e) {}
-    }
-
-    private float lastKnownFocusRatio = 0.5f;
-
-    private float getFocusRatio(CameraEx.ParametersModifier pm, Camera.Parameters params) {
-        // Reflection protects app from crashing if Sony API varies across camera models
-        try {
-            java.lang.reflect.Method getCur = pm.getClass().getMethod("getFocusPosition");
-            java.lang.reflect.Method getMax = pm.getClass().getMethod("getMaxFocusPosition");
-            int cur = (Integer) getCur.invoke(pm);
-            int max = (Integer) getMax.invoke(pm);
-            if (max > 0) return lastKnownFocusRatio = ((float) cur / max);
-        } catch (Exception e) {}
-        
-        try {
-            float[] dists = new float[3];
-            params.getFocusDistances(dists);
-            float optimal = dists[Camera.Parameters.FOCUS_DISTANCE_OPTIMAL_INDEX];
-            if (optimal > 0 && optimal < Float.POSITIVE_INFINITY) {
-                float ratio = (optimal - 0.1f) / 10.0f; // Map distances 0.1m to 10m
-                return lastKnownFocusRatio = Math.max(0.0f, Math.min(1.0f, ratio));
-            }
-        } catch (Exception e) {}
-        return lastKnownFocusRatio;
     }
 
     private void updateMainHUD() {
@@ -762,8 +744,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             // High-Speed Focus Meter Update
             if ("manual".equals(fMode)) {
                 float fAperture = pm.getAperture() / 100.0f;
-                float ratio = getFocusRatio(pm, params);
-                if (focusMeter != null) focusMeter.update(ratio, fAperture, true);
+                // Ratio is constantly updated by the Sony Focus Listener in openCamera()
+                if (focusMeter != null) focusMeter.update(lastKnownFocusRatio, fAperture, true);
             } else {
                 if (focusMeter != null) focusMeter.update(0, 0, false);
             }
@@ -826,6 +808,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 mCameraEx = CameraEx.open(0, null); 
                 mCamera = mCameraEx.getNormalCamera();
                 mCameraEx.startDirectShutter(); 
+                
+                // Hardware Focus Listener - Sony pushes updates directly here!
+                mCameraEx.setFocusDriveListener(new CameraEx.FocusDriveListener() {
+                    @Override
+                    public void onFocusPositionChanged(CameraEx.FocusPosition pos, CameraEx cam) {
+                        if (pos != null && pos.maxPosition > 0) {
+                            lastKnownFocusRatio = (float) pos.currentPosition / pos.maxPosition;
+                        }
+                    }
+                });
+
                 CameraEx.AutoPictureReviewControl apr = new CameraEx.AutoPictureReviewControl();
                 mCameraEx.setAutoPictureReviewControl(apr); 
                 apr.setPictureReviewTime(0);
@@ -925,9 +918,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             canvas.drawText("5m", pad + trackW * 0.75f, y - 20, textPaint);
             canvas.drawText("INF", w - pad, y - 20, textPaint);
 
+            // This ensures the blue bar is perfectly locked to the white needle
             float needleX = pad + (trackW * ratio);
 
-            // DoF Artistically Widens with High Aperture & Further Distance
             float baseDof = (aperture / 22.0f) * (trackW * 0.15f);
             float distanceMultiplier = 1.0f + (ratio * 2.0f); 
             float dofRadius = baseDof * distanceMultiplier;
