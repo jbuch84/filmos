@@ -54,11 +54,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private FrameLayout mainUIContainer;
     private LinearLayout menuContainer; 
     private TextView tvMenuTitle;
-    private TextView[] tvPageNumbers = new TextView[3];
+    private TextView[] tvPageNumbers = new TextView[4]; // Expanded to 4 Pages
     private LinearLayout menuHeaderLayout;
-    private LinearLayout[] menuRows = new LinearLayout[12]; 
-    private TextView[] menuLabels = new TextView[12];
-    private TextView[] menuValues = new TextView[12];
+    private LinearLayout[] menuRows = new LinearLayout[7]; // 7 Items Max per page
+    private TextView[] menuLabels = new TextView[7];
+    private TextView[] menuValues = new TextView[7];
     
     private TextView tvTopStatus, tvBattery, tvReview, tvMode, tvFocusMode; 
     private LinearLayout llBottomBar;
@@ -186,6 +186,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        
+        try {
+            File tmpCache = new File(Environment.getExternalStorageDirectory(), "LUTS/.tmp");
+            tmpCache.mkdirs();
+            System.setProperty("java.io.tmpdir", tmpCache.getAbsolutePath());
+        } catch (Exception e) {}
         
         FrameLayout rootLayout = new FrameLayout(this);
         mSurfaceView = new SurfaceView(this);
@@ -372,7 +378,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         LinearLayout pagesLayout = new LinearLayout(this);
         pagesLayout.setOrientation(LinearLayout.HORIZONTAL);
         pagesLayout.setGravity(Gravity.RIGHT);
-        for(int i=0; i<3; i++) {
+        for(int i=0; i<4; i++) {
             tvPageNumbers[i] = new TextView(this);
             tvPageNumbers[i].setText(String.valueOf(i+1));
             tvPageNumbers[i].setTextSize(20); 
@@ -389,7 +395,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         divParams.setMargins(0, 0, 0, 15);
         menuContainer.addView(headerDivider, divParams);
 
-        for (int i = 0; i < 12; i++) { 
+        for (int i = 0; i < 7; i++) { 
             menuRows[i] = new LinearLayout(this);
             menuRows[i].setOrientation(LinearLayout.HORIZONTAL);
             menuRows[i].setGravity(Gravity.CENTER_VERTICAL);
@@ -408,7 +414,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             menuRows[i].addView(menuLabels[i], new LinearLayout.LayoutParams(0, -2, 1.0f));
             menuRows[i].addView(menuValues[i], new LinearLayout.LayoutParams(-2, -2));
 
-            if (i < 11) {
+            if (i < 6) {
                 View divider = new View(this); divider.setBackgroundColor(Color.DKGRAY);
                 menuContainer.addView(divider, new LinearLayout.LayoutParams(-1, 1));
             }
@@ -439,6 +445,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         renderMenu();
     }
 
+    private String formatSign(int val) {
+        if (val == 0) return "0";
+        return val > 0 ? "+" + val : String.valueOf(val);
+    }
+    
     private String formatAB(int val) {
         if (val == 0) return "0";
         return val > 0 ? "A" + val : "B" + Math.abs(val);
@@ -615,6 +626,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             editor.putInt("slot_" + i + "_wbShift", profiles[i].wbShift);
             editor.putInt("slot_" + i + "_wbShiftGM", profiles[i].wbShiftGM);
             editor.putString("slot_" + i + "_dro", profiles[i].dro);
+            editor.putInt("slot_" + i + "_contrast", profiles[i].contrast);
+            editor.putInt("slot_" + i + "_saturation", profiles[i].saturation);
+            editor.putInt("slot_" + i + "_sharpness", profiles[i].sharpness);
         }
         editor.commit(); 
 
@@ -634,7 +648,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                   .append(profiles[i].whiteBalance).append(",")
                   .append(profiles[i].wbShift).append(",")
                   .append(profiles[i].dro).append(",")
-                  .append(profiles[i].wbShiftGM).append("\n"); 
+                  .append(profiles[i].wbShiftGM).append(",")
+                  .append(profiles[i].contrast).append(",")
+                  .append(profiles[i].saturation).append(",")
+                  .append(profiles[i].sharpness).append("\n"); 
             }
             fos.write(sb.toString().getBytes()); fos.flush(); fos.getFD().sync(); fos.close();
             sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(backupFile)));
@@ -672,6 +689,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                             if (parts.length >= 11) {
                                 profiles[idx].wbShiftGM = Integer.parseInt(parts[10]);
                             }
+                            if (parts.length >= 14) {
+                                profiles[idx].contrast = Integer.parseInt(parts[11]);
+                                profiles[idx].saturation = Integer.parseInt(parts[12]);
+                                profiles[idx].sharpness = Integer.parseInt(parts[13]);
+                            }
                         }
                     }
                 }
@@ -695,6 +717,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             profiles[i].wbShift = prefs.getInt("slot_" + i + "_wbShift", 0);
             profiles[i].wbShiftGM = prefs.getInt("slot_" + i + "_wbShiftGM", 0);
             profiles[i].dro = prefs.getString("slot_" + i + "_dro", "OFF");
+            profiles[i].contrast = prefs.getInt("slot_" + i + "_contrast", 0);
+            profiles[i].saturation = prefs.getInt("slot_" + i + "_saturation", 0);
+            profiles[i].sharpness = prefs.getInt("slot_" + i + "_sharpness", 0);
         }
     }
 
@@ -730,12 +755,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                     } catch(Exception e){}
                 }
             } else if (p.get("sony-dro") != null) {
-                p.set("sony-dro", prof.dro.toLowerCase()); // Fallback for older firmware
+                p.set("sony-dro", prof.dro.toLowerCase()); 
             }
             
-            // PHASE 9.4: Safe WB Shift Injection derived from PARAMS.TXT
-            p.set("light-balance-for-white-balance", prof.wbShift);
-            p.set("color-compensation-for-white-balance", prof.wbShiftGM); 
+            p.set("light-balance-for-white-balance", String.valueOf(prof.wbShift));
+            p.set("color-compensation-for-white-balance", String.valueOf(prof.wbShiftGM)); 
+            p.set("contrast", String.valueOf(prof.contrast));
+            p.set("saturation", String.valueOf(prof.saturation));
+            p.set("sharpness", String.valueOf(prof.sharpness));
             
             mCamera.setParameters(p);
         } catch (Exception e) {}
@@ -813,7 +840,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                     displayState = (displayState == 0) ? 1 : 0; mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE);
                 }
             } else {
-                if (currentPage == 3 && menuSelection >= 0) {
+                if (currentPage == 4 && menuSelection >= 0) {
                     if (menuSelection == 0) {
                         if (isHomeWifiRunning) {
                             updateConnectionStatus("HOTSPOT", "Switching modes...");
@@ -854,13 +881,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 }
                 if (sc == ScalarInput.ISV_KEY_LEFT || sc == ScalarInput.ISV_DIAL_1_COUNTERCW) { 
                     if (menuSelection == -1) { 
-                        currentPage = (currentPage == 1) ? 3 : currentPage - 1; renderMenu();
+                        currentPage = (currentPage == 1) ? 4 : currentPage - 1; renderMenu();
                     } else { handleMenuChange(-1); }
                     return true; 
                 }
                 if (sc == ScalarInput.ISV_KEY_RIGHT || sc == ScalarInput.ISV_DIAL_1_CLOCKWISE) { 
                     if (menuSelection == -1) { 
-                        currentPage = (currentPage == 3) ? 1 : currentPage + 1; renderMenu();
+                        currentPage = (currentPage == 4) ? 1 : currentPage + 1; renderMenu();
                     } else { handleMenuChange(1); }
                     return true; 
                 }
@@ -905,20 +932,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                     case 4: p.grainSize = Math.max(0, Math.min(2, p.grainSize + dir)); break;
                     case 5: p.rollOff = Math.max(0, Math.min(5, p.rollOff + dir)); break;
                     case 6: p.vignette = Math.max(0, Math.min(5, p.vignette + dir)); break;
-                    case 7: 
+                }
+            } else if (currentPage == 2) {
+                switch(menuSelection) {
+                    case 0: 
                         int wbi = java.util.Arrays.asList(wbLabels).indexOf(p.whiteBalance);
                         if(wbi == -1) wbi = 0;
                         p.whiteBalance = wbLabels[(wbi + dir + wbLabels.length) % wbLabels.length];
                         break;
-                    case 8: p.wbShift = Math.max(-7, Math.min(7, p.wbShift + dir)); break;
-                    case 9: p.wbShiftGM = Math.max(-7, Math.min(7, p.wbShiftGM + dir)); break;
-                    case 10:
+                    case 1: p.wbShift = Math.max(-7, Math.min(7, p.wbShift + dir)); break;
+                    case 2: p.wbShiftGM = Math.max(-7, Math.min(7, p.wbShiftGM + dir)); break;
+                    case 3:
                         int droi = java.util.Arrays.asList(droLabels).indexOf(p.dro);
                         if(droi == -1) droi = 0;
                         p.dro = droLabels[(droi + dir + droLabels.length) % droLabels.length];
                         break;
+                    case 4: p.contrast = Math.max(-3, Math.min(3, p.contrast + dir)); break;
+                    case 5: p.saturation = Math.max(-3, Math.min(3, p.saturation + dir)); break;
+                    case 6: p.sharpness = Math.max(-3, Math.min(3, p.sharpness + dir)); break;
                 }
-            } else if (currentPage == 2) { 
+            } else if (currentPage == 3) { 
                 switch(menuSelection) {
                     case 0: qualityIndex = (qualityIndex + dir + 3) % 3; break;
                     case 1: 
@@ -944,45 +977,59 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     }
 
     private void renderMenu() {
-        tvMenuTitle.setText(currentPage == 1 ? "Real Time Looks" : currentPage == 2 ? "Global Settings" : "Connections");
-        for(int i=0; i<3; i++) {
+        if (currentPage == 1) tvMenuTitle.setText("RTL (Base)");
+        else if (currentPage == 2) tvMenuTitle.setText("RTL (Color & Detail)");
+        else if (currentPage == 3) tvMenuTitle.setText("Global Settings");
+        else tvMenuTitle.setText("Connections");
+        
+        for(int i=0; i<4; i++) {
             boolean isCurPage = (currentPage == i+1);
             boolean isHeaderSelected = (menuSelection == -1);
             tvPageNumbers[i].setTextColor(isCurPage ? Color.rgb(230, 50, 15) : Color.WHITE);
             tvPageNumbers[i].setPaintFlags(isCurPage && isHeaderSelected ? Paint.UNDERLINE_TEXT_FLAG : 0);
         }
 
-        for(int i=0; i<11; i++) menuRows[i].setVisibility(View.GONE);
+        for(int i=0; i<7; i++) menuRows[i].setVisibility(View.GONE);
 
         RTLProfile p = profiles[currentSlot];
 
         if (currentPage == 1) { 
-            currentItemCount = 11;
-            String[] rLabels = {"RTL Slot", "LUT", "Opacity", "Grain Amount", "Grain Size", "Highlight Roll", "Vignette", "White Balance", "WB Shift (A-B)", "WB Shift (G-M)", "DRO"};
+            currentItemCount = 7;
+            String[] rLabels = {"RTL Slot", "LUT", "Opacity", "Grain Amount", "Grain Size", "Highlight Roll", "Vignette"};
             String[] rValues = {
                 String.valueOf(currentSlot + 1), recipeNames.get(p.lutIndex), p.opacity + "%", 
-                intensityLabels[p.grain], grainSizeLabels[p.grainSize], intensityLabels[p.rollOff], 
-                intensityLabels[p.vignette], p.whiteBalance, formatAB(p.wbShift), formatGM(p.wbShiftGM), p.dro
+                intensityLabels[p.grain], grainSizeLabels[p.grainSize], intensityLabels[p.rollOff], intensityLabels[p.vignette]
             };
-            for(int i=0; i<11; i++) {
+            for(int i=0; i<7; i++) {
                 menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE);
             }
         } 
-        else if (currentPage == 2) { 
+        else if (currentPage == 2) {
+            currentItemCount = 7;
+            String[] cLabels = {"White Balance", "WB Shift (A-B)", "WB Shift (G-M)", "DRO", "Contrast", "Saturation", "Sharpness"};
+            String[] cValues = {
+                p.whiteBalance, formatAB(p.wbShift), formatGM(p.wbShiftGM), p.dro,
+                formatSign(p.contrast), formatSign(p.saturation), formatSign(p.sharpness)
+            };
+            for(int i=0; i<7; i++) {
+                menuLabels[i].setText(cLabels[i]); menuValues[i].setText(cValues[i]); menuRows[i].setVisibility(View.VISIBLE);
+            }
+        }
+        else if (currentPage == 3) { 
             currentItemCount = 5;
             String[] qLabels = {"PROXY (1.5MP)", "HIGH (6MP)", "ULTRA (24MP)"};
             String currentScene = "UNKNOWN";
             try { if(mCamera != null) { String sm = mCamera.getParameters().getSceneMode(); if(sm != null) currentScene = sm.toUpperCase(); } } catch(Exception e){}
             
-            String[] gLabels = {"Global Quality", "Base Scene", "Manual Focus Meter", "Anamorphic Crop (2.35:1)", "Rule of Thirds Grid"};
+            String[] gLabels = {"Global Quality", "Base Scene", "Manual Focus Meter", "Anamorphic Crop", "Rule of Thirds Grid"};
             String[] gValues = {qLabels[qualityIndex], currentScene, prefShowFocusMeter ? "ON" : "OFF", prefShowCinemaMattes ? "ON" : "OFF", prefShowGridLines ? "ON" : "OFF"};
             for(int i=0; i<5; i++) {
                 menuLabels[i].setText(gLabels[i]); menuValues[i].setText(gValues[i]); menuRows[i].setVisibility(View.VISIBLE);
             }
         }
-        else if (currentPage == 3) { 
+        else if (currentPage == 4) { 
             currentItemCount = 3;
-            String[] cLabels = {"Camera Hotspot (Direct)", "Home Wi-Fi (Network)", "Stop Networking"};
+            String[] cLabels = {"Camera Hotspot", "Home Wi-Fi", "Stop Networking"};
             String[] cValues = {connStatusHotspot, connStatusWifi, ""};
             for(int i=0; i<3; i++) {
                 menuLabels[i].setText(cLabels[i]); 
@@ -996,7 +1043,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             menuRows[i].setBackgroundColor(sel ? Color.rgb(230, 50, 15) : Color.TRANSPARENT);
             menuLabels[i].setTextColor(Color.WHITE);
             
-            if (currentPage == 3 && menuValues[i].getText().toString().startsWith("http")) {
+            if (currentPage == 4 && menuValues[i].getText().toString().startsWith("http")) {
                 menuValues[i].setTextColor(sel ? Color.WHITE : Color.rgb(230, 50, 15));
             } else {
                 menuValues[i].setTextColor(Color.WHITE);
@@ -1531,7 +1578,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                 } else if ("WIFI".equals(target)) {
                     connStatusWifi = newStatus;
                 }
-                if (isMenuOpen && currentPage == 3) renderMenu(); 
+                if (isMenuOpen && currentPage == 4) renderMenu(); 
             }
         });
     }

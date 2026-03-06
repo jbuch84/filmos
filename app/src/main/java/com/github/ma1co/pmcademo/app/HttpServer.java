@@ -38,6 +38,7 @@ public class HttpServer extends NanoHTTPD {
         super(PORT);
         this.context = context;
         
+        // Route NanoHTTPD Temp files to Android Cache to prevent Sony /tmp crash
         this.setTempFileManagerFactory(new TempFileManagerFactory() {
             @Override
             public TempFileManager create() {
@@ -46,6 +47,7 @@ public class HttpServer extends NanoHTTPD {
         });
     }
 
+    // Android-Safe Temporary File Handlers
     private static class AndroidTempFile implements TempFile {
         private File file;
         private OutputStream fstream;
@@ -89,6 +91,7 @@ public class HttpServer extends NanoHTTPD {
         File root = Environment.getExternalStorageDirectory();
 
         try {
+            // LUT UPLOAD ENDPOINT
             if (Method.POST.equals(session.getMethod()) && uri.equals("/api/upload_lut")) {
                 try {
                     Map<String, String> files = new HashMap<String, String>();
