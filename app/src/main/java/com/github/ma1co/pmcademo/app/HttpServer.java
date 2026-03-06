@@ -10,14 +10,17 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import fi.iki.elonen.NanoHTTPD;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
+import fi.iki.elonen.NanoHTTPD.Method;
 import fi.iki.elonen.NanoHTTPD.Response;
 import fi.iki.elonen.NanoHTTPD.Response.Status;
 
@@ -36,6 +39,46 @@ public class HttpServer extends NanoHTTPD {
         File root = Environment.getExternalStorageDirectory();
 
         try {
+            // LUT UPLOAD ENDPOINT
+            if (Method.POST.equals(session.getMethod()) && uri.equals("/api/upload_lut")) {
+                try {
+                    Map<String, String> files = new HashMap<String, String>();
+                    session.parseBody(files);
+                    String tempFilePath = files.get("file");
+                    String originalFileName = session.getParms().get("file");
+
+                    if (tempFilePath != null && originalFileName != null) {
+                        File lutDir = new File(root, "LUTS");
+                        if (!lutDir.exists()) lutDir.mkdirs();
+                        
+                        // Sanity check to only allow cube files
+                        if (!originalFileName.toLowerCase().endsWith(".cube") && !originalFileName.toLowerCase().endsWith(".cub")) {
+                            return newFixedLengthResponse(Status.BAD_REQUEST, "application/json", "{\"error\":\"Only .cube files allowed\"}");
+                        }
+
+                        File destFile = new File(lutDir, originalFileName);
+                        
+                        // Move the uploaded temp file to the LUTS directory
+                        FileInputStream in = new FileInputStream(tempFilePath);
+                        FileOutputStream out = new FileOutputStream(destFile);
+                        byte[] buffer = new byte[8192];
+                        int read;
+                        while ((read = in.read(buffer)) != -1) {
+                            out.write(buffer, 0, read);
+                        }
+                        in.close();
+                        out.flush();
+                        out.close();
+
+                        return newFixedLengthResponse(Status.OK, "application/json", "{\"status\":\"success\"}");
+                    } else {
+                        return newFixedLengthResponse(Status.BAD_REQUEST, "application/json", "{\"error\":\"No file provided\"}");
+                    }
+                } catch (Exception e) {
+                    return newFixedLengthResponse(Status.INTERNAL_ERROR, "application/json", "{\"error\":\"Upload failed\"}");
+                }
+            }
+
             if (uri.equals("/")) {
                 InputStream is = context.getAssets().open("index.html");
                 return newChunkedResponse(Status.OK, "text/html", is);
@@ -88,13 +131,13 @@ public class HttpServer extends NanoHTTPD {
                     
                     BitmapFactory.Options opts = new BitmapFactory.Options();
                     opts.inSampleSize = 8;
-                    opts.inPurgeable = true; // Extra OOM protection
+                    opts.inPurgeable = true; 
                     Bitmap bm = BitmapFactory.decodeFile(file.getAbsolutePath(), opts);
                     if (bm != null) {
                         ByteArrayOutputStream baos = new ByteArrayOutputStream();
                         bm.compress(Bitmap.CompressFormat.JPEG, 60, baos);
                         byte[] data = baos.toByteArray();
-                        bm.recycle(); // PHYSICALLY DUMP FROM RAM
+                        bm.recycle(); 
                         return newFixedLengthResponse(Status.OK, "image/jpeg", new ByteArrayInputStream(data), data.length);
                     }
                 }

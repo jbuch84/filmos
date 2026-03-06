@@ -124,7 +124,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     private boolean isHomeWifiRunning = false;
     private boolean isHotspotRunning = false;
 
-    // Phase 9.1: Clockwise UI Nav Mapping
     public static final int DIAL_MODE_SHUTTER = 0;
     public static final int DIAL_MODE_APERTURE = 1;
     public static final int DIAL_MODE_ISO = 2;
@@ -133,7 +132,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     public static final int DIAL_MODE_RTL = 5;
     public static final int DIAL_MODE_PASM = 6;
     public static final int DIAL_MODE_FOCUS = 7;
-    private int mDialMode = DIAL_MODE_RTL; // Default to top center
+    private int mDialMode = DIAL_MODE_RTL;
 
     private float lastKnownFocusRatio = 0.5f;
     private float lastKnownAperture = 2.8f;
@@ -579,6 +578,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         if (!lutDir.exists()) lutDir = new File("/mnt/sdcard/LUTS");
         return lutDir;
     }
+    
+    // Phase 9.2: Smart Recipe Rescanner
+    private void refreshRecipes() {
+        String[] savedPaths = new String[10];
+        for(int i=0; i<10; i++) {
+            if (profiles[i].lutIndex >= 0 && profiles[i].lutIndex < recipePaths.size()) {
+                savedPaths[i] = recipePaths.get(profiles[i].lutIndex);
+            } else {
+                savedPaths[i] = "NONE";
+            }
+        }
+        
+        scanRecipes();
+        
+        for(int i=0; i<10; i++) {
+            int idx = recipePaths.indexOf(savedPaths[i]);
+            profiles[i].lutIndex = (idx != -1) ? idx : 0;
+        }
+    }
 
     private void savePreferences() {
         SharedPreferences.Editor editor = getSharedPreferences("RTL_PREFS", MODE_PRIVATE).edit();
@@ -712,7 +730,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         int sc = event.getScanCode();
         if (sc == ScalarInput.ISV_KEY_S1_1 && event.getRepeatCount() == 0) {
-            // Phase 9.1: Reset dial selection to top-center (RTL) upon shutter half-press
             mDialMode = DIAL_MODE_RTL; 
             
             if (displayState == 0 && !isMenuOpen && !isPlaybackMode) {
@@ -751,6 +768,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
                         }
                     } catch(Exception e){}
                 }
+                
+                // Phase 9.2: Re-scan LUT folder seamlessly when opening menu
+                refreshRecipes();
                 
                 currentPage = 1; menuSelection = 0; 
                 menuContainer.setVisibility(View.VISIBLE); mainUIContainer.setVisibility(View.GONE); renderMenu();
@@ -1026,6 +1046,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
     private void updateMainHUD() {
         if(mCamera == null) return;
+        
+        if (displayState == 0 && !isMenuOpen && !isPlaybackMode) {
+            tvTopStatus.setVisibility(View.VISIBLE);
+            llBottomBar.setVisibility(View.VISIBLE);
+            tvBattery.setVisibility(View.VISIBLE);
+            tvMode.setVisibility(View.VISIBLE);
+            tvFocusMode.setVisibility(View.VISIBLE);
+            tvReview.setVisibility(View.VISIBLE);
+        }
+        
         RTLProfile prof = profiles[currentSlot];
         
         String rawName = recipeNames.get(prof.lutIndex);
@@ -1312,11 +1342,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
         public AdvancedFocusMeterView(Context context) {
             super(context);
             trackPaint = new Paint(); 
-            trackPaint.setColor(Color.argb(150, 100, 100, 100)); // Darker grey for cinema look
+            trackPaint.setColor(Color.argb(150, 100, 100, 100)); 
             trackPaint.setStrokeWidth(4);
             
             dofPaint = new Paint(); 
-            // Phase 9.1: filmOS Theme Orange
             dofPaint.setColor(Color.argb(180, 230, 50, 15)); 
             dofPaint.setStrokeWidth(12);
             dofPaint.setStrokeCap(Paint.Cap.ROUND);
@@ -1346,7 +1375,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
 
                 bgCanvas.drawLine(pad, y, w - pad, y, trackPaint);
                 
-                // Draw professional tick marks
                 for (int i = 0; i <= 4; i++) {
                     float tickX = pad + (trackW * (i / 4.0f));
                     bgCanvas.drawLine(tickX, y - 8, tickX, y + 8, trackPaint);
@@ -1381,13 +1409,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             int y = h / 2 + 10;
             float needleX = pad + (trackW * ratio);
 
-            // Phase 9.1: Exponential DoF optical distribution simulation
             float apFactor = aperture / 22.0f;
             float ratioExp = ratio * ratio; 
             
             float dofSpread = (trackW * 0.015f) + (trackW * 0.35f * apFactor * ratioExp);
             float leftRadius = dofSpread * 0.35f;
-            float rightRadius = dofSpread * 0.65f; // Physics dictates more DoF behind subject than in front
+            float rightRadius = dofSpread * 0.65f; 
             
             if (ratio > 0.95f) rightRadius = trackW; 
 
@@ -1398,7 +1425,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback, Ca
             
             canvas.drawLine(needleX, y - 18, needleX, y + 18, needlePaint);
             
-            // Draw a cinema focus pointer triangle
             Path path = new Path();
             path.moveTo(needleX, y - 24);
             path.lineTo(needleX - 8, y - 36);
