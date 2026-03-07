@@ -169,8 +169,9 @@ void* process_rows(void* arg) {
     return NULL;
 }
 
+// Corrected JNI Signature: LutEngine instead of ImageProcessor
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_github_ma1co_pmcademo_app_ImageProcessor_loadLutNative(JNIEnv* env, jobject /* this */, jstring path) {
+Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject /* this */, jstring path) {
     const char *file_path = env->GetStringUTFChars(path, NULL);
     FILE *file = fopen(file_path, "r");
     env->ReleaseStringUTFChars(path, file_path);
@@ -198,8 +199,9 @@ Java_com_github_ma1co_pmcademo_app_ImageProcessor_loadLutNative(JNIEnv* env, job
     return nativeLutSize > 0 ? JNI_TRUE : JNI_FALSE;
 }
 
+// Corrected JNI Signature: LutEngine instead of ImageProcessor
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_github_ma1co_pmcademo_app_ImageProcessor_processImageNative(
+Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     JNIEnv* env, jobject /* this */, 
     jstring inPath, jstring outPath, 
     jint scaleDenom, jint opacity, 
