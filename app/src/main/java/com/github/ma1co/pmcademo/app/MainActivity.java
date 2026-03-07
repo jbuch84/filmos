@@ -89,7 +89,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private boolean prefShowCinemaMattes = false;
     private boolean prefShowGridLines = false;
     
-    // CACHE FIX: Prevent massive IPC lag during Focus Ring turning
     private boolean cachedIsManualFocus = false;
     private float cachedAperture = 2.8f;
     
@@ -160,6 +159,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         
+        // RESTORED: Thumbnail directory generation to prevent Sony OS index errors
+        File thumbsDir = new File(Environment.getExternalStorageDirectory(), "DCIM/.thumbnails");
+        if (!thumbsDir.exists()) {
+            thumbsDir.mkdirs();
+        }
+        
         cameraManager = new SonyCameraManager(this);
         inputManager = new InputManager(this);
         recipeManager = new RecipeManager();
@@ -223,7 +228,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             }
         });
         
+        // RESTORED: Dynamic SD Card mounting path scanner
         String dcimPath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/DCIM/100MSDCF";
+        String[] possibleRoots = { Environment.getExternalStorageDirectory().getAbsolutePath(), "/mnt/sdcard", "/storage/sdcard0", "/sdcard" };
+        for (String r : possibleRoots) {
+            File f = new File(r + "/DCIM/100MSDCF");
+            if (f.exists()) {
+                dcimPath = f.getAbsolutePath();
+                break;
+            }
+        }
+        
         mScanner = new SonyFileScanner(dcimPath, new SonyFileScanner.ScannerCallback() {
             @Override 
             public boolean isReadyToProcess() { 
@@ -322,6 +337,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         finish(); 
     }
 
+    // RESTORED: LUT slot retention logic to prevent recipe scrambling when files change
+    private void refreshRecipes() {
+        List<String> oldPaths = recipeManager.getRecipePaths();
+        String[] savedPaths = new String[10];
+        
+        for(int i=0; i<10; i++) {
+            RTLProfile p = recipeManager.getProfile(i);
+            if (p.lutIndex >= 0 && p.lutIndex < oldPaths.size()) {
+                savedPaths[i] = oldPaths.get(p.lutIndex);
+            } else {
+                savedPaths[i] = "NONE";
+            }
+        }
+        
+        recipeManager.scanRecipes();
+        List<String> newPaths = recipeManager.getRecipePaths();
+        
+        for(int i=0; i<10; i++) {
+            int idx = newPaths.indexOf(savedPaths[i]);
+            recipeManager.getProfile(i).lutIndex = (idx != -1) ? idx : 0;
+        }
+    }
+
     @Override 
     public void onMenuPressed() {
         if (isPlaybackMode) { 
@@ -333,7 +371,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
         
         if (!isMenuOpen) {
-            recipeManager.scanRecipes(); 
+            refreshRecipes(); 
             menuManager.setPage(1); 
             menuContainer.setVisibility(View.VISIBLE); 
             mainUIContainer.setVisibility(View.GONE); 
@@ -484,7 +522,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
         else if (mDialMode == DIAL_MODE_PASM) {
             List<String> valid = new ArrayList<String>(); 
-            // PASM STRING FIX: Included both shutter strings Sony uses
             String[] desired = {"program-auto", "aperture-priority", "shutter-priority", "shutter-speed-priority", "manual-exposure"};
             List<String> supported = p.getSupportedSceneModes();
             if (supported != null) {
@@ -558,12 +595,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         p.set("white-balance-shift-lb", String.valueOf(prof.wbShift)); 
         p.set("white-balance-shift-cc", String.valueOf(prof.wbShiftGM));
         
-        // CAMERA DAEMON CRASH FIX: Try/Catch prevents bootloop if hardware rejects param combo
         try {
             c.setParameters(p);
-        } catch (Exception e) {
-            // Parameter combination rejected by current Scene Mode, gracefully ignore.
-        }
+        } catch (Exception e) {}
     }
 
     @Override 
@@ -601,7 +635,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     
     @Override 
     public void onFocusPositionChanged(final float ratio) {
-        // FOCUS IPC LAG FIX: Read variables from local cache instead of requesting from hardware API
         if (focusMeter != null && cachedIsManualFocus) { 
             runOnUiThread(new Runnable() { 
                 public void run() {
@@ -701,7 +734,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             }
             
             ExifInterface exif = new ExifInterface(file.getAbsolutePath());
-            tvPlaybackInfo.setText((idx + 1) + "/" + playbackFiles.size() + "\n" + file.getName());
+            
+            // RESTORED: EXIF calculations for playback viewer
+            String fnum = exif.getAttribute("FNumber");
+            String speed = exif.getAttribute("ExposureTime");
+            String iso = exif.getAttribute("ISOSpeedRatings");
+            
+            String speedStr = "--s";
+            if (speed != null) {
+                try {
+                    double s = Double.parseDouble(speed);
+                    if (s < 1.0) {
+                        speedStr = "1/" + Math.round(1.0 / s) + "s";
+                    } else {
+                        speedStr = Math.round(s) + "s";
+                    }
+                } catch (Exception e) {}
+            }
+            
+            String apStr = fnum != null ? "f/" + fnum : "f/--";
+            String isoStr = iso != null ? "ISO " + iso : "ISO --";
+
+            String metaText = (idx + 1) + " / " + playbackFiles.size() + "\n" + file.getName() + "\n" + apStr + " | " + speedStr + " | " + isoStr;
+            tvPlaybackInfo.setText(metaText);
             
             BitmapFactory.Options opts = new BitmapFactory.Options(); 
             opts.inSampleSize = 8; 
@@ -738,7 +793,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         int sel = menuManager.getSelection(); 
         int pg = menuManager.getCurrentPage();
         
-        // MENU LAG FIX: Removed the applyHardwareRecipe call here so UI doesn't stutter on clicks.
         if (pg == 1) {
             switch(sel) {
                 case 0: 
@@ -822,14 +876,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         renderMenu(); 
     }
 
+    // RESTORED: APO Override broadcasts
+    private void setAutoPowerOffMode(boolean enable) {
+        String mode = enable ? "APO/NORMAL" : "APO/NO";
+        Intent intent = new Intent();
+        intent.setAction("com.android.server.DAConnectionManagerService.apo");
+        intent.putExtra("apo_info", mode);
+        sendBroadcast(intent);
+    }
+
     private void handleConnectionAction() {
         int sel = menuManager.getSelection(); 
         if (sel == 0) {
             connectivityManager.startHotspot(); 
+            setAutoPowerOffMode(false);
         } else if (sel == 1) {
             connectivityManager.startHomeWifi(); 
+            setAutoPowerOffMode(false);
         } else if (sel == 2) {
             connectivityManager.stopNetworking();
+            setAutoPowerOffMode(true);
         }
     }
 
@@ -871,11 +937,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override 
     protected void onPause() { 
         super.onPause(); 
-        // WAKELOCK FIX: Instantly kill all UI threads and pending delays to allow OS power off
         uiHandler.removeCallbacksAndMessages(null); 
         cameraManager.close(); 
         connectivityManager.stopNetworking(); 
         recipeManager.savePreferences(); 
+        setAutoPowerOffMode(true);
         try { 
             unregisterReceiver(batteryReceiver); 
         } catch(Exception e) {} 
@@ -923,11 +989,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         } else if ("program-auto".equals(sm)) {
             tvMode.setText("P");
         } else {
-            // Will now safely print out whatever custom scene mode is active
             tvMode.setText(sm != null ? sm.toUpperCase() : "SCN");
         }
         
-        // CACHE FIX: Update variables so Focus Ring UI never has to query hardware directly
         cachedAperture = pm.getAperture() / 100.0f;
         
         Pair<Integer, Integer> ss = pm.getShutterSpeed(); 
@@ -953,7 +1017,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         } else if ("continuous-video".equals(fm) || "continuous-picture".equals(fm)) {
             tvFocusMode.setText("AF-C"); 
         } else {
-            // STRING REVEAL: Will print exactly what proprietary name the Sony OS uses for DMF
             tvFocusMode.setText(fm != null ? fm.toUpperCase() : "AF");
         }
         
