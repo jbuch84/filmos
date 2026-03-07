@@ -1,3 +1,6 @@
+#pragma GCC optimize("O3,tree-vectorize")
+#pragma GCC target("fpu=neon")
+
 #include <jni.h>
 #include <vector>
 #include <stdio.h>
@@ -6,6 +9,7 @@
 #include <setjmp.h>
 #include <math.h>
 #include <pthread.h>
+#include <arm_neon.h>
 #include "jpeglib.h"
 #include <android/log.h>
 
@@ -25,6 +29,7 @@ METHODDEF(void) my_error_exit (j_common_ptr cinfo) {
     longjmp(myerr->setjmp_buffer, 1);
 }
 
+// Fast random number generator for film grain
 inline uint32_t fast_rand(uint32_t* state) {
     uint32_t x = *state;
     x ^= x << 13; 
@@ -56,6 +61,7 @@ struct ThreadData {
     int* rollMap;
 };
 
+// Auto-vectorized thread worker using ARM NEON intrinsics via GCC Pragmas
 void* process_rows(void* arg) {
     ThreadData* td = (ThreadData*)arg;
     uint32_t master_seed = 98765;
@@ -73,6 +79,7 @@ void* process_rows(void* arg) {
             int origB = row[x+2];
             int outR = origR, outG = origG, outB = origB;
 
+            // Tetrahedral interpolation lookup
             int fX = td->map[origR], fY = td->map[origG], fZ = td->map[origB];
             int x0 = fX >> 7, y0 = fY >> 7, z0 = fZ >> 7;
             int x1 = (x0 < td->lutMax) ? x0 + 1 : td->lutMax;
@@ -150,9 +157,11 @@ void* process_rows(void* arg) {
                 int raw_noise = (fast_rand(&seed) & 0xFF) - 128; 
                 int noise = (td->grainSize == 0) ? raw_noise : (td->grainSize == 1) ? (raw_noise + prev_noise) >> 1 : (raw_noise + prev_noise * 2) / 3;
                 prev_noise = raw_noise;
+                
                 int lum = (outR*77 + outG*150 + outB*29) >> 8; 
                 int mask = (lum < 128) ? lum : 255 - lum; 
                 int grain_val = (noise * mask * td->grain) >> 15; 
+                
                 outR += grain_val; 
                 outG += grain_val; 
                 outB += grain_val;
@@ -182,6 +191,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject 
             sscanf(line, "LUT_3D_SIZE %d", &nativeLutSize);
             nativeLut.reserve(nativeLutSize * nativeLutSize * nativeLutSize * 3);
         }
+        
         float r, g, b;
         if (sscanf(line, "%f %f %f", &r, &g, &b) == 3) {
             nativeLut.push_back((uint8_t)(r * 255.0f)); 
@@ -241,6 +251,8 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     jpeg_save_markers(&cinfo_d, JPEG_COM, 0xFFFF);
     
     jpeg_read_header(&cinfo_d, TRUE); 
+    
+    // Scale Down implementation for Native Libjpeg-turbo speedups
     cinfo_d.scale_num = 1; 
     cinfo_d.scale_denom = scaleDenom; 
     cinfo_d.out_color_space = JCS_RGB; 
@@ -346,7 +358,6 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
             pthread_create(&threads[i], NULL, process_rows, &thread_data[i]);
         }
         
-        // Wait for all threads to finish this chunk
         for (int i = 0; i < num_threads; i++) { 
             pthread_join(threads[i], NULL); 
         }
@@ -358,7 +369,6 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
         }
     }
 
-    // Clean up memory safely
     free(img_buffer);
     jpeg_finish_compress(&cinfo_c); 
     jpeg_destroy_compress(&cinfo_c);

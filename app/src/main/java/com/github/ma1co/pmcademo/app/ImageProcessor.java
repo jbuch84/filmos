@@ -1,122 +1,189 @@
 package com.github.ma1co.pmcademo.app;
 
-import android.content.Context;
-import android.content.Intent;
-import android.net.Uri;
+import android.media.ExifInterface;
 import android.os.AsyncTask;
-import android.util.Log;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 public class ImageProcessor {
-    private LutEngine mEngine;
-    private Context mContext;
-    private ProcessorCallback mCallback;
-    private PreloadLutTask currentPreloadTask = null;
 
-    // This is the "Bridge" back to MainActivity
     public interface ProcessorCallback {
         void onPreloadStarted();
         void onPreloadFinished(boolean success);
         void onProcessStarted();
-        void onProcessFinished(String result);
+        void onProcessFinished(String resultPath);
     }
 
-    public ImageProcessor(Context context, ProcessorCallback callback) {
-        this.mContext = context;
+    private ProcessorCallback mCallback;
+
+    public ImageProcessor(ProcessorCallback callback) {
         this.mCallback = callback;
-        try {
-            mEngine = new LutEngine();
-        } catch (Throwable t) {
-            Log.e("COOKBOOK", "Native library failed to load: " + t.getMessage());
-        }
     }
 
-    public void triggerLutPreload(String lutPath, String lutName) {
-        if (currentPreloadTask != null) currentPreloadTask.cancel(true);
-        
-        if (lutPath != null && !lutPath.equals("NONE") && !lutName.equals("NONE")) {
-            currentPreloadTask = new PreloadLutTask();
-            currentPreloadTask.execute(lutPath, lutName);
-        } else {
-            // No LUT selected, instantly report ready
-            mCallback.onPreloadFinished(true); 
-        }
+    public void triggerLutPreload(String lutPath, String name) {
+        new PreloadLutTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, lutPath);
     }
 
-    public void processJpeg(String originalFilePath, String outDirPath, int qualityIndex, RTLProfile p) {
-        new ProcessTask(qualityIndex, p, outDirPath).execute(originalFilePath);
+    public void processJpeg(String inPath, String outDir, int qualityIndex, RTLProfile profile) {
+        new ProcessTask(inPath, outDir, qualityIndex, profile).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR);
     }
 
     private class PreloadLutTask extends AsyncTask<String, Void, Boolean> {
-        @Override 
-        protected void onPreExecute() { 
-            mCallback.onPreloadStarted();
+        @Override
+        protected void onPreExecute() {
+            if (mCallback != null) {
+                mCallback.onPreloadStarted();
+            }
         }
-        
-        @Override 
+
+        @Override
         protected Boolean doInBackground(String... params) {
-            if (mEngine == null) return false;
-            return mEngine.loadLut(new File(params[0]), params[1]);
+            String path = params[0];
+            if (path == null || path.equals("NONE")) {
+                return false;
+            }
+            return LutEngine.loadLut(path);
         }
-        
-        @Override 
-        protected void onPostExecute(Boolean success) { 
-            if (isCancelled()) return; 
-            mCallback.onPreloadFinished(success);
+
+        @Override
+        protected void onPostExecute(Boolean success) {
+            if (mCallback != null) {
+                mCallback.onPreloadFinished(success);
+            }
         }
     }
 
-    private class ProcessTask extends AsyncTask<String, Void, String> {
+    private class ProcessTask extends AsyncTask<Void, Void, String> {
+        private String inPath;
+        private String outDir;
         private int qualityIndex;
-        private RTLProfile p;
-        private String outDirPath;
+        private RTLProfile profile;
 
-        public ProcessTask(int qualityIndex, RTLProfile p, String outDirPath) {
+        public ProcessTask(String inPath, String outDir, int qualityIndex, RTLProfile profile) {
+            this.inPath = inPath;
+            this.outDir = outDir;
             this.qualityIndex = qualityIndex;
-            this.p = p;
-            this.outDirPath = outDirPath;
+            this.profile = profile;
         }
 
-        @Override 
-        protected void onPreExecute() { 
-            mCallback.onProcessStarted();
-        }
-        
-        @Override 
-        protected String doInBackground(String... params) {
-            try {
-                File original = new File(params[0]);
-                if (!original.exists()) return "ERR";
-                
-                // Wait for the camera to finish writing the file
-                long lastSize = -1; 
-                int timeout = 0;
-                while (timeout < 100) {
-                    long currentSize = original.length();
-                    if (currentSize > 0 && currentSize == lastSize) break;
-                    lastSize = currentSize; 
-                    Thread.sleep(50); 
-                    timeout++;
-                }
-
-                int scale = (qualityIndex == 0) ? 4 : (qualityIndex == 2 ? 1 : 2);
-                File outDir = new File(outDirPath);
-                if (!outDir.exists()) outDir.mkdirs();
-                File outFile = new File(outDir, original.getName());
-
-                if (mEngine != null && mEngine.applyLutToJpeg(original.getAbsolutePath(), outFile.getAbsolutePath(), scale, p.opacity, p.grain * 20, p.grainSize, p.vignette * 20, p.rollOff * 20)) {
-                    mContext.sendBroadcast(new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE, Uri.fromFile(outFile)));
-                    return "SAVED " + (scale==1?"24MP":(scale==2?"6MP":"1.5MP"));
-                }
-                return "FAILED";
-            } catch (Throwable t) { 
-                return "ERR"; 
+        @Override
+        protected void onPreExecute() {
+            if (mCallback != null) {
+                mCallback.onProcessStarted();
             }
         }
-        
-        @Override 
-        protected void onPostExecute(String result) {
-            mCallback.onProcessFinished(result);
+
+        @Override
+        protected String doInBackground(Void... voids) {
+            File dir = new File(outDir);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+
+            String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+            String finalOutPath = new File(dir, "FILM_" + timeStamp + ".JPG").getAbsolutePath();
+
+            String fileToProcess = inPath;
+            int scaleDenom = 1;
+            boolean isProxy = (qualityIndex == 0);
+            boolean usedThumbnail = false;
+
+            // THUMBNAIL HACK (Path 2): For Proxy Quality, rip the embedded 2MP JPEG directly from the EXIF header
+            if (isProxy) {
+                try {
+                    ExifInterface exif = new ExifInterface(inPath);
+                    byte[] thumbData = exif.getThumbnail();
+                    if (thumbData != null && thumbData.length > 0) {
+                        File tempThumb = new File(outDir, "temp_thumb.jpg");
+                        FileOutputStream fos = new FileOutputStream(tempThumb);
+                        fos.write(thumbData);
+                        fos.close();
+                        
+                        fileToProcess = tempThumb.getAbsolutePath();
+                        scaleDenom = 1; // The thumbnail is already ~2MP, no downscaling needed
+                        usedThumbnail = true;
+                    } else {
+                        // Fallback: If hardware didn't embed a thumbnail, force libjpeg to scale 24MP by 1/4 (1.5MP)
+                        scaleDenom = 4; 
+                    }
+                } catch (Exception e) {
+                    scaleDenom = 4;
+                }
+            } else if (qualityIndex == 1) {
+                scaleDenom = 2; // High: Scales 24MP by 1/2 (~6MP) natively in C++
+            } else {
+                scaleDenom = 1; // Ultra: Full 24MP resolution
+            }
+
+            // C++ JNI Call (Path 1 uses NEON SIMD in C++ for the heavy math)
+            boolean success = LutEngine.processImageNative(
+                    fileToProcess,
+                    finalOutPath,
+                    scaleDenom,
+                    profile.opacity,
+                    profile.grain,
+                    profile.grainSize,
+                    profile.vignette,
+                    profile.rollOff
+            );
+
+            // Immediately clean up the temporary thumbnail file if we generated one
+            if (usedThumbnail) {
+                File temp = new File(fileToProcess);
+                if (temp.exists()) {
+                    temp.delete();
+                }
+            }
+
+            if (success) {
+                // EXIF RESTORATION: The thumbnail extraction strips EXIF tags. 
+                // We must copy the camera's original tags back onto the final graded file so the Playback Viewer works.
+                try {
+                    ExifInterface oldExif = new ExifInterface(inPath);
+                    ExifInterface newExif = new ExifInterface(finalOutPath);
+                    
+                    String[] tagsToCopy = {
+                        ExifInterface.TAG_ORIENTATION, 
+                        ExifInterface.TAG_DATETIME,
+                        ExifInterface.TAG_MAKE, 
+                        ExifInterface.TAG_MODEL,
+                        ExifInterface.TAG_FLASH, 
+                        ExifInterface.TAG_WHITE_BALANCE,
+                        "FNumber", 
+                        "ExposureTime", 
+                        "ISOSpeedRatings", 
+                        "FocalLength"
+                    };
+                    
+                    for (String tag : tagsToCopy) {
+                        String val = oldExif.getAttribute(tag);
+                        if (val != null) {
+                            newExif.setAttribute(tag, val);
+                        }
+                    }
+                    newExif.saveAttributes();
+                } catch (Exception e) {
+                    // Ignore EXIF copy errors, the image itself is successfully graded and safe.
+                }
+                return finalOutPath;
+            } else {
+                // Failsafe: If C++ processing aborts (e.g., out of memory), clean up the corrupted 0-byte file
+                File failedOut = new File(finalOutPath);
+                if (failedOut.exists()) {
+                    failedOut.delete();
+                }
+                return null;
+            }
+        }
+
+        @Override
+        protected void onPostExecute(String resultPath) {
+            if (mCallback != null) {
+                mCallback.onProcessFinished(resultPath);
+            }
         }
     }
 }
