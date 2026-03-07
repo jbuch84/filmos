@@ -11,7 +11,6 @@
 #define LOG_TAG "filmOS_Native"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// Global LUT Storage
 std::vector<uint8_t> nativeLut; 
 int nativeLutSize = 0;
 
@@ -25,27 +24,35 @@ METHODDEF(void) my_error_exit (j_common_ptr cinfo) {
     longjmp(myerr->setjmp_buffer, 1);
 }
 
+// Fast random number generator for film grain (avoids slow rand() calls in tight loop)
 inline uint32_t fast_rand(uint32_t* state) {
     uint32_t x = *state;
-    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    x ^= x << 13; 
+    x ^= x >> 17; 
+    x ^= x << 5;
     *state = x;
     return x;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject, jstring path) {
+Java_com_github_ma1co_pmcademo_app_ImageProcessor_loadLutNative(JNIEnv* env, jobject /* this */, jstring path) {
     const char *file_path = env->GetStringUTFChars(path, NULL);
     FILE *file = fopen(file_path, "r");
     env->ReleaseStringUTFChars(path, file_path);
-    if (!file) return JNI_FALSE;
+    
+    if (!file) {
+        return JNI_FALSE;
+    }
 
     nativeLut.clear();
     char line[256];
+    
     while(fgets(line, sizeof(line), file)) {
         if (strncmp(line, "LUT_3D_SIZE", 11) == 0) {
             sscanf(line, "LUT_3D_SIZE %d", &nativeLutSize);
             nativeLut.reserve(nativeLutSize * nativeLutSize * nativeLutSize * 3);
         }
+        
         float r, g, b;
         if (sscanf(line, "%f %f %f", &r, &g, &b) == 3) {
             nativeLut.push_back((uint8_t)(r * 255.0f));
@@ -53,20 +60,30 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject,
             nativeLut.push_back((uint8_t)(b * 255.0f));
         }
     }
+    
     fclose(file);
     return nativeLutSize > 0 ? JNI_TRUE : JNI_FALSE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, jobject, jstring inPath, jstring outPath, jint scaleDenom, jint opacity, jint grain, jint grainSize, jint vignette, jint rolloff) {
+Java_com_github_ma1co_pmcademo_app_ImageProcessor_processImageNative(
+    JNIEnv* env, jobject /* this */, 
+    jstring inPath, jstring outPath, 
+    jint scaleDenom, jint opacity, 
+    jint grain, jint grainSize, 
+    jint vignette, jint rolloff) {
+    
     const char *in_file = env->GetStringUTFChars(inPath, NULL);
     const char *out_file = env->GetStringUTFChars(outPath, NULL);
+    
     FILE *infile = fopen(in_file, "rb");
     FILE *outfile = fopen(out_file, "wb");
 
     if (!infile || !outfile) {
-        if (infile) fclose(infile); if (outfile) fclose(outfile);
-        env->ReleaseStringUTFChars(inPath, in_file); env->ReleaseStringUTFChars(outPath, out_file);
+        if (infile) fclose(infile); 
+        if (outfile) fclose(outfile);
+        env->ReleaseStringUTFChars(inPath, in_file); 
+        env->ReleaseStringUTFChars(outPath, out_file);
         return JNI_FALSE;
     }
 
@@ -74,21 +91,26 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     struct jpeg_compress_struct cinfo_c;
     struct my_error_mgr jerr_d, jerr_c;
     
-    // Allocate LUT mapping tables on the stack/heap
     int map[256];
     int rollMap[256];
 
+    // Initialize Decompressor
     cinfo_d.err = jpeg_std_error(&jerr_d.pub);
     jerr_d.pub.error_exit = my_error_exit;
     if (setjmp(jerr_d.setjmp_buffer)) {
-        jpeg_destroy_decompress(&cinfo_d); fclose(infile); fclose(outfile); return JNI_FALSE;
+        jpeg_destroy_decompress(&cinfo_d); 
+        fclose(infile); 
+        fclose(outfile); 
+        return JNI_FALSE;
     }
     
     jpeg_create_decompress(&cinfo_d);
     jpeg_stdio_src(&cinfo_d, infile);
 
-    // EXIF PRESERVATION: Capture all markers before reading header
-    for (int m = 0; m < 16; m++) jpeg_save_markers(&cinfo_d, JPEG_APP0 + m, 0xFFFF);
+    // Save EXIF and APP markers
+    for (int m = 0; m < 16; m++) {
+        jpeg_save_markers(&cinfo_d, JPEG_APP0 + m, 0xFFFF);
+    }
     jpeg_save_markers(&cinfo_d, JPEG_COM, 0xFFFF);
     
     jpeg_read_header(&cinfo_d, TRUE);
@@ -97,62 +119,89 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
     cinfo_d.out_color_space = JCS_RGB; 
     jpeg_start_decompress(&cinfo_d);
 
+    // Initialize Compressor
     cinfo_c.err = jpeg_std_error(&jerr_c.pub);
     jerr_c.pub.error_exit = my_error_exit;
     if (setjmp(jerr_c.setjmp_buffer)) {
-        jpeg_destroy_compress(&cinfo_c); jpeg_destroy_decompress(&cinfo_d); fclose(infile); fclose(outfile); return JNI_FALSE;
+        jpeg_destroy_compress(&cinfo_c); 
+        jpeg_destroy_decompress(&cinfo_d); 
+        fclose(infile); 
+        fclose(outfile); 
+        return JNI_FALSE;
     }
     
     jpeg_create_compress(&cinfo_c);
     jpeg_stdio_dest(&cinfo_c, outfile);
+    
     cinfo_c.image_width = cinfo_d.output_width; 
     cinfo_c.image_height = cinfo_d.output_height;
     cinfo_c.input_components = 3; 
     cinfo_c.in_color_space = JCS_RGB;
+    
     jpeg_set_defaults(&cinfo_c); 
     jpeg_set_quality(&cinfo_c, 95, TRUE); 
     jpeg_start_compress(&cinfo_c, TRUE);
 
-    // EXIF INJECTION
+    // Write saved markers (EXIF data)
     jpeg_saved_marker_ptr marker = cinfo_d.marker_list;
     while (marker) {
         jpeg_write_marker(&cinfo_c, marker->marker, marker->data, marker->data_length);
         marker = marker->next;
     }
 
-    // PRE-CALCULATE TABLES
+    // Pre-calculate mappings
     int lutMax = nativeLutSize - 1;
     int lutSize2 = nativeLutSize * nativeLutSize;
     for (int i = 0; i < 256; i++) { 
         map[i] = (i * lutMax * 128) / 255; 
-        if (i > 200 && rolloff > 0) rollMap[i] = i - ((i - 200) * (i - 200) * rolloff) / 11000;
-        else rollMap[i] = i;
+        if (i > 200 && rolloff > 0) {
+            rollMap[i] = i - ((i - 200) * (i - 200) * rolloff) / 11000;
+        } else {
+            rollMap[i] = i;
+        }
     }
     
     int row_stride = cinfo_d.output_width * 3;
-    JSAMPARRAY buffer = (*cinfo_d.mem->alloc_sarray)((j_common_ptr) &cinfo_d, JPOOL_IMAGE, row_stride, 1);
+    
+    // Allocate a memory block for the entire uncompressed JPEG
+    unsigned char* img_buffer = (unsigned char*)malloc(row_stride * cinfo_d.output_height);
+    if (!img_buffer) {
+        jpeg_destroy_compress(&cinfo_c); 
+        jpeg_destroy_decompress(&cinfo_d);
+        fclose(infile); 
+        fclose(outfile); 
+        return JNI_FALSE;
+    }
+
+    // 1. SEQUENTIAL READ
+    JSAMPROW row_pointer[1];
+    while (cinfo_d.output_scanline < cinfo_d.output_height) {
+        row_pointer[0] = &img_buffer[cinfo_d.output_scanline * row_stride];
+        jpeg_read_scanlines(&cinfo_d, row_pointer, 1);
+    }
 
     long long cx = cinfo_d.output_width / 2;
-    long long cy = cinfo_d.output_height / 2;
-    long long max_dist_sq = cx*cx + cy*cy;
+    long long cy_center = cinfo_d.output_height / 2;
+    long long max_dist_sq = cx*cx + cy_center*cy_center;
     long long vig_coef = ((long long)((vignette * 256) / 100) << 24) / (max_dist_sq > 0 ? max_dist_sq : 1); 
     int opac_mapped = (opacity * 256) / 100;
-    uint32_t seed = 98765;
+    uint32_t master_seed = 98765;
 
-    // PRIMARY PIXEL LOOP
-    while (cinfo_d.output_scanline < cinfo_d.output_height) {
-        long long current_y = cinfo_d.output_scanline;
-        jpeg_read_scanlines(&cinfo_d, buffer, 1);
-        unsigned char* row = buffer[0];
-        
-        long long dy_sq = (current_y - cy) * (current_y - cy);
+    // 2. PARALLEL PROCESS (Multi-core execution enabled by OpenMP)
+    #pragma omp parallel for schedule(dynamic)
+    for (int cy = 0; cy < cinfo_d.output_height; cy++) {
+        unsigned char* row = &img_buffer[cy * row_stride];
+        long long dy_sq = (cy - cy_center) * (cy - cy_center);
         int prev_noise = 0; 
+        uint32_t seed = master_seed + (cy * 1337); 
 
         for (int x = 0; x < row_stride; x += 3) {
-            int origR = row[x], origG = row[x+1], origB = row[x+2];
+            int origR = row[x];
+            int origG = row[x+1];
+            int origB = row[x+2];
             int outR = origR, outG = origG, outB = origB;
 
-            // TETRAHEDRAL INTERPOLATION (From original)
+            // Tetrahedral interpolation calculations
             int fX = map[origR], fY = map[origG], fZ = map[origB];
             int x0 = fX >> 7, y0 = fY >> 7, z0 = fZ >> 7;
             int x1 = (x0 < lutMax) ? x0 + 1 : lutMax;
@@ -165,13 +214,37 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
             
             int v1, v2, w0, w1, w2, w3;
             if (dx >= dy_lut) {
-                if (dy_lut >= dz) { v1=x1+y0*nativeLutSize+z0*lutSize2; v2=x1+y1*nativeLutSize+z0*lutSize2; w0=128-dx; w1=dx-dy_lut; w2=dy_lut-dz; w3=dz; } 
-                else if (dx >= dz) { v1=x1+y0*nativeLutSize+z0*lutSize2; v2=x1+y0*nativeLutSize+z1*lutSize2; w0=128-dx; w1=dx-dz; w2=dz-dy_lut; w3=dy_lut; } 
-                else { v1=x0+y0*nativeLutSize+z1*lutSize2; v2=x1+y0*nativeLutSize+z1*lutSize2; w0=128-dz; w1=dz-dx; w2=dx-dy_lut; w3=dy_lut; }
+                if (dy_lut >= dz) { 
+                    v1=x1+y0*nativeLutSize+z0*lutSize2; 
+                    v2=x1+y1*nativeLutSize+z0*lutSize2; 
+                    w0=128-dx; w1=dx-dy_lut; w2=dy_lut-dz; w3=dz; 
+                } 
+                else if (dx >= dz) { 
+                    v1=x1+y0*nativeLutSize+z0*lutSize2; 
+                    v2=x1+y0*nativeLutSize+z1*lutSize2; 
+                    w0=128-dx; w1=dx-dz; w2=dz-dy_lut; w3=dy_lut; 
+                } 
+                else { 
+                    v1=x0+y0*nativeLutSize+z1*lutSize2; 
+                    v2=x1+y0*nativeLutSize+z1*lutSize2; 
+                    w0=128-dz; w1=dz-dx; w2=dx-dy_lut; w3=dy_lut; 
+                }
             } else {
-                if (dz >= dy_lut) { v1=x0+y0*nativeLutSize+z1*lutSize2; v2=x0+y1*nativeLutSize+z1*lutSize2; w0=128-dz; w1=dz-dy_lut; w2=dy_lut-dx; w3=dx; } 
-                else if (dz >= dx) { v1=x0+y1*nativeLutSize+z0*lutSize2; v2=x0+y1*nativeLutSize+z1*lutSize2; w0=128-dy_lut; w1=dy_lut-dz; w2=dz-dx; w3=dx; } 
-                else { v1=x0+y1*nativeLutSize+z0*lutSize2; v2=x1+y1*nativeLutSize+z0*lutSize2; w0=128-dy_lut; w1=dy_lut-dx; w2=dx-dz; w3=dz; }
+                if (dz >= dy_lut) { 
+                    v1=x0+y0*nativeLutSize+z1*lutSize2; 
+                    v2=x0+y1*nativeLutSize+z1*lutSize2; 
+                    w0=128-dz; w1=dz-dy_lut; w2=dy_lut-dx; w3=dx; 
+                } 
+                else if (dz >= dx) { 
+                    v1=x0+y1*nativeLutSize+z0*lutSize2; 
+                    v2=x0+y1*nativeLutSize+z1*lutSize2; 
+                    w0=128-dy_lut; w1=dy_lut-dz; w2=dz-dx; w3=dx; 
+                } 
+                else { 
+                    v1=x0+y1*nativeLutSize+z0*lutSize2; 
+                    v2=x1+y1*nativeLutSize+z0*lutSize2; 
+                    w0=128-dy_lut; w1=dy_lut-dx; w2=dx-dz; w3=dz; 
+                }
             }
 
             const uint8_t* p0 = &nativeLut[i000*3];
@@ -187,42 +260,60 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(JNIEnv* env, job
             outG = origG + (((lutG - origG) * opac_mapped) >> 8);
             outB = origB + (((lutB - origB) * opac_mapped) >> 8);
 
-            // HIGHLIGHT ROLL-OFF
             if (rolloff > 0) { 
                 outR = (outR > 255) ? 255 : rollMap[outR]; 
                 outG = (outG > 255) ? 255 : rollMap[outG]; 
                 outB = (outB > 255) ? 255 : rollMap[outB]; 
             }
 
-            // VIGNETTE
             if (vignette > 0) {
                 long long dist_sq = ((x/3)-cx)*((x/3)-cx) + dy_sq;
                 int vig_mult = 256 - (int)((dist_sq * vig_coef) >> 24);
                 if (vig_mult < 0) vig_mult = 0;
-                outR = (outR * vig_mult) >> 8; outG = (outG * vig_mult) >> 8; outB = (outB * vig_mult) >> 8;
+                outR = (outR * vig_mult) >> 8; 
+                outG = (outG * vig_mult) >> 8; 
+                outB = (outB * vig_mult) >> 8;
             }
 
-            // GRAIN (Luminance Masked)
             if (grain > 0) {
                 int raw_noise = (fast_rand(&seed) & 0xFF) - 128; 
                 int noise = (grainSize == 0) ? raw_noise : (grainSize == 1) ? (raw_noise + prev_noise) >> 1 : (raw_noise + prev_noise * 2) / 3;
                 prev_noise = raw_noise;
+                
                 int lum = (outR*77 + outG*150 + outB*29) >> 8; 
                 int mask = (lum < 128) ? lum : 255 - lum; 
                 int grain_val = (noise * mask * grain) >> 15; 
-                outR += grain_val; outG += grain_val; outB += grain_val;
+                
+                outR += grain_val; 
+                outG += grain_val; 
+                outB += grain_val;
             }
 
-            row[x] = (unsigned char)(outR < 0 ? 0 : outR > 255 ? 255 : outR);
+            row[x]   = (unsigned char)(outR < 0 ? 0 : outR > 255 ? 255 : outR);
             row[x+1] = (unsigned char)(outG < 0 ? 0 : outG > 255 ? 255 : outG);
             row[x+2] = (unsigned char)(outB < 0 ? 0 : outB > 255 ? 255 : outB);
         }
-        jpeg_write_scanlines(&cinfo_c, buffer, 1);
     }
 
-    jpeg_finish_compress(&cinfo_c); jpeg_destroy_compress(&cinfo_c);
-    jpeg_finish_decompress(&cinfo_d); jpeg_destroy_decompress(&cinfo_d);
-    fclose(infile); fclose(outfile);
-    env->ReleaseStringUTFChars(inPath, in_file); env->ReleaseStringUTFChars(outPath, out_file);
+    // 3. SEQUENTIAL WRITE
+    while (cinfo_c.next_scanline < cinfo_c.image_height) {
+        row_pointer[0] = &img_buffer[cinfo_c.next_scanline * row_stride];
+        jpeg_write_scanlines(&cinfo_c, row_pointer, 1);
+    }
+
+    // Cleanup
+    free(img_buffer);
+    jpeg_finish_compress(&cinfo_c); 
+    jpeg_destroy_compress(&cinfo_c);
+    
+    jpeg_finish_decompress(&cinfo_d); 
+    jpeg_destroy_decompress(&cinfo_d);
+    
+    fclose(infile); 
+    fclose(outfile);
+    
+    env->ReleaseStringUTFChars(inPath, in_file); 
+    env->ReleaseStringUTFChars(outPath, out_file);
+    
     return JNI_TRUE;
 }

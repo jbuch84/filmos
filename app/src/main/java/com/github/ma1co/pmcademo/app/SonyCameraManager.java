@@ -2,24 +2,28 @@ package com.github.ma1co.pmcademo.app;
 
 import android.hardware.Camera;
 import android.util.Log;
-import android.util.Pair;
 import android.view.SurfaceHolder;
 
 import com.sony.scalar.hardware.CameraEx;
 
 import java.util.List;
 
-/**
- * filmOS Manager: Sony Camera Hardware
- * Manages the CameraEx lifecycle, listeners, and system state protection.
- */
 public class SonyCameraManager {
     private CameraEx cameraEx;
     private Camera camera;
     
-    // selective Snapshot (The Walled Garden)
-    private String origSceneMode, origFocusMode, origWhiteBalance, origDroMode, origDroLevel, origSonyDro;
-    private String origContrast, origSaturation, origSharpness, origWbShiftMode, origWbShiftLb, origWbShiftCc;
+    private String origSceneMode;
+    private String origFocusMode;
+    private String origWhiteBalance;
+    private String origDroMode;
+    private String origDroLevel;
+    private String origSonyDro;
+    private String origContrast;
+    private String origSaturation;
+    private String origSharpness;
+    private String origWbShiftMode;
+    private String origWbShiftLb;
+    private String origWbShiftCc;
 
     public interface CameraEventListener {
         void onCameraReady();
@@ -35,34 +39,44 @@ public class SonyCameraManager {
         this.listener = listener;
     }
 
-    public Camera getCamera() { return camera; }
-    public CameraEx getCameraEx() { return cameraEx; }
+    public Camera getCamera() { 
+        return camera; 
+    }
+    
+    public CameraEx getCameraEx() { 
+        return cameraEx; 
+    }
 
-    /**
-     * Opens the Sony Camera extension and captures the original system state.
-     */
     public void open(SurfaceHolder holder) {
         if (cameraEx == null) {
             try {
                 cameraEx = CameraEx.open(0, null);
                 camera = cameraEx.getNormalCamera();
+                
+                // CRITICAL FIX: Let the camera take photos natively without UI lockups
                 cameraEx.startDirectShutter();
+                CameraEx.AutoPictureReviewControl apr = new CameraEx.AutoPictureReviewControl();
+                cameraEx.setAutoPictureReviewControl(apr);
+                apr.setPictureReviewTime(0);
 
-                // WALLED GARDEN: Capture system state once
                 if (origSceneMode == null && camera != null) {
-                    Camera.Parameters p = camera.getParameters();
-                    origSceneMode = p.getSceneMode();
-                    origFocusMode = p.getFocusMode();
-                    origWhiteBalance = p.getWhiteBalance();
-                    origDroMode = p.get("dro-mode");
-                    origDroLevel = p.get("dro-level");
-                    origSonyDro = p.get("sony-dro");
-                    origContrast = p.get("contrast");
-                    origSaturation = p.get("saturation");
-                    origSharpness = p.get("sharpness");
-                    origWbShiftMode = p.get("white-balance-shift-mode");
-                    origWbShiftLb = p.get("white-balance-shift-lb");
-                    origWbShiftCc = p.get("white-balance-shift-cc");
+                    try {
+                        Camera.Parameters p = camera.getParameters();
+                        origSceneMode = p.getSceneMode();
+                        origFocusMode = p.getFocusMode();
+                        origWhiteBalance = p.getWhiteBalance();
+                        origDroMode = p.get("dro-mode");
+                        origDroLevel = p.get("dro-level");
+                        origSonyDro = p.get("sony-dro");
+                        origContrast = p.get("contrast");
+                        origSaturation = p.get("saturation");
+                        origSharpness = p.get("sharpness");
+                        origWbShiftMode = p.get("white-balance-shift-mode");
+                        origWbShiftLb = p.get("white-balance-shift-lb");
+                        origWbShiftCc = p.get("white-balance-shift-cc");
+                    } catch (Exception e) {
+                        Log.e("filmOS", "Failed to backup parameters: " + e.getMessage());
+                    }
                 }
 
                 setupNativeListeners();
@@ -70,23 +84,32 @@ public class SonyCameraManager {
                 camera.setPreviewDisplay(holder);
                 camera.startPreview();
                 
-                if (listener != null) listener.onCameraReady();
+                // Force SINGLE drive mode so the shutter doesn't rapid-fire
+                try {
+                    Camera.Parameters params = camera.getParameters();
+                    CameraEx.ParametersModifier pm = cameraEx.createParametersModifier(params);
+                    pm.setDriveMode(CameraEx.ParametersModifier.DRIVE_MODE_SINGLE);
+                    camera.setParameters(params);
+                } catch(Exception e) {
+                    Log.e("filmOS", "Failed to set drive mode: " + e.getMessage());
+                }
+
+                if (listener != null) {
+                    listener.onCameraReady();
+                }
             } catch (Exception e) {
                 Log.e("filmOS", "Failed to open camera: " + e.getMessage());
             }
         }
     }
 
-    /**
-     * Restores only the parameters we touched, then releases the hardware.
-     */
     public void close() {
         if (camera != null && origSceneMode != null) {
             try {
                 Camera.Parameters p = camera.getParameters();
-                p.setSceneMode(origSceneMode);
-                p.setFocusMode(origFocusMode);
-                p.setWhiteBalance(origWhiteBalance);
+                if (origSceneMode != null) p.setSceneMode(origSceneMode);
+                if (origFocusMode != null) p.setFocusMode(origFocusMode);
+                if (origWhiteBalance != null) p.setWhiteBalance(origWhiteBalance);
                 if (origDroMode != null) p.set("dro-mode", origDroMode);
                 if (origDroLevel != null) p.set("dro-level", origDroLevel);
                 if (origSonyDro != null) p.set("sony-dro", origSonyDro);
@@ -97,8 +120,11 @@ public class SonyCameraManager {
                 if (origWbShiftLb != null) p.set("white-balance-shift-lb", origWbShiftLb);
                 if (origWbShiftCc != null) p.set("white-balance-shift-cc", origWbShiftCc);
                 camera.setParameters(p);
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                Log.e("filmOS", "Failed to restore parameters: " + e.getMessage());
+            }
         }
+        
         if (cameraEx != null) {
             cameraEx.release();
             cameraEx = null;
@@ -106,59 +132,79 @@ public class SonyCameraManager {
         }
     }
 
-    /**
-     * Uses Java reflection to bind to Sony firmware listeners for real-time HUD updates.
-     */
     private void setupNativeListeners() {
-        // Shutter Listener
         cameraEx.setShutterSpeedChangeListener(new CameraEx.ShutterSpeedChangeListener() {
-            @Override public void onShutterSpeedChange(CameraEx.ShutterSpeedInfo i, CameraEx c) {
-                if (listener != null) listener.onShutterSpeedChanged();
+            @Override 
+            public void onShutterSpeedChange(CameraEx.ShutterSpeedInfo i, CameraEx c) {
+                if (listener != null) {
+                    listener.onShutterSpeedChanged();
+                }
             }
         });
 
-        // Aperture Proxy
         try {
             Class<?> lClass = Class.forName("com.sony.scalar.hardware.CameraEx$ApertureChangeListener");
-            Object proxy = java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(), new Class[]{lClass},
+            Object proxy = java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(), 
+                new Class[]{lClass},
                 new java.lang.reflect.InvocationHandler() {
-                    @Override public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) {
-                        if (m.getName().equals("onApertureChange") && listener != null) listener.onApertureChanged();
+                    @Override 
+                    public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) {
+                        if (m.getName().equals("onApertureChange") && listener != null) {
+                            listener.onApertureChanged();
+                        }
                         return null;
                     }
-                });
+                }
+            );
             cameraEx.getClass().getMethod("setApertureChangeListener", lClass).invoke(cameraEx, proxy);
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            Log.e("filmOS", "Failed to set Aperture proxy: " + e.getMessage());
+        }
 
-        // ISO Proxy
         try {
             Class<?> lClass = Class.forName("com.sony.scalar.hardware.CameraEx$AutoISOSensitivityListener");
-            Object proxy = java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(), new Class[]{lClass},
+            Object proxy = java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(), 
+                new Class[]{lClass},
                 new java.lang.reflect.InvocationHandler() {
-                    @Override public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) {
-                        if (m.getName().equals("onChanged") && listener != null) listener.onIsoChanged();
+                    @Override 
+                    public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) {
+                        if (m.getName().equals("onChanged") && listener != null) {
+                            listener.onIsoChanged();
+                        }
                         return null;
                     }
-                });
+                }
+            );
             cameraEx.getClass().getMethod("setAutoISOSensitivityListener", lClass).invoke(cameraEx, proxy);
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            Log.e("filmOS", "Failed to set ISO proxy: " + e.getMessage());
+        }
 
-        // Focus Drive Proxy
         try {
             Class<?> lClass = Class.forName("com.sony.scalar.hardware.CameraEx$FocusDriveListener");
-            Object proxy = java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(), new Class[]{lClass},
+            Object proxy = java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(), 
+                new Class[]{lClass},
                 new java.lang.reflect.InvocationHandler() {
-                    @Override public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) throws Throwable {
+                    @Override 
+                    public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) throws Throwable {
                         if (m.getName().equals("onChanged") && a != null && a.length == 2) {
                             Object pos = a[0];
                             int cur = pos.getClass().getField("currentPosition").getInt(pos);
                             int max = pos.getClass().getField("maxPosition").getInt(pos);
-                            if (max > 0 && listener != null) listener.onFocusPositionChanged((float) cur / max);
+                            if (max > 0 && listener != null) {
+                                listener.onFocusPositionChanged((float) cur / max);
+                            }
                         }
                         return null;
                     }
-                });
+                }
+            );
             cameraEx.getClass().getMethod("setFocusDriveListener", lClass).invoke(cameraEx, proxy);
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            Log.e("filmOS", "Failed to set Focus proxy: " + e.getMessage());
+        }
     }
 }
