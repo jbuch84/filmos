@@ -32,6 +32,21 @@ jobs:
         echo "sdk.dir=$HOME/clean-sdk" > local.properties
         echo "ndk.dir=$HOME/clean-sdk/ndk/16.1.4479499" >> local.properties
 
+    - name: Build OpenMemories Stubs Locally (JitPack Bypass)
+      run: |
+        git clone https://github.com/ma1co/OpenMemories-Framework.git
+        cd OpenMemories-Framework
+        git checkout f8df3504d8
+        cd stubs
+        export JAVA_HOME=$JAVA_HOME_8_X64
+        wget -q https://services.gradle.org/distributions/gradle-4.10.3-bin.zip
+        unzip -q gradle-4.10.3-bin.zip
+        ./gradle-4.10.3/bin/gradle assemble
+        
+        # Create the libs folder in our main app and copy the newly built jar into it
+        mkdir -p ../../app/libs
+        cp build/libs/*.jar ../../app/libs/openmemories-stubs.jar
+
     - name: Build with Isolated Legacy Gradle
       run: |
         export JAVA_HOME=$JAVA_HOME_8_X64
@@ -45,4 +60,3 @@ jobs:
       with:
         name: Sony-JPGCookbook-NDK
         path: app/build/outputs/apk/debug/*.apk
-# Forcing GitHub to trigger
