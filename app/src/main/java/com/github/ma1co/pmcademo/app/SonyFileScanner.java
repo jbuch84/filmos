@@ -5,7 +5,7 @@ import java.io.File;
 public class SonyFileScanner {
     private String dcimRoot;
     private ScannerCallback mCallback;
-    private long lastSeenTime = 0;
+    private String lastSeenFilePath = "";
 
     public interface ScannerCallback {
         void onNewPhotoDetected(String filePath);
@@ -34,7 +34,7 @@ public class SonyFileScanner {
         if (!dcimDir.exists() || !dcimDir.isDirectory()) return;
 
         File newestFile = null;
-        long maxModified = lastSeenTime;
+        long maxModified = 0;
 
         File[] subDirs = dcimDir.listFiles();
         if (subDirs != null) {
@@ -57,9 +57,12 @@ public class SonyFileScanner {
         }
 
         if (newestFile != null) {
-            lastSeenTime = maxModified;
-            if (triggerCallback && mCallback != null && mCallback.isReadyToProcess()) {
-                mCallback.onNewPhotoDetected(newestFile.getAbsolutePath());
+            String currentPath = newestFile.getAbsolutePath();
+            if (!currentPath.equals(lastSeenFilePath)) {
+                lastSeenFilePath = currentPath;
+                if (triggerCallback && mCallback != null && mCallback.isReadyToProcess()) {
+                    mCallback.onNewPhotoDetected(currentPath);
+                }
             }
         }
     }

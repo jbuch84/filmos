@@ -280,7 +280,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         mScanner = new SonyFileScanner(dcimPath, new SonyFileScanner.ScannerCallback() {
             @Override 
             public boolean isReadyToProcess() { 
-                return isReady && !isProcessing && recipeManager.getCurrentProfile().lutIndex != 0; 
+                RTLProfile p = recipeManager.getCurrentProfile();
+                return isReady && !isProcessing && (p.lutIndex != 0 || p.grain != 0 || p.vignette != 0 || p.rollOff != 0); 
             }
             
             @Override 
@@ -317,7 +318,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 } else if (retries[0] < 30) { 
                     lastSize[0] = currentSize;
                     retries[0]++;
-                    uiHandler.postDelayed(this, 500);
+                    uiHandler.postDelayed(this, 300);
                 } else {
                     isProcessing = false;
                     updateMainHUD();
@@ -325,7 +326,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             }
         };
         
-        uiHandler.postDelayed(checker, 500);
+        uiHandler.postDelayed(checker, 200);
     }
 
     private void triggerLutPreload() {
@@ -493,7 +494,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 enterPlayback();
             } else {
                 displayState = (displayState == 0) ? 1 : 0; 
-                mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE); 
+                mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE);
             }
         } else {
             if (currentPage == 4) { 
@@ -994,6 +995,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         RTLProfile p = recipeManager.getCurrentProfile();
         int itemCount = 0;
 
+        String[] amtLabels = {"OFF", "LOW", "MED", "HIGH", "V.HIGH", "MAX"};
+        String[] sizeLabels = {"SMALL", "MED", "LARGE"};
+        String[] stepLabels = {"-3", "-2", "-1", "0", "+1", "+2", "+3"};
+
         if (currentPage == 1) { 
             itemCount = 7;
             String[] rLabels = {"RTL Slot", "LUT", "Opacity", "Grain Amount", "Grain Size", "Highlight Roll", "Vignette"};
@@ -1001,10 +1006,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 String.valueOf(recipeManager.getCurrentSlot() + 1), 
                 recipeManager.getRecipeNames().get(p.lutIndex), 
                 p.opacity + "%", 
-                String.valueOf(p.grain), 
-                String.valueOf(p.grainSize), 
-                String.valueOf(p.rollOff), 
-                String.valueOf(p.vignette)
+                amtLabels[Math.max(0, Math.min(5, p.grain))], 
+                sizeLabels[Math.max(0, Math.min(2, p.grainSize))], 
+                amtLabels[Math.max(0, Math.min(5, p.rollOff))], 
+                amtLabels[Math.max(0, Math.min(5, p.vignette))]
             };
             for (int i = 0; i < 7; i++) { 
                 menuLabels[i].setText(rLabels[i]); 
@@ -1016,12 +1021,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             String[] cLabels = {"White Balance", "WB Shift (A-B)", "WB Shift (G-M)", "DRO", "Contrast", "Saturation", "Sharpness"};
             String[] cValues = { 
                 p.whiteBalance, 
-                String.valueOf(p.wbShift), 
-                String.valueOf(p.wbShiftGM), 
+                p.wbShift > 0 ? "+" + p.wbShift : String.valueOf(p.wbShift), 
+                p.wbShiftGM > 0 ? "+" + p.wbShiftGM : String.valueOf(p.wbShiftGM), 
                 p.dro, 
-                String.valueOf(p.contrast), 
-                String.valueOf(p.saturation), 
-                String.valueOf(p.sharpness) 
+                stepLabels[Math.max(0, Math.min(6, p.contrast + 3))], 
+                stepLabels[Math.max(0, Math.min(6, p.saturation + 3))], 
+                stepLabels[Math.max(0, Math.min(6, p.sharpness + 3))] 
             };
             for (int i = 0; i < 7; i++) { 
                 menuLabels[i].setText(cLabels[i]); 
@@ -1164,7 +1169,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         afOverlay = new ProReticleView(this); 
         mainUIContainer.addView(afOverlay, new FrameLayout.LayoutParams(-1, -1));
         
-        // --- NEW TABBED MENU UI ---
         menuContainer = new LinearLayout(this); 
         menuContainer.setOrientation(LinearLayout.VERTICAL); 
         menuContainer.setBackgroundColor(Color.argb(250, 15, 15, 15)); 
@@ -1317,7 +1321,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             cameraManager.open(mSurfaceView.getHolder()); 
         }
         
-        // REGISTER SONY SIGNAL: Wake up when the camera finishes writing
         IntentFilter sonyFilter = new IntentFilter("com.sony.scalar.database.avindex.action.AVINDEX_DATABASE_UPDATED");
         registerReceiver(sonyCameraReceiver, sonyFilter);
         
