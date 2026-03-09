@@ -96,16 +96,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private boolean prefShowGridLines = false;
     private int prefJpegQuality = 95; // <-- ADD THIS LINE
 
-    / --- LENS MAPPER VARIABLES ---
     private LensProfileManager lensManager;
     private int currentLensSlot = 1;
     private boolean isCalibrating = false;
     private List<LensProfileManager.CalPoint> tempCalPoints = new ArrayList<LensProfileManager.CalPoint>();
-    
-    // The strict linear steps: Min, 1m, 3m, Infinity
     private int calibStep = 0;
-    private float[] wizardDistances = {0.3f, 1.0f, 3.0f, 999.0f}; // 0.3m represents "Min Focus"
+    private float[] wizardDistances = {0.3f, 1.0f, 3.0f, 999.0f}; 
     private String[] wizardLabels = {"MINIMUM FOCUS", "1.0 METER", "3.0 METERS", "INFINITY"};
+    private TextView tvCalibrationPrompt;
     
     private boolean cachedIsManualFocus = false;
     private float cachedAperture = 2.8f;
@@ -289,17 +287,37 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             }
         });
         
-        String dcimPath = Environment.getExternalStorageDirectory().getAbsolutePath() + "/DCIM/100MSDCF";
+        // --- DYNAMIC FOLDER DISCOVERY FIX ---
+        String baseDcim = Environment.getExternalStorageDirectory().getAbsolutePath() + "/DCIM";
         String[] possibleRoots = { Environment.getExternalStorageDirectory().getAbsolutePath(), "/mnt/sdcard", "/storage/sdcard0", "/sdcard" };
+        
+        File targetDir = new File(baseDcim, "100MSDCF"); // Default fallback
+        long newestDate = 0;
+
+        // 1. Find the valid root DCIM folder
         for (String r : possibleRoots) {
-            File f = new File(r + "/DCIM/100MSDCF");
-            if (f.exists()) {
-                dcimPath = f.getAbsolutePath();
-                break;
+            File dcim = new File(r + "/DCIM");
+            if (dcim.exists() && dcim.isDirectory()) {
+                
+                // 2. Scan all subfolders to find the newest MSDCF folder (e.g. 101MSDCF, 102MSDCF)
+                File[] subDirs = dcim.listFiles();
+                if (subDirs != null) {
+                    for (File sub : subDirs) {
+                        if (sub.isDirectory() && sub.getName().endsWith("MSDCF")) {
+                            if (sub.lastModified() > newestDate) {
+                                newestDate = sub.lastModified();
+                                targetDir = sub;
+                            }
+                        }
+                    }
+                }
+                break; // Found the root, stop searching roots
             }
         }
         
-        mScanner = new SonyFileScanner(dcimPath, new SonyFileScanner.ScannerCallback() {
+        Log.d("filmOS", "Scanner targeting folder: " + targetDir.getAbsolutePath());
+        
+        mScanner = new SonyFileScanner(targetDir.getAbsolutePath(), new SonyFileScanner.ScannerCallback() {
             @Override 
             public boolean isReadyToProcess() { 
                 RTLProfile p = recipeManager.getCurrentProfile();
