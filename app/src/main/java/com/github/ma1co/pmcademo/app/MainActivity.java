@@ -1492,7 +1492,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             // FIX: Force the UI to draw the frame immediately when switching to MF,
             // even before the user touches the lens ring. (-1 tells the view it's an initial draw).
             if (shouldShow) {
-                focusMeter.update(-1f, cachedAperture, false);
+                focusMeter.update(-1f, cachedAperture);
             }
         }
         
@@ -1563,7 +1563,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             runOnUiThread(new Runnable() { 
                 public void run() {
                     // Reverted to true so it actually draws!
-                    focusMeter.update(ratio, cachedAperture, true); 
+                    focusMeter.update(-1f, cachedAperture);
                 }
             });
         }
@@ -1741,7 +1741,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             // FIX: Force the UI to draw the frame immediately when switching to MF,
             // even before the user touches the lens ring. (-1 tells the view it's an initial draw).
             if (shouldShow) {
-                focusMeter.update(-1f, cachedAperture, false);
+                focusMeter.update(-1f, cachedAperture);
             }
         }
     }

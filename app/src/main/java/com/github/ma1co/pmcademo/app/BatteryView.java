@@ -18,7 +18,7 @@ public class BatteryView extends View {
         super(context);
         paint = new Paint();
         paint.setAntiAlias(true);
-        paint.setStrokeWidth(2);
+        paint.setStrokeWidth(2); // 2px stroke means it expands 1px in both directions
     }
 
     public void setLevel(int level) {
@@ -34,20 +34,23 @@ public class BatteryView extends View {
 
         paint.setColor(Color.WHITE);
         paint.setStyle(Paint.Style.STROKE);
-        // Draw battery body
-        canvas.drawRect(2, 2, w - 8, h - 2, paint);
+        
+        // Pulled the right edge in slightly so the stroke doesn't clip the canvas boundary
+        canvas.drawRect(2, 2, w - 6, h - 2, paint); 
         
         paint.setStyle(Paint.Style.FILL);
-        // Draw battery "nub"
-        canvas.drawRect(w - 8, h / 2 - 4, w - 2, h / 2 + 4, paint);
+        // Draw battery "nub" strictly inside the final pixels
+        canvas.drawRect(w - 6, h / 2 - 3, w - 1, h / 2 + 3, paint);
 
         int barColor = (level < 15) ? Color.RED : Color.WHITE;
         paint.setColor(barColor);
-        int fillW = (w - 14);
+        
+        float fillW = (w - 11);
+        float segW = fillW / 3.0f;
 
-        // Draw segments based on level
-        if (level > 10) canvas.drawRect(6, 6, 6 + (fillW / 3) - 2, h - 6, paint);
-        if (level > 40) canvas.drawRect(6 + (fillW / 3) + 2, 6, 6 + (2 * fillW / 3) - 2, h - 6, paint);
-        if (level > 70) canvas.drawRect(6 + (2 * fillW / 3) + 2, 6, w - 12, h - 6, paint);
+        // Draw segments based on level with tighter, calculated padding
+        if (level > 10) canvas.drawRect(5, 5, 5 + segW - 2, h - 5, paint);
+        if (level > 40) canvas.drawRect(5 + segW + 1, 5, 5 + (segW * 2) - 2, h - 5, paint);
+        if (level > 70) canvas.drawRect(5 + (segW * 2) + 1, 5, w - 9, h - 5, paint);
     }
 }
