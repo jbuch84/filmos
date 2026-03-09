@@ -64,6 +64,55 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
         return JNI_FALSE;
     }
 
+    // --- PHASE 1: THE MANUAL EXIF & MPF HUNTER ---
+    std::vector<uint8_t> exifData;
+    int targetOffset = 0;
+    int finalScale = scaleDenom;
+
+    // Use heap allocation to prevent Android Stack Overflow (0kb file fix)
+    unsigned char* header = (unsigned char*)malloc(262144); 
+    if (header) {
+        int readLen = fread(header, 1, 262144, infile);
+        
+        // 1. Hunt for the EXIF APP1 block
+        for (int i = 0; i < readLen - 8; i++) {
+            if (header[i] == 0xFF && header[i+1] == 0xE1) {
+                if (header[i+4] == 'E' && header[i+5] == 'x' && header[i+6] == 'i' && header[i+7] == 'f') {
+                    int len = (header[i+2] << 8) | header[i+3];
+                    if (i + 2 + len < readLen) {
+                        exifData.assign(header + i + 4, header + i + 2 + len);
+                    }
+                    break; 
+                }
+            }
+        }
+
+        // 2. Hunt for the MPF block (1.6MP Thumbnail) ONLY if Proxy mode is requested
+        if (scaleDenom == 4) {
+            for (int i = 0; i < readLen - 8; i++) {
+                // Find APP2 marker with "MPF\0" signature
+                if (header[i] == 0xFF && header[i+1] == 0xE2 && 
+                    header[i+4] == 'M' && header[i+5] == 'P' && header[i+6] == 'F' && header[i+7] == 0x00) {
+                    
+                    // Found MPF! Now find the first JPEG Start-Of-Image inside it.
+                    for (int j = i + 8; j < readLen - 2; j++) {
+                        if (header[j] == 0xFF && header[j+1] == 0xD8 && header[j+2] == 0xFF) {
+                            targetOffset = j;
+                            finalScale = 1; // It's already 1.6MP, do not downscale
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        free(header);
+    }
+
+    // Move file pointer to the 1.6MP preview (or 0 for full res)
+    fseek(infile, targetOffset, SEEK_SET);
+
+    // --- PHASE 2: STANDARD LIBJPEG DECODE/ENCODE ---
     struct jpeg_decompress_struct cinfo_d; 
     struct jpeg_compress_struct cinfo_c; 
     struct my_error_mgr jerr_d, jerr_c;
@@ -75,38 +124,10 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     }
     
     jpeg_create_decompress(&cinfo_d); 
-    jpeg_save_markers(&cinfo_d, JPEG_APP0 + 1, 0xFFFF); // Capture EXIF APP1
     jpeg_stdio_src(&cinfo_d, infile);
     jpeg_read_header(&cinfo_d, TRUE); 
-
-    int finalScale = scaleDenom;
-
-    // --- ENHANCED GHOST RIP (PROXY MODE) ---
-    if (scaleDenom == 4) {
-        fseek(infile, 0, SEEK_SET);
-        unsigned char header[262144]; // Scan 256KB for MPF/Preview
-        int readLen = fread(header, 1, 262144, infile);
-        int thumbOffset = -1;
-        for (int i = 0; i < readLen - 4; i++) {
-            // Search for SOI marker after some metadata padding
-            if (header[i] == 0xFF && header[i+1] == 0xD8 && header[i+2] == 0xFF) {
-                if (i > 1000) { thumbOffset = i; break; } // Skip the main image SOI
-            }
-        }
-        if (thumbOffset != -1) {
-            fseek(infile, thumbOffset, SEEK_SET);
-            jpeg_stdio_src(&cinfo_d, infile);
-            jpeg_read_header(&cinfo_d, TRUE);
-            finalScale = 1; // Thumb is already small
-        } else {
-            fseek(infile, 0, SEEK_SET); // Safety fallback to main image
-            jpeg_stdio_src(&cinfo_d, infile);
-            jpeg_read_header(&cinfo_d, TRUE);
-        }
-    }
-
     cinfo_d.scale_num = 1;
-    cinfo_d.scale_denom = finalScale;
+    cinfo_d.scale_denom = finalScale; // Will be 1 for Proxy, 2 for High, 1 for Ultra
     cinfo_d.out_color_space = JCS_RGB; 
     jpeg_start_decompress(&cinfo_d);
 
@@ -128,16 +149,11 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     
     jpeg_start_compress(&cinfo_c, TRUE);
 
-    // --- RE-INJECT EXIF DATA ---
-    jpeg_saved_marker_ptr marker = cinfo_d.marker_list;
-    while (marker != NULL) {
-        if (marker->marker == (JPEG_APP0 + 1)) {
-            jpeg_write_marker(&cinfo_c, marker->marker, marker->data, marker->data_length);
-        }
-        marker = marker->next;
+    // --- INJECT THE SAVED EXIF ---
+    if (!exifData.empty()) {
+        jpeg_write_marker(&cinfo_c, JPEG_APP0 + 1, exifData.data(), exifData.size());
     }
 
-    // PRESERVED PROCESSING LOGIC
     int map[256]; 
     int lutMax = nativeLutSize > 0 ? nativeLutSize - 1 : 0; 
     int lutSize2 = nativeLutSize * nativeLutSize;
@@ -193,12 +209,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
                 outG = g + (((lG - g) * opac_mapped) >> 8);
                 outB = b + (((lB - b) * opac_mapped) >> 8);
             }
-            if (rollOff > 0) { 
-                int r_t = (outR > 200) ? outR - ((outR - 200) * (outR - 200) * rollOff) / 11000 : outR;
-                int g_t = (outG > 200) ? outG - ((outG - 200) * (outG - 200) * rollOff) / 11000 : outG;
-                int b_t = (outB > 200) ? outB - ((outB - 200) * (outB - 200) * rollOff) / 11000 : outB;
-                outR = r_t < 0 ? 0 : r_t; outG = g_t < 0 ? 0 : g_t; outB = b_t < 0 ? 0 : b_t;
-            }
+            if (rollOff > 0) { outR = (outR>200)?outR-((outR-200)*(outR-200)*rollOff)/11000:outR; outG=(outG>200)?outG-((outG-200)*(outG-200)*rollOff)/11000:outG; outB=(outB>200)?outB-((outB-200)*(outB-200)*rollOff)/11000:outB; }
             if (vignette > 0) {
                 long long d_sq = ((long long)(x/3)-cx)*((long long)(x/3)-cx) + (long long)(abs_y-cy_center)*(abs_y-cy_center);
                 int v_m = 256 - (int)((d_sq * vig_coef) >> 24); if (v_m < 0) v_m = 0;
