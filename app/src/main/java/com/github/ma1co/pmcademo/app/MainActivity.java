@@ -1690,36 +1690,58 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 tvPlaybackInfo.setText(metaText);
             }
             
+            // --- THE HD MEMORY-SAFE FIX ---
+            String path = file.getAbsolutePath();
+
             // 1. Check dimensions WITHOUT loading into memory
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inJustDecodeBounds = true;
             BitmapFactory.decodeFile(path, opts);
             
-            // 2. Downsample to a safe screen size (~1200px max)
+            // 2. Downsample to a safe screen size (~1200px max) to prevent memory crashes
             opts.inSampleSize = 1;
             while (opts.outWidth / opts.inSampleSize > 1200 || opts.outHeight / opts.inSampleSize > 1200) {
                 opts.inSampleSize *= 2;
             }
             
-            // 3. Actually load the lightweight version
+            // 3. Actually load the lightweight, memory-safe version
             opts.inJustDecodeBounds = false;
             Bitmap raw = BitmapFactory.decodeFile(path, opts);
             
-            // 4. Rotate and apply HD GPU Squish!
+            if (raw == null) {
+                return;
+            }
+
+            // 4. Calculate rotation using the EXIF data we loaded earlier
+            int orient = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+            int rot = 0; 
+            if (orient == ExifInterface.ORIENTATION_ROTATE_90) {
+                rot = 90; 
+            } else if (orient == ExifInterface.ORIENTATION_ROTATE_180) {
+                rot = 180; 
+            } else if (orient == ExifInterface.ORIENTATION_ROTATE_270) {
+                rot = 270;
+            }
+            
+            // 5. Rotate without scaling the pixels on the CPU
             Matrix m = new Matrix(); 
             if (rot != 0) {
                 m.postRotate(rot); 
             }
+            
             Bitmap bmp = Bitmap.createBitmap(raw, 0, 0, raw.getWidth(), raw.getHeight(), m, true);
             
             if (playbackImageView != null) {
                 playbackImageView.setImageBitmap(bmp);
-                // GPU SQUISH: Apply the 0.8888f correction directly to the View!
+                
+                // 6. GPU SQUISH: Apply the 0.8888f fat-pixel correction directly to the View!
                 playbackImageView.setScaleX(0.8888f);
                 playbackImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
             }
             currentPlaybackBitmap = bmp;
+            
         } catch (Exception e) {
+            Log.e("filmOS", "Playback error: " + e.getMessage());
         }
     }
 
