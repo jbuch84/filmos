@@ -98,6 +98,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     
     private boolean cachedIsManualFocus = false;
     private float cachedAperture = 2.8f;
+    private float cachedFocusRatio = 0.5f;
     
     // Menu State
     private boolean isMenuEditing = false;
@@ -1489,10 +1490,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             boolean shouldShow = prefShowFocusMeter && cachedIsManualFocus;
             focusMeter.setVisibility(shouldShow ? View.VISIBLE : View.GONE);
             
-            // FIX: Force the UI to draw the frame immediately when switching to MF,
-            // even before the user touches the lens ring. (-1 tells the view it's an initial draw).
+            // Change focusMeter.update(0.5f, cachedAperture); to this:
             if (shouldShow) {
-                focusMeter.update(0.5f, cachedAperture);
+                focusMeter.update(cachedFocusRatio, cachedAperture);
             }
         }
         
@@ -1562,8 +1562,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (focusMeter != null && cachedIsManualFocus) { 
             runOnUiThread(new Runnable() { 
                 public void run() {
-                    // Reverted to true so it actually draws!
-                    focusMeter.update(0.5f, cachedAperture);
+                    cachedFocusRatio = ratio; // <-- UPDATE THE CACHE
+                    focusMeter.update(cachedFocusRatio, cachedAperture); 
                 }
             });
         }
@@ -1663,7 +1663,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 return;
             }
             
-            ExifInterface exif = new ExifInterface(file.getAbsolutePath());
+            String path = file.getAbsolutePath();
+            ExifInterface exif = new ExifInterface(path);
             
             String fnum = exif.getAttribute("FNumber");
             String speed = exif.getAttribute("ExposureTime");
@@ -1689,14 +1690,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             if (tvPlaybackInfo != null) {
                 tvPlaybackInfo.setText(metaText);
             }
-            
-            BitmapFactory.Options opts = new BitmapFactory.Options(); 
+
+            // 1. Force the bulletproof downsample (Guarantees < 2MB of RAM usage!)
+            BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inSampleSize = 8; 
-            Bitmap raw = BitmapFactory.decodeFile(file.getAbsolutePath(), opts);
+            Bitmap raw = BitmapFactory.decodeFile(path, opts);
+            
             if (raw == null) {
                 return;
             }
 
+            // 2. Calculate rotation
             int orient = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
             int rot = 0; 
             if (orient == ExifInterface.ORIENTATION_ROTATE_90) {
@@ -1707,18 +1711,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 rot = 270;
             }
             
+            // 3. CPU Squish & Rotate (Safe now because we smoothly downsampled first!)
             Matrix m = new Matrix(); 
             if (rot != 0) {
                 m.postRotate(rot); 
             }
-            m.postScale(0.8888f, 1.0f);
+            // Put the fat-pixel fix back here!
+            m.postScale(0.8888f, 1.0f); 
             
+            // The 'true' at the end enables hardware bilinear filtering to keep it crisp
             Bitmap bmp = Bitmap.createBitmap(raw, 0, 0, raw.getWidth(), raw.getHeight(), m, true);
+            
+            // --- CRITICAL MEMORY LEAK FIX ---
+            if (raw != bmp) {
+                raw.recycle(); // Destroy the unrotated duplicate to free up RAM!
+            }
+            
             if (playbackImageView != null) {
                 playbackImageView.setImageBitmap(bmp);
+                
+                // REMOVED the setScaleX() command that was crashing the Gingerbread OS!
+                playbackImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
             }
             currentPlaybackBitmap = bmp;
+            
         } catch (Exception e) {
+            Log.e("filmOS", "Playback error: " + e.getMessage());
         }
     }
 
@@ -1738,10 +1756,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             boolean shouldShow = prefShowFocusMeter && cachedIsManualFocus;
             focusMeter.setVisibility(shouldShow ? View.VISIBLE : View.GONE);
             
-            // FIX: Force the UI to draw the frame immediately when switching to MF,
-            // even before the user touches the lens ring. (-1 tells the view it's an initial draw).
+            // Change focusMeter.update(0.5f, cachedAperture); to this:
             if (shouldShow) {
-                focusMeter.update(0.5f, cachedAperture);
+                focusMeter.update(cachedFocusRatio, cachedAperture);
             }
         }
     }

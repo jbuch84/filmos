@@ -81,9 +81,18 @@ public class ImageProcessor {
                 fos.write(1);
                 fos.close();
 
+                // 0=1/4 RES (4), 1=HALF RES (2), 2=FULL RES (1)
                 int scale = (qualityIdx == 0) ? 4 : (qualityIdx == 2 ? 1 : 2);
 
-                // FIX: Use the user-defined jpegQuality instead of hardcoding it
+                // Dynamically set JPEG encode quality
+                int jpegQuality = 95; // FULL RES
+                if (scale == 4) {
+                    jpegQuality = 85; // 1/4 RES
+                } else if (scale == 2) {
+                    jpegQuality = 90; // HALF RES
+                }
+
+                // FIX: Reverted to using p.grainSize directly so we don't accidentally force Medium grain!
                 if (mEngine.applyLutToJpeg(original.getAbsolutePath(), outFile.getAbsolutePath(), scale, p.opacity, p.grain * 20, p.grainSize, p.vignette * 20, p.rollOff * 20, jpegQuality)) {
                     return "SAVED";
                 }
