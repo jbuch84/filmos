@@ -1,5 +1,7 @@
 package com.github.ma1co.pmcademo.app;
 
+import java.io.File;
+
 public class LutEngine {
     static { System.loadLibrary("native-lib"); }
     private String currentLutName = "";
@@ -7,10 +9,10 @@ public class LutEngine {
     private native boolean loadLutNative(String filePath);
     private native boolean processImageNative(String inPath, String outPath, int scaleDenom, int opacity, int grain, int grainSize, int vignette, int rollOff);
 
-    public boolean loadLut(java.io.File path, String name) {
-        if (name.equals(currentLutName)) return true;
-        if (loadLutNative(path.getAbsolutePath())) {
-            currentLutName = name; return true;
+    public boolean loadLut(File cubeFile, String lutName) {
+        if (lutName.equals(currentLutName)) return true;
+        if (loadLutNative(cubeFile.getAbsolutePath())) {
+            currentLutName = lutName; return true;
         }
         return false;
     }

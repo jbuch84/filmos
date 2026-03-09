@@ -25,7 +25,7 @@ inline uint32_t fast_rand(uint32_t* state) {
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject, jstring path) {
+Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject obj, jstring path) {
     const char *file_path = env->GetStringUTFChars(path, NULL);
     FILE *file = fopen(file_path, "r");
     if (!file) { env->ReleaseStringUTFChars(path, file_path); return JNI_FALSE; }
@@ -49,7 +49,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject,
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
-    JNIEnv* env, jobject, jstring inPath, jstring outPath, 
+    JNIEnv* env, jobject obj, jstring inPath, jstring outPath, 
     jint scaleDenom, jint opacity, jint grain, jint grainSize, 
     jint vignette, jint rollOff) {
     
@@ -75,31 +75,33 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     }
     
     jpeg_create_decompress(&cinfo_d); 
-    
-    // EXIF PRESERVATION: Save markers from the main header first
-    jpeg_save_markers(&cinfo_d, JPEG_APP0 + 1, 0xFFFF);
+    jpeg_save_markers(&cinfo_d, JPEG_APP0 + 1, 0xFFFF); // Capture EXIF APP1
     jpeg_stdio_src(&cinfo_d, infile);
     jpeg_read_header(&cinfo_d, TRUE); 
 
     int finalScale = scaleDenom;
 
-    // --- GHOST RIP SPEED HACK ---
+    // --- ENHANCED GHOST RIP (PROXY MODE) ---
     if (scaleDenom == 4) {
         fseek(infile, 0, SEEK_SET);
-        unsigned char buf[131072];
-        fread(buf, 1, 131072, infile);
-        int soiCount = 0;
-        for (int i = 0; i < 131071; i++) {
-            if (buf[i] == 0xFF && buf[i+1] == 0xD8) {
-                soiCount++;
-                if (soiCount == 2) { 
-                    fseek(infile, i, SEEK_SET); 
-                    jpeg_stdio_src(&cinfo_d, infile);
-                    jpeg_read_header(&cinfo_d, TRUE); 
-                    finalScale = 1; // Thumb is already 1.6MP
-                    break; 
-                }
+        unsigned char header[262144]; // Scan 256KB for MPF/Preview
+        int readLen = fread(header, 1, 262144, infile);
+        int thumbOffset = -1;
+        for (int i = 0; i < readLen - 4; i++) {
+            // Search for SOI marker after some metadata padding
+            if (header[i] == 0xFF && header[i+1] == 0xD8 && header[i+2] == 0xFF) {
+                if (i > 1000) { thumbOffset = i; break; } // Skip the main image SOI
             }
+        }
+        if (thumbOffset != -1) {
+            fseek(infile, thumbOffset, SEEK_SET);
+            jpeg_stdio_src(&cinfo_d, infile);
+            jpeg_read_header(&cinfo_d, TRUE);
+            finalScale = 1; // Thumb is already small
+        } else {
+            fseek(infile, 0, SEEK_SET); // Safety fallback to main image
+            jpeg_stdio_src(&cinfo_d, infile);
+            jpeg_read_header(&cinfo_d, TRUE);
         }
     }
 
@@ -126,15 +128,16 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     
     jpeg_start_compress(&cinfo_c, TRUE);
 
-    // RE-INJECT EXIF
+    // --- RE-INJECT EXIF DATA ---
     jpeg_saved_marker_ptr marker = cinfo_d.marker_list;
     while (marker != NULL) {
-        if (marker->marker == (JPEG_APP0 + 1)) { 
+        if (marker->marker == (JPEG_APP0 + 1)) {
             jpeg_write_marker(&cinfo_c, marker->marker, marker->data, marker->data_length);
         }
         marker = marker->next;
     }
 
+    // PRESERVED PROCESSING LOGIC
     int map[256]; 
     int lutMax = nativeLutSize > 0 ? nativeLutSize - 1 : 0; 
     int lutSize2 = nativeLutSize * nativeLutSize;
@@ -156,7 +159,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
         row_pointer[0] = row_buf;
         jpeg_read_scanlines(&cinfo_d, row_pointer, 1);
         uint32_t seed = master_seed + (abs_y * 1337); 
-        int prev_noise = 0; // FIXED SCOPE
+        int prev_noise = 0; 
 
         for (int x = 0; x < row_stride; x += 3) {
             int r = row_buf[x], g = row_buf[x+1], b = row_buf[x+2];
@@ -190,7 +193,12 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
                 outG = g + (((lG - g) * opac_mapped) >> 8);
                 outB = b + (((lB - b) * opac_mapped) >> 8);
             }
-            if (rollOff > 0) { outR = (outR>200)?outR-((outR-200)*(outR-200)*rollOff)/11000:outR; outG=(outG>200)?outG-((outG-200)*(outG-200)*rollOff)/11000:outG; outB=(outB>200)?outB-((outB-200)*(outB-200)*rollOff)/11000:outB; }
+            if (rollOff > 0) { 
+                int r_t = (outR > 200) ? outR - ((outR - 200) * (outR - 200) * rollOff) / 11000 : outR;
+                int g_t = (outG > 200) ? outG - ((outG - 200) * (outG - 200) * rollOff) / 11000 : outG;
+                int b_t = (outB > 200) ? outB - ((outB - 200) * (outB - 200) * rollOff) / 11000 : outB;
+                outR = r_t < 0 ? 0 : r_t; outG = g_t < 0 ? 0 : g_t; outB = b_t < 0 ? 0 : b_t;
+            }
             if (vignette > 0) {
                 long long d_sq = ((long long)(x/3)-cx)*((long long)(x/3)-cx) + (long long)(abs_y-cy_center)*(abs_y-cy_center);
                 int v_m = 256 - (int)((d_sq * vig_coef) >> 24); if (v_m < 0) v_m = 0;
