@@ -324,7 +324,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             @Override 
             public boolean isReadyToProcess() { 
                 RTLProfile p = recipeManager.getCurrentProfile();
-                return isReady && !isProcessing && (p.lutIndex != 0 || p.grain != 0 || p.vignette != 0 || p.rollOff != 0); 
+                boolean normalRtl = isReady && !isProcessing && (p.lutIndex != 0 || p.grain != 0 || p.vignette != 0 || p.rollOff != 0); 
+                
+                // --- CRITICAL FIX: DO NOT IGNORE CALIBRATION PHOTOS ---
+                // Even if the RTL Recipe is OFF, we MUST catch the throwaway EXIF photo!
+                return isAutoLoading || (isCalibrating && calibStep == 0) || normalRtl; 
             }
             
             @Override 
@@ -1636,12 +1640,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         int in = (int) (totalInches % 12);
         String distStr = String.format("%.2fm / %d'%d\"", minDistanceInput, ft, in);
         
-        String text = "[ MAPPING LENS SLOT " + currentLensSlot + " ]   DIALED: < " + distStr + " >\n";
+        String text = "[ MAPPING LENS SLOT " + currentLensSlot + " ]\n";
         
         if (calibStep == 1) {
-            text += "STEP 1: Turn ring to hard stop (MIN FOCUS) -> Press [ENTER]"; 
+            text += "STEP 1: Turn ring to hard stop (MIN FOCUS)\nTurn rear scroll wheel to dial distance: < " + distStr + " >\nPress [ENTER] to lock min."; 
         } else if (calibStep == 2) {
-            text += "STEP 2: Focus on ANY object -> Press [ENTER] to log point.\n(Log as many as you want, then press [UP] to Save & Finish)";
+            text += "STEP 2: Focus on ANY object.\nTurn rear scroll wheel to dial distance: < " + distStr + " >\nPress [ENTER] to log point. [UP] to Save & Finish.";
         }
         
         tvCalibrationPrompt.setText(text);

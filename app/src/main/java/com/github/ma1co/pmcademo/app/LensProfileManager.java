@@ -43,12 +43,13 @@ public class LensProfileManager {
     }
 
     public boolean loadProfile(String lensName) {
-        String data = prefs.getString(lensName, null);
-        if (data == null) return false;
-
+        // MUST CLEAR THE ARRAY IMMEDIATELY TO PREVENT BLEEDING!
         currentPoints.clear();
         currentLensName = lensName;
         
+        String data = prefs.getString(lensName, null);
+        if (data == null) return false;
+
         // Deserialize the data string (e.g. "0.0,0.3;0.5,1.2;1.0,999.0")
         String[] points = data.split(";");
         for (String p : points) {

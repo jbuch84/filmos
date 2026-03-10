@@ -18,7 +18,7 @@ import java.util.List;
  * Renders a cinematic distance scale with dynamic DOF calculation and live plot points.
  */
 public class AdvancedFocusMeterView extends View {
-    private Paint trackPaint, needlePaint, dofPaint, markPaint, liveTextPaint;
+    private Paint trackPaint, needlePaint, dofPaint, markPaint, liveTextPaint, rulerTextPaint;
     private float ratio = 0.5f; 
     private float aperture = 2.8f;
     private float liveDistance = -1.0f; // Fed directly from LensProfileManager math
@@ -53,6 +53,14 @@ public class AdvancedFocusMeterView extends View {
         liveTextPaint.setAntiAlias(true);
         liveTextPaint.setTextAlign(Paint.Align.CENTER);
         liveTextPaint.setShadowLayer(4, 0, 0, Color.BLACK);
+
+        // Add this to the constructor!
+        rulerTextPaint = new Paint();
+        rulerTextPaint.setColor(Color.LTGRAY);
+        rulerTextPaint.setTextSize(16);
+        rulerTextPaint.setAntiAlias(true);
+        rulerTextPaint.setTextAlign(Paint.Align.CENTER);
+        rulerTextPaint.setTypeface(Typeface.DEFAULT_BOLD);
     }
 
     // Feeds the view the UI dots AND the math result
@@ -97,10 +105,23 @@ public class AdvancedFocusMeterView extends View {
         // 1. Draw the Base Track
         canvas.drawLine(pad, y, w - pad, y, trackPaint);
         
-        // 2. Draw Dynamic Plot Marks (Dots on the line)
+        // 2. Draw Dynamic Plot Marks & The Ruler!
         for (LensProfileManager.CalPoint pt : calPoints) {
             float markX = pad + (trackW * pt.ratio);
             canvas.drawCircle(markX, y, 5, markPaint);
+            
+            // Draw numerical ruler marks if it's not the 0 position
+            if (pt.distance > 0f && pt.distance < 999.0f) {
+                String mStr = String.format("%.1fm", pt.distance);
+                float totalInches = pt.distance * 39.3701f;
+                int ft = (int) (totalInches / 12);
+                String fStr = ft + "'";
+                
+                canvas.drawText(fStr, markX, y - 12, rulerTextPaint); // Feet above the line
+                canvas.drawText(mStr, markX, y + 26, rulerTextPaint); // Meters below the line
+            } else if (pt.distance >= 999.0f) {
+                canvas.drawText("INF", markX, y + 26, rulerTextPaint);
+            }
         }
 
         // 3. DOF Calculation & Orange Spread
