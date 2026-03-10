@@ -578,15 +578,34 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             } else if (mDialMode == DIAL_MODE_FOCUS && cachedIsManualFocus) {
                 // INSTANT WIZARD TRIGGER
                 isCalibrating = true;
+                
+                // Start a fresh calibration curve
                 tempCalPoints.clear();
                 calibStep = 1; 
                 minDistanceInput = 0.3f; // Default starting dial value
                 
-                // Read Focal Length directly from hardware memory (No photo needed!)
+                // --- AGGRESSIVE FOCAL LENGTH HUNT ---
                 try {
                     Camera c = cameraManager.getCamera();
-                    float fl = c.getParameters().getFocalLength();
-                    detectedLensName = (fl > 0) ? Math.round(fl) + "mm Lens" : "Manual Lens " + currentLensSlot;
+                    Camera.Parameters p = c.getParameters();
+                    
+                    // 1. Try the standard Android method
+                    float fl = p.getFocalLength();
+                    
+                    // 2. If Sony returned 0, hunt through the raw string dictionary
+                    if (fl <= 0.0f) {
+                        String flStr = p.get("focal-length");
+                        if (flStr != null) {
+                            fl = Float.parseFloat(flStr);
+                        }
+                    }
+                    
+                    // 3. Set the name based on what we found
+                    if (fl > 0) {
+                        detectedLensName = Math.round(fl) + "mm Lens";
+                    } else {
+                        detectedLensName = "Manual Lens " + currentLensSlot;
+                    }
                 } catch (Exception e) {
                     detectedLensName = "Manual Lens " + currentLensSlot;
                 }
@@ -595,12 +614,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 tvCalibrationPrompt.setVisibility(View.VISIBLE);
                 updateCalibrationUI();
             } else {
+                // Toggle HUD visibility
                 displayState = (displayState == 0) ? 1 : 0; 
                 mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE);
             }
         } else {
-            if (currentPage == 4) handleConnectionAction(); 
-            else { isMenuEditing = !isMenuEditing; renderMenu(); }
+            // Menu Interactions
+            if (currentPage == 4) {
+                handleConnectionAction(); 
+            } else { 
+                isMenuEditing = !isMenuEditing; 
+                renderMenu(); 
+            }
         }
     }
 
@@ -1550,10 +1575,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (!isCalibrating) return;
         String text = "LENS MAP: " + detectedLensName + "\n\n";
         
+        // Convert Meters to Feet and Inches dynamically
+        float totalInches = minDistanceInput * 39.3701f;
+        int ft = (int) (totalInches / 12);
+        int in = (int) (totalInches % 12);
+        String distStr = String.format("%.2fm / %d'%d\"", minDistanceInput, ft, in);
+        
         if (calibStep == 1) {
-            text += "STEP 1: ANCHOR BOTTOM\n1. Turn ring to close stop.\n2. Scroll dial to measured dist:\n   < " + String.format("%.2fm", minDistanceInput) + " >\n3. Press [ENTER] to lock min."; 
+            text += "STEP 1: ANCHOR BOTTOM\n1. Turn focus ring to min.\n2. Use scroll wheel to input actual dist:\n   < " + distStr + " >\n3. Press [ENTER] to lock min."; 
         } else if (calibStep == 2) {
-            text += "STEP 2: ADD MARKS (" + (tempCalPoints.size() - 1) + " logged)\n1. Focus on ANY object.\n2. Scroll dial to measured dist:\n   < " + String.format("%.2fm", minDistanceInput) + " >\n3. Press [ENTER] to log point.\n\nPress [UP] when finished.";
+            text += "STEP 2: ADD MARKS (" + (tempCalPoints.size() - 1) + " logged)\n1. Focus on ANY object.\n2. Use scroll wheel to input actual dist:\n   < " + distStr + " >\n3. Press [ENTER] to log point.\n\nPress [UP] when finished.";
         }
         
         tvCalibrationPrompt.setText(text);
