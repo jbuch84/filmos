@@ -448,13 +448,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (isProcessing) return;
         
         if (isCalibrating && calibStep == 0) {
-            calibStep = 10; // Proceed to Aperture Step
+            calibStep = 10; 
             updateCalibrationUI();
             return;
         }
 
         if (isCalibrating && calibStep == 10) {
-            calibStep = 1; // Proceed to Distance Step
+            calibStep = 1; 
             minDistanceInput = 0.3f;
             tempCalPoints.clear();
             updateCalibrationUI();
@@ -517,24 +517,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 setHUDVisibility(View.VISIBLE);
                 updateMainHUD();
             }
-            return; // We MUST return here so the D-Pad doesn't trigger the menu while calibrating!
+            return; 
         }
-        // ----------------------------------
-        
-        if (isMenuOpen) {
-            if (isMenuEditing) handleMenuChange(1);
-            else {
-                menuSelection--;
-                if (menuSelection < 0) {
-                    if (currentMainTab == 0 && currentPage == 2) { currentPage = 1; menuSelection = currentItemCount - 1; } 
-                    else { menuSelection = currentItemCount - 1; }
-                }
-                renderMenu();
-            }
-        } else {
-            navigateHomeSpatial(ScalarInput.ISV_KEY_UP);
-        }
-    }
         
         if (isMenuOpen) {
             if (isMenuEditing) handleMenuChange(1);
@@ -563,7 +547,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 detectedLensName = "Native Lens";
                 detectedFocalLength = lensManager.currentFocalLength;
                 detectedMaxAperture = 2.8f; 
-                calibStep = 10; // Still ask for Max Aperture so the file names correctly
+                calibStep = 10; 
                 tempCalPoints.clear();
             } else {
                 detectedLensName = "Manual Lens";
@@ -810,7 +794,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     }
 
     private void handleHardwareInput(int d) {
-        if (isCalibrating && calibStep >= 1) {
+        if (isCalibrating && calibStep >= 1 && calibStep != 10) {
             minDistanceInput = Math.max(0.1f, minDistanceInput + (d * 0.1f));
             updateCalibrationUI();
             return;
@@ -864,7 +848,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             }
         }
         else if (mDialMode == DIAL_MODE_FOCUS) {
-            // --- NEW CINEMA LENS SCROLLING LOGIC ---
             List<String> hwModes = p.getSupportedFocusModes();
             List<String> virtualModes = new ArrayList<String>();
             
@@ -1409,7 +1392,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (tvFocusMode != null) {
             if ("auto".equals(fm)) tvFocusMode.setText("AF-S"); 
             else if (cachedIsManualFocus) {
-                // --- NEW LENS HUD DISPLAY ---
                 String lName = lensManager != null ? lensManager.getCurrentLensName() : "UNMAPPED";
                 tvFocusMode.setText("MF [" + lName + "]"); 
             }
@@ -1456,7 +1438,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     public void onCameraReady() { 
         syncHardwareState();
         
-        // --- BOOT DETECTOR FOR PRIME LENSES ---
         if (cameraManager != null) {
             float initFocal = cameraManager.getInitialFocalLength();
             if (initFocal > 0.0f) {
