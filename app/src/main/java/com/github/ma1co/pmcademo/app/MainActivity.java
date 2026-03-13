@@ -109,9 +109,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private float detectedFocalLength = 50.0f;
     private float detectedMaxAperture = 2.8f;
     
-    // --- NEW: Strict physical hardware tracking ---
     private float hardwareFocalLength = 0.0f;
     private boolean isNativeLensAttached = false;
+    
+    // --- NEW: PHASE 2 VIRTUAL VARS FOR MANUAL DOF ---
+    private float virtualAperture = 2.8f;
+    private float virtualFocusRatio = 0.5f;
     
     private TextView tvCalibrationPrompt;
     
@@ -448,17 +451,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (isPlaybackMode) { exitPlayback(); return; }
         if (isProcessing) return;
         
-        // Step 0A (Focal Length) -> go to Step 0B (Aperture)
         if (isCalibrating && calibStep == 0) {
             calibStep = 10; 
             updateCalibrationUI();
             return;
         }
 
-        // Step 0B (Aperture) -> Split based on lens type!
         if (isCalibrating && calibStep == 10) {
             if (!isNativeLensAttached) {
-                // MANUAL LENS: Auto-generate ghost profile and equip immediately!
+                // MANUAL LENS: Auto-save ghost profile and equip!
                 tempCalPoints = lensManager.generateManualDummyProfile();
                 lensManager.saveProfileToFile(detectedFocalLength, detectedMaxAperture, tempCalPoints, true); 
                 
@@ -466,14 +467,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 String newFilename = LensProfileManager.generateFilename(detectedFocalLength, detectedMaxAperture, true);
                 currentLensIndex = availableLenses.indexOf(newFilename);
                 if (currentLensIndex == -1) currentLensIndex = 0;
+                
                 lensManager.loadProfileFromFile(newFilename);
+                
+                // Initialize virtual math vars for the new manual lens
+                virtualAperture = lensManager.currentMaxAperture;
+                virtualFocusRatio = 0.5f; 
                 
                 isCalibrating = false;
                 if (tvCalibrationPrompt != null) tvCalibrationPrompt.setVisibility(View.GONE);
                 setHUDVisibility(View.VISIBLE);
                 updateMainHUD();
             } else {
-                // ELECTRONIC LENS: Proceed to Distance Mapping (Step 1)
                 calibStep = 1; 
                 minDistanceInput = 0.3f;
                 updateCalibrationUI();
@@ -481,7 +486,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             return;
         }
         
-        // Step 1 -> Step 2 (Electronic Only)
         if (isCalibrating && isNativeLensAttached) {
             if (calibStep == 1) {
                 tempCalPoints.add(new LensProfileManager.CalPoint(cachedFocusRatio, minDistanceInput));
@@ -504,9 +508,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 if (tvCalibrationPrompt != null) {
                     tvCalibrationPrompt.setVisibility(View.VISIBLE);
                     
-                    // --- DYNAMIC LENS MAPPING PROMPT ---
                     boolean canAppend = isNativeLensAttached && lensManager.hasActiveProfile() && !lensManager.isCurrentProfileManual();
-                    
                     if (canAppend) {
                         tvCalibrationPrompt.setText("LENS MAPPING\n\n[DOWN] Map Attached Lens\n[LEFT] Append Points\n[RIGHT] Cancel");
                     } else {
@@ -528,9 +530,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (isProcessing) return;
         if (waitingForProfileChoice) return;
 
-        // --- TIGHTENED CALIBRATION TRAP ---
         if (isCalibrating) {
-            // Only allow saving if on the final Electronic step
             if (calibStep == 2) {
                 tempCalPoints.add(new LensProfileManager.CalPoint(1.0f, 999.0f));
                 
@@ -547,7 +547,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 setHUDVisibility(View.VISIBLE);
                 updateMainHUD();
             }
-            return; // We MUST return here so we don't trigger the menu or UI changes!
+            return; 
         }
         
         if (isMenuOpen) {
@@ -569,7 +569,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     public void onDownPressed() { 
         if (isProcessing) return;
         
-        // --- MAP ATTACHED LENS ---
         if (waitingForProfileChoice) {
             waitingForProfileChoice = false;
             isCalibrating = true;
@@ -578,13 +577,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 detectedLensName = "Electronic Lens";
                 detectedFocalLength = hardwareFocalLength > 0.0f ? hardwareFocalLength : 50.0f;
                 detectedMaxAperture = 2.8f; 
-                calibStep = 10; // Skip 0A, go straight to Aperture confirm
+                calibStep = 10; 
                 tempCalPoints.clear();
             } else {
                 detectedLensName = "Manual Lens";
                 detectedFocalLength = 50.0f; 
                 detectedMaxAperture = 2.8f;
-                calibStep = 0; // Go to Focal Length step
+                calibStep = 0; 
                 tempCalPoints.clear();
             }
             updateCalibrationUI();
@@ -621,7 +620,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             return;
         }
 
-        // --- APPEND TO EXISTING PROFILE (ELECTRONIC ONLY) ---
         if (waitingForProfileChoice) {
             boolean canAppend = isNativeLensAttached && lensManager.hasActiveProfile() && !lensManager.isCurrentProfileManual();
             
@@ -643,7 +641,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 if (minDistanceInput < 0) minDistanceInput = 1.0f; 
                 updateCalibrationUI();
             }
-            return; // Consume the keypress either way
+            return; 
+        }
+        
+        // --- PHASE 2: MANUAL DOF DISTANCE SLIDER (LEFT) ---
+        if (!isMenuOpen && !isPlaybackMode && mDialMode == DIAL_MODE_FOCUS && lensManager != null && lensManager.isCurrentProfileManual()) {
+            virtualFocusRatio = Math.max(0.0f, virtualFocusRatio - 0.02f);
+            updateMainHUD();
+            return; // Consume it so we don't change Dial Modes!
         }
 
         if (isPlaybackMode) { showPlaybackImage(playbackIndex - 1); } 
@@ -677,7 +682,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             return;
         }
         
-        // --- UNIVERSAL CANCEL ---
         if (waitingForProfileChoice || isCalibrating) {
             waitingForProfileChoice = false;
             isCalibrating = false;
@@ -685,6 +689,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             setHUDVisibility(View.VISIBLE);
             updateMainHUD(); 
             return;
+        }
+        
+        // --- PHASE 2: MANUAL DOF DISTANCE SLIDER (RIGHT) ---
+        if (!isMenuOpen && !isPlaybackMode && mDialMode == DIAL_MODE_FOCUS && lensManager != null && lensManager.isCurrentProfileManual()) {
+            virtualFocusRatio = Math.min(1.0f, virtualFocusRatio + 0.02f);
+            updateMainHUD();
+            return; // Consume it so we don't change Dial Modes!
         }
 
         if (isPlaybackMode) { showPlaybackImage(playbackIndex + 1); } 
@@ -844,6 +855,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             lensManager.clearCurrentProfile(); 
         }
     }
+    
+    // --- PHASE 2: MANUAL DOF APERTURE SLIDER ---
+    private void adjustVirtualAperture(int direction) {
+        float[] stops = {1.0f, 1.2f, 1.4f, 1.8f, 2.0f, 2.8f, 4.0f, 5.6f, 8.0f, 11.0f, 16.0f, 22.0f};
+        int currentIndex = 0;
+        float minDiff = Float.MAX_VALUE;
+        
+        for (int i = 0; i < stops.length; i++) {
+            float diff = Math.abs(stops[i] - virtualAperture);
+            if (diff < minDiff) {
+                minDiff = diff;
+                currentIndex = i;
+            }
+        }
+        
+        currentIndex += direction;
+        if (currentIndex < 0) currentIndex = 0;
+        if (currentIndex >= stops.length) currentIndex = stops.length - 1;
+        
+        virtualAperture = stops[currentIndex];
+        
+        // Clamp to Max Aperture of the profile!
+        if (lensManager != null && virtualAperture < lensManager.currentMaxAperture) {
+            virtualAperture = lensManager.currentMaxAperture;
+        }
+    }
 
     private void handleHardwareInput(int d) {
         if (isCalibrating && calibStep >= 1 && calibStep != 10) {
@@ -868,7 +905,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             if (d > 0) cx.incrementShutterSpeed(); else cx.decrementShutterSpeed(); 
         }
         else if (mDialMode == DIAL_MODE_APERTURE) { 
-            if (d > 0) cx.incrementAperture(); else cx.decrementAperture(); 
+            // --- NEW: Intercept for Virtual Aperture ---
+            if (lensManager != null && lensManager.isCurrentProfileManual()) {
+                adjustVirtualAperture(d);
+            } else {
+                if (d > 0) cx.incrementAperture(); else cx.decrementAperture(); 
+            }
         }
         else if (mDialMode == DIAL_MODE_ISO) {
             List<Integer> isos = (List<Integer>) pm.getSupportedISOSensitivities();
@@ -907,7 +949,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 for (String m : hwModes) {
                     if (m.equals("manual")) {
                         availableLenses = lensManager.getAvailableLenses();
-                        virtualModes.add("manual_unmapped"); // ALWAYS ADD UNMAPPED
+                        virtualModes.add("manual_unmapped"); 
                         for (String l : availableLenses) {
                             virtualModes.add("manual_" + l);
                         }
@@ -938,6 +980,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 if (!lensFile.equals("unmapped")) {
                     currentLensIndex = availableLenses.indexOf(lensFile);
                     lensManager.loadProfileFromFile(lensFile);
+                    // --- Reset Virtual Vars when swapping to a new Manual Lens ---
+                    if (lensManager.isCurrentProfileManual()) {
+                        virtualAperture = lensManager.currentMaxAperture;
+                        virtualFocusRatio = 0.5f;
+                    }
                 } else {
                     lensManager.clearCurrentProfile();
                 }
@@ -1424,8 +1471,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         
         cachedAperture = pm.getAperture() / 100.0f;
         Pair<Integer, Integer> ss = pm.getShutterSpeed(); 
+        
+        // --- PHASE 2: HUD shows Virtual Aperture if Manual Lens is active! ---
+        if (tvValAperture != null) {
+            if (lensManager != null && lensManager.isCurrentProfileManual()) {
+                tvValAperture.setText(String.format("f%.1f", virtualAperture)); 
+            } else {
+                tvValAperture.setText(String.format("f%.1f", cachedAperture)); 
+            }
+        }
+        
         if (tvValShutter != null) tvValShutter.setText(ss.first == 1 && ss.second != 1 ? ss.first + "/" + ss.second : ss.first + "\"");
-        if (tvValAperture != null) tvValAperture.setText(String.format("f%.1f", cachedAperture)); 
         if (tvValIso != null) tvValIso.setText(pm.getISOSensitivity() == 0 ? "ISO AUTO" : "ISO " + pm.getISOSensitivity());
         if (tvValEv != null) tvValEv.setText(String.format("%+.1f", p.getExposureCompensation() * p.getExposureCompensationStep()));
         
@@ -1442,7 +1498,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (tvFocusMode != null) {
             if ("auto".equals(fm)) tvFocusMode.setText("AF-S"); 
             else if (cachedIsManualFocus) {
-                // --- PRO FORMATTED LENS DISPLAY ---
                 String rawName = lensManager != null ? lensManager.getCurrentLensName() : "Unmapped Lens";
                 String lName = LensProfileManager.formatDisplayName(rawName);
                 tvFocusMode.setText("MF [" + lName + "]"); 
@@ -1456,9 +1511,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             boolean shouldShow = prefShowFocusMeter && cachedIsManualFocus;
             focusMeter.setVisibility(shouldShow ? View.VISIBLE : View.GONE);
             if (shouldShow) {
+                // --- PHASE 2: Feed the virtual math to the meter! ---
                 float focalToUse = isCalibrating ? detectedFocalLength : (lensManager != null ? lensManager.getCurrentFocalLength() : 50.0f);
                 List<LensProfileManager.CalPoint> ptsToUse = isCalibrating ? tempCalPoints : (lensManager != null ? lensManager.getCurrentPoints() : null);
-                focusMeter.update(cachedFocusRatio, cachedAperture, focalToUse, isCalibrating, ptsToUse);
+                
+                float ratioToFeed = (lensManager != null && lensManager.isCurrentProfileManual() && !isCalibrating) ? virtualFocusRatio : cachedFocusRatio;
+                float apToFeed = (lensManager != null && lensManager.isCurrentProfileManual() && !isCalibrating) ? virtualAperture : cachedAperture;
+                
+                focusMeter.update(ratioToFeed, apToFeed, focalToUse, isCalibrating, ptsToUse);
             }
         }
         
@@ -1531,9 +1591,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             runOnUiThread(new Runnable() { 
                 public void run() {
                     cachedFocusRatio = ratio; 
-                    float focalToUse = isCalibrating ? detectedFocalLength : (lensManager != null ? lensManager.getCurrentFocalLength() : 50.0f);
-                    List<LensProfileManager.CalPoint> ptsToUse = isCalibrating ? tempCalPoints : (lensManager != null ? lensManager.getCurrentPoints() : null);
-                    focusMeter.update(cachedFocusRatio, cachedAperture, focalToUse, isCalibrating, ptsToUse);
+                    updateMainHUD();
                 }
             });
         }
