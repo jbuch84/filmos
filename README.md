@@ -5,7 +5,7 @@
 
 **⚠️ BETA STATUS:** This project is currently in early beta. While it is stable and produces high-quality results, it is a "proof of concept" running on 2014-era hardware.
 
-Sony JPG Cookbook (filmOS) turns your older Sony Alpha camera into a modern film-simulation powerhouse. This app brings professional color grading directly to your camera hardware, allowing you to apply custom 3D LUTs (`.cube` and `.cub` files) to your photos the moment you press the shutter.
+filmOS turns your older Sony Alpha camera into a modern film-simulation powerhouse. This app brings professional color grading directly to your camera hardware, allowing you to apply custom 3D LUTs (`.cube` and `.cub` files) to your photos the moment you press the shutter.
 
 ## ✨ Features
 * **Custom LUT Support:** Load your own `.cube` or `.cub` files directly from your SD card.
