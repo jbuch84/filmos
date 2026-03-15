@@ -36,8 +36,8 @@
         .exif-tag { color: var(--accent); font-family: monospace; font-size: 13px; font-weight: bold; text-transform: uppercase; background: rgba(255,80,0,0.1); padding: 4px 12px; border-radius: 4px; border: 1px solid rgba(255,80,0,0.2); }
         .lb-tools { margin-top: 25px; display: flex; gap: 15px; cursor: default; }
 
-        /* LUT Manager Modal */
-        #lut-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 2000; justify-content: center; align-items: center; backdrop-filter: blur(5px); }
+        /* Import Manager Modal */
+        #import-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 2000; justify-content: center; align-items: center; backdrop-filter: blur(5px); }
         .modal-content { background: var(--bg-panel); padding: 30px; border-radius: 12px; border: 1px solid #333; width: 320px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
     </style>
 </head>
@@ -46,7 +46,7 @@
     <header>
         <div style="display:flex; align-items:center; gap: 15px;">
             <h3 style="margin:0; letter-spacing:1px; font-weight:900;">filmOS DASHBOARD</h3>
-            <button class="action-btn secondary-btn" style="padding: 6px 12px; font-size:10px; margin:0;" onclick="showLutManager()">MANAGE LUTS</button>
+            <button class="action-btn secondary-btn" style="padding: 6px 12px; font-size:10px; margin:0;" onclick="showImportManager()">IMPORT FILES</button>
         </div>
         <div class="sys-info" id="sys-info">SYNCING HARDWARE...</div>
     </header>
@@ -82,17 +82,17 @@
         </div>
     </div>
 
-    <div id="lut-modal">
+    <div id="import-modal">
         <div class="modal-content">
-            <h3 style="margin-top:0; color:var(--accent); letter-spacing: 1px;">INSTALL RECIPE</h3>
-            <p style="font-size:13px; color:#aaa; margin-bottom: 25px;">Upload a .cube file directly to your camera's internal SD card.</p>
+            <h3 style="margin-top:0; color:var(--accent); letter-spacing: 1px;">IMPORT FILES</h3>
+            <p style="font-size:13px; color:#aaa; margin-bottom: 25px;">Upload <b>.cube</b> LUTs or <b>.txt</b> Lens Profiles. The Smart Router will organize them automatically.</p>
             
-            <input type="file" id="lut-file" accept=".cube,.cub" style="display:none" onchange="handleLutSelect(event)">
-            <button class="action-btn" style="width:100%; margin-bottom:15px; padding: 12px;" onclick="document.getElementById('lut-file').click()">SELECT .CUBE FILE</button>
+            <input type="file" id="import-file" accept=".cube,.cub,.txt,.lens" style="display:none" onchange="handleFileSelect(event)">
+            <button class="action-btn" style="width:100%; margin-bottom:15px; padding: 12px;" onclick="document.getElementById('import-file').click()">SELECT FILE TO UPLOAD</button>
             
-            <div id="lut-upload-status" style="font-size:12px; font-weight:bold; margin-bottom:15px; color:#fff; height: 15px;"></div>
+            <div id="upload-status" style="font-size:12px; font-weight:bold; margin-bottom:15px; color:#fff; height: 15px;"></div>
             
-            <button class="action-btn secondary-btn" style="width:100%; margin:0; padding: 12px;" onclick="closeLutManager()">CLOSE & RESTART APP</button>
+            <button class="action-btn secondary-btn" style="width:100%; margin:0; padding: 12px;" onclick="closeImportManager()">CLOSE & RESTART APP</button>
         </div>
     </div>
 
@@ -332,32 +332,32 @@
             link.click();
         }
 
-        function showLutManager() {
-            document.getElementById('lut-modal').style.display = 'flex';
-            document.getElementById('lut-upload-status').innerText = '';
+        function showImportManager() {
+            document.getElementById('import-modal').style.display = 'flex';
+            document.getElementById('upload-status').innerText = '';
         }
         
-        function closeLutManager() {
-            document.getElementById('lut-modal').style.display = 'none';
+        function closeImportManager() {
+            document.getElementById('import-modal').style.display = 'none';
         }
         
-        // COMPLETELY BYPASSES FORMDATA AND TEMP FILES. SENDS RAW BINARY.
-        async function handleLutSelect(event) {
+        async function handleFileSelect(event) {
             const file = event.target.files[0];
             if (!file) return;
             
-            if (!file.name.toLowerCase().endsWith('.cube') && !file.name.toLowerCase().endsWith('.cub')) {
-                document.getElementById('lut-upload-status').innerText = 'ERROR: ONLY .CUBE FILES ALLOWED';
-                document.getElementById('lut-upload-status').style.color = 'red';
+            const ext = file.name.toLowerCase();
+            if (!ext.endsWith('.cube') && !ext.endsWith('.cub') && !ext.endsWith('.txt') && !ext.endsWith('.lens')) {
+                document.getElementById('upload-status').innerText = 'ERROR: UNSUPPORTED FILE TYPE';
+                document.getElementById('upload-status').style.color = 'red';
                 event.target.value = '';
                 return;
             }
 
-            document.getElementById('lut-upload-status').innerText = `UPLOADING: ${file.name.toUpperCase()}...`;
-            document.getElementById('lut-upload-status').style.color = 'yellow';
+            document.getElementById('upload-status').innerText = `UPLOADING: ${file.name.toUpperCase()}...`;
+            document.getElementById('upload-status').style.color = 'yellow';
 
             try {
-                const res = await fetch('/api/upload_lut', {
+                const res = await fetch('/api/upload', {
                     method: 'POST',
                     headers: {
                         'X-File-Name': file.name
@@ -366,15 +366,15 @@
                 });
                 
                 if (res.ok) {
-                    document.getElementById('lut-upload-status').innerText = `SUCCESS: ${file.name.toUpperCase()} INSTALLED!`;
-                    document.getElementById('lut-upload-status').style.color = 'lime';
+                    document.getElementById('upload-status').innerText = `SUCCESS: ${file.name.toUpperCase()} INSTALLED!`;
+                    document.getElementById('upload-status').style.color = 'lime';
                 } else {
-                    document.getElementById('lut-upload-status').innerText = 'ERROR: UPLOAD FAILED';
-                    document.getElementById('lut-upload-status').style.color = 'red';
+                    document.getElementById('upload-status').innerText = 'ERROR: UPLOAD FAILED';
+                    document.getElementById('upload-status').style.color = 'red';
                 }
             } catch (e) {
-                document.getElementById('lut-upload-status').innerText = 'ERROR: NETWORK CONNECTION';
-                document.getElementById('lut-upload-status').style.color = 'red';
+                document.getElementById('upload-status').innerText = 'ERROR: NETWORK CONNECTION';
+                document.getElementById('upload-status').style.color = 'red';
             }
             
             event.target.value = ''; 
