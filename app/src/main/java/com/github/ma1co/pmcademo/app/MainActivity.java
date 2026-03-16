@@ -1818,8 +1818,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         File file = playbackFiles.get(idx);
         
         try {
+            // Aggressive cleanup of the previous image before we load the new one
             if (playbackImageView != null) playbackImageView.setImageBitmap(null);
-            if (currentPlaybackBitmap != null) { currentPlaybackBitmap.recycle(); currentPlaybackBitmap = null; }
+            if (currentPlaybackBitmap != null && !currentPlaybackBitmap.isRecycled()) { 
+                currentPlaybackBitmap.recycle(); 
+                currentPlaybackBitmap = null; 
+            }
+            
+            // Suggest GC to the Sony OS since we are managing tight heap limits
+            System.gc();
 
             if (file.length() == 0) {
                 if (tvPlaybackInfo != null) tvPlaybackInfo.setText((idx + 1) + "/" + playbackFiles.size() + "\n[ERROR: 0-BYTE FILE]");
@@ -1847,8 +1854,35 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             String metaText = (idx + 1) + " / " + playbackFiles.size() + "\n" + file.getName() + "\n" + apStr + " | " + speedStr + " | " + isoStr;
             if (tvPlaybackInfo != null) tvPlaybackInfo.setText(metaText);
 
+            // --- SMART MEMORY DECODING ---
             BitmapFactory.Options opts = new BitmapFactory.Options();
-            opts.inSampleSize = 8; 
+            
+            // Step 1: Read dimensions only (zero memory cost)
+            opts.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(path, opts);
+            
+            // Step 2: Calculate dynamic sample size targeted to the Sony LCD screen
+            // The physical LCD is usually ~640x480 or 800x600. We target 1024 to ensure maximum sharpness.
+            final int reqWidth = 1024;
+            final int reqHeight = 768;
+            int inSampleSize = 1;
+
+            if (opts.outHeight > reqHeight || opts.outWidth > reqWidth) {
+                final int halfHeight = opts.outHeight / 2;
+                final int halfWidth = opts.outWidth / 2;
+                while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                    inSampleSize *= 2;
+                }
+            }
+
+            // Step 3: Decode actual image into memory using high-efficiency settings
+            opts.inJustDecodeBounds = false;
+            opts.inSampleSize = inSampleSize;
+            // CRITICAL: Force 16-bit RGB. JPEGs don't have transparency, so this drops RAM usage by 50%!
+            opts.inPreferredConfig = Bitmap.Config.RGB_565; 
+            opts.inPurgeable = true;
+            opts.inInputShareable = true;
+
             Bitmap raw = BitmapFactory.decodeFile(path, opts);
             if (raw == null) return;
 
@@ -1860,18 +1894,34 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             
             Matrix m = new Matrix(); 
             if (rot != 0) m.postRotate(rot); 
-            m.postScale(0.8888f, 1.0f); 
+            m.postScale(0.8888f, 1.0f); // Maintain your anamorphic scale math
             
+            // Create final rotated/scaled bitmap
             Bitmap bmp = Bitmap.createBitmap(raw, 0, 0, raw.getWidth(), raw.getHeight(), m, true);
-            if (raw != bmp) raw.recycle(); 
+            
+            // Free the un-rotated raw memory immediately to keep the heap clean
+            if (raw != bmp) {
+                raw.recycle();
+                raw = null;
+            }
             
             if (playbackImageView != null) {
                 playbackImageView.setImageBitmap(bmp);
                 playbackImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
             }
             currentPlaybackBitmap = bmp;
+            
+        } catch (OutOfMemoryError oom) {
+            // If the camera hits its RAM limit, catch it so the app doesn't crash!
+            android.util.Log.e("filmOS", "OOM Memory limit hit during playback. Recovering...");
+            if (tvPlaybackInfo != null) tvPlaybackInfo.setText((idx + 1) + " / " + playbackFiles.size() + "\n[MEMORY ERROR - SKIPPED]");
+            if (currentPlaybackBitmap != null) { 
+                currentPlaybackBitmap.recycle(); 
+                currentPlaybackBitmap = null; 
+            }
+            System.gc(); // Force OS garbage collection
         } catch (Exception e) {
-            Log.e("filmOS", "Playback error: " + e.getMessage());
+            android.util.Log.e("filmOS", "Playback error: " + e.getMessage());
         }
     }
 
