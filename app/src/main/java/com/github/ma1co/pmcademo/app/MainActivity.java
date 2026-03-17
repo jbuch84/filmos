@@ -854,31 +854,33 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         int sel = menuSelection; 
         
         if (currentMainTab == 0) {
-            if (currentPage == 1) { // SOFTWARE ENGINE ONLY
+            if (currentPage == 1) { // 1. SOFTWARE ENGINE
                 switch(sel) {
                     case 0: recipeManager.setCurrentSlot(recipeManager.getCurrentSlot() + dir); break;
                     case 2: p.lutIndex = (p.lutIndex + dir + recipeManager.getRecipePaths().size()) % recipeManager.getRecipePaths().size(); break;
                     case 3: p.opacity = Math.max(0, Math.min(100, p.opacity + (dir * 10))); break;
                     case 4: p.grain = Math.max(0, Math.min(5, p.grain + dir)); break;
-                    case 5: p.rollOff = Math.max(0, Math.min(5, p.rollOff + dir)); break;
-                    case 6: p.vignette = Math.max(0, Math.min(5, p.vignette + dir)); break;
+                    case 5: p.grainSize = Math.max(0, Math.min(2, p.grainSize + dir)); break; // RESTORED
+                    case 6: p.rollOff = Math.max(0, Math.min(5, p.rollOff + dir)); break;
+                    case 7: p.vignette = Math.max(0, Math.min(5, p.vignette + dir)); break;
                 }
-            } else if (currentPage == 2) { // HARDWARE: GLOBAL TONE
+            } else if (currentPage == 2) { // 2. HARDWARE TONE
                 switch(sel) {
-                    case 0: p.contrast = Math.max(-3, Math.min(3, p.contrast + dir)); break;
-                    case 1: p.saturation = Math.max(-16, Math.min(16, p.saturation + dir)); break;
-                    case 2: p.sharpness = Math.max(-3, Math.min(3, p.sharpness + dir)); break;
-                    case 3: p.wbShift = Math.max(-7, Math.min(7, p.wbShift + dir)); break;
-                    case 4: p.wbShiftGM = Math.max(-7, Math.min(7, p.wbShiftGM + dir)); break;
+                    case 0: String[] clrs = {"standard", "vivid", "portrait", "landscape", "mono", "sunset", "sepia"};
+                            int ci = java.util.Arrays.asList(clrs).indexOf(p.colorMode); p.colorMode = clrs[(ci + dir + 7) % 7]; break; // RESTORED
+                    case 1: p.contrast = Math.max(-3, Math.min(3, p.contrast + dir)); break;
+                    case 2: p.saturation = Math.max(-16, Math.min(16, p.saturation + dir)); break;
+                    case 3: p.sharpness = Math.max(-3, Math.min(3, p.sharpness + dir)); break;
+                    case 4: p.wbShift = Math.max(-7, Math.min(7, p.wbShift + dir)); break;
+                    case 5: p.wbShiftGM = Math.max(-7, Math.min(7, p.wbShiftGM + dir)); break;
                 }
-            } else if (currentPage == 3) { // HARDWARE: CHANNEL MIXER
-                // Range increased to 500 for Infrared/Inversion testing
+            } else if (currentPage == 3) { // 3. CHANNEL MIXER
                 switch(sel) {
-                    case 0: p.mixRedBlue = Math.max(-500, Math.min(500, p.mixRedBlue + (dir * 20))); break;
-                    case 1: p.mixGreenRed = Math.max(-500, Math.min(500, p.mixGreenRed + (dir * 20))); break;
-                    case 2: p.mixBlueGreen = Math.max(-500, Math.min(500, p.mixBlueGreen + (dir * 20))); break;
+                    case 0: p.mixRedBlue = Math.max(-200, Math.min(200, p.mixRedBlue + (dir * 10))); break;
+                    case 1: p.mixGreenRed = Math.max(-200, Math.min(200, p.mixGreenRed + (dir * 10))); break;
+                    case 2: p.mixBlueGreen = Math.max(-200, Math.min(200, p.mixBlueGreen + (dir * 10))); break;
                 }
-            } else if (currentPage == 4) { // HARDWARE: 6-AXIS
+            } else if (currentPage == 4) { // 4. 6-AXIS
                 switch(sel) {
                     case 0: p.colorDepthRed = Math.max(-7, Math.min(7, p.colorDepthRed + dir)); break;
                     case 1: p.colorDepthGreen = Math.max(-7, Math.min(7, p.colorDepthGreen + dir)); break;
@@ -887,20 +889,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     case 4: p.colorDepthMagenta = Math.max(-7, Math.min(7, p.colorDepthMagenta + dir)); break;
                     case 5: p.colorDepthYellow = Math.max(-7, Math.min(7, p.colorDepthYellow + dir)); break;
                 }
-            } else if (currentPage == 5) { // HARDWARE: PRO & OPTICS
+            } else if (currentPage == 5) { // 5. HACKS & EFFECTS
                 switch(sel) {
                     case 0: String[] prs = {"off", "pro-standard", "pro-vivid", "pro-portrait"}; int pi = java.util.Arrays.asList(prs).indexOf(p.proColorMode); p.proColorMode = prs[(pi + dir + 4) % 4]; break;
-                    case 1: p.shadingRed = Math.max(-16, Math.min(16, p.shadingRed + dir)); break;
-                    case 2: p.shadingBlue = Math.max(-16, Math.min(16, p.shadingBlue + dir)); break;
-                    case 3: p.sharpnessGain = Math.max(-7, Math.min(7, p.sharpnessGain + dir)); break;
+                    case 1: String[] pfx = {"off", "toy-camera", "pop-color", "posterization", "retro-photo", "soft-high-key", "part-color", "rough-mono", "soft-focus", "hdr-art", "richtone-mono", "miniature", "illust", "watercolor"};
+                            int pfi = java.util.Arrays.asList(pfx).indexOf(p.pictureEffect); p.pictureEffect = pfx[(pfi + dir + 14) % 14]; break; // RESTORED
+                    case 2: p.shadingRed = Math.max(-16, Math.min(16, p.shadingRed + dir)); break;
+                    case 3: p.shadingBlue = Math.max(-16, Math.min(16, p.shadingBlue + dir)); break;
+                    case 4: p.sharpnessGain = Math.max(-7, Math.min(7, p.sharpnessGain + dir)); break;
                 }
             }
         }
-        
         renderMenu(); 
         recipeManager.savePreferences(); 
         
-        // DEBOUNCE: Stops the lag. Wait 300ms for user to stop turning the dial before applying.
+        // LAG FIX (Debounce): Wait 300ms for user to stop spinning the dial before hitting hardware.
         uiHandler.removeCallbacks(applySettingsRunnable); 
         uiHandler.postDelayed(applySettingsRunnable, 300);
     }
@@ -1074,17 +1077,34 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         RTLProfile prof = recipeManager.getCurrentProfile(); 
         Camera.Parameters p = c.getParameters();
         
-        // UNLOCKER: Force Picture Profile OFF to enable 6-Axis and Matrix registers
+        // 1. HARDWARE UNLOCKS
+        // Force Picture Profile OFF so 6-Axis and Matrix registers are enabled
         if (p.get("picture-profile") != null) p.set("picture-profile", "off");
-        
-        // Set Pro Base (Required for some depth registers to wake up)
+        // Force Pro-Standard if no other pro mode is set to keep registers 'awake'
         if (p.get("pro-color-mode") != null) {
-            String proBase = (prof.proColorMode == null || "off".equals(prof.proColorMode.toLowerCase())) ? "pro-standard" : prof.proColorMode;
-            p.set("pro-color-mode", proBase);
+            String pb = (prof.proColorMode == null || "off".equals(prof.proColorMode)) ? "pro-standard" : prof.proColorMode;
+            p.set("pro-color-mode", pb);
         }
 
-        // Global Tone
-        p.setWhiteBalance(getWbString(prof.whiteBalance));
+        // 2. STYLES & EFFECTS
+        if (p.get("color-mode") != null) p.set("color-mode", prof.colorMode != null ? prof.colorMode : "standard");
+        if (p.get("picture-effect") != null) {
+            p.set("picture-effect", prof.pictureEffect != null ? prof.pictureEffect : "off");
+            if ("toy-camera".equals(prof.pictureEffect)) {
+                p.set("pe-toy-camera-effect", prof.peToyCameraTone != null ? prof.peToyCameraTone : "normal");
+                p.set("pe-toy-camera-tuning", String.valueOf(prof.vignetteHardware)); 
+            }
+        }
+
+        // 3. GLOBAL TONE & WB
+        String wb = "auto";
+        if ("DAY".equals(prof.whiteBalance)) wb = "daylight"; 
+        else if ("SHD".equals(prof.whiteBalance)) wb = "shade"; 
+        else if ("CLD".equals(prof.whiteBalance)) wb = "cloudy-daylight"; 
+        else if ("INC".equals(prof.whiteBalance)) wb = "incandescent"; 
+        else if ("FLR".equals(prof.whiteBalance)) wb = "fluorescent";
+        p.setWhiteBalance(wb);
+        
         if (p.get("white-balance-shift-mode") != null) p.set("white-balance-shift-mode", (prof.wbShift != 0 || prof.wbShiftGM != 0) ? "true" : "false");
         if (p.get("white-balance-shift-lb") != null) p.set("white-balance-shift-lb", String.valueOf(prof.wbShift)); 
         if (p.get("white-balance-shift-cc") != null) p.set("white-balance-shift-cc", String.valueOf(prof.wbShiftGM));
@@ -1092,7 +1112,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (p.get("saturation") != null) p.set("saturation", String.valueOf(prof.saturation)); 
         if (p.get("sharpness") != null) p.set("sharpness", String.valueOf(prof.sharpness));
 
-        // 6-Axis Depths
+        // 4. 6-AXIS DEPTHS
         if (p.get("color-depth-red") != null) {
             p.set("color-depth-red", String.valueOf(prof.colorDepthRed));
             p.set("color-depth-green", String.valueOf(prof.colorDepthGreen));
@@ -1102,7 +1122,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             p.set("color-depth-yellow", String.valueOf(prof.colorDepthYellow));
         }
 
-        // BIONZ Mixer (1024 = 1.0 Unity Gain)
+        // 5. BIONZ CHANNEL MIXER (1024 = 1.0 Unity Gain / NO DIMMING)
         if (p.get("rgb-matrix-mode") != null) {
             boolean isMixing = (prof.mixRedBlue != 0 || prof.mixGreenRed != 0 || prof.mixBlueGreen != 0);
             if (!isMixing) {
@@ -1110,19 +1130,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 p.set("rgb-matrix", "1024,0,0, 0,1024,0, 0,0,1024"); 
             } else {
                 p.set("rgb-matrix-mode", "true");
-                // The diagonal is locked at 1024 for bright, stable images.
                 String mStr = String.format("1024,0,%d, %d,1024,0, 0,%d,1024", 
                                 prof.mixRedBlue, prof.mixGreenRed, prof.mixBlueGreen);
                 p.set("rgb-matrix", mStr);
             }
         }
 
-        // Optics & Shading
+        // 6. OPTICS & GAIN
         if (p.get("lens-correction") != null) p.set("lens-correction", "true");
         if (p.get("lens-correction-shading-color-red") != null) p.set("lens-correction-shading-color-red", String.valueOf(prof.shadingRed));
         if (p.get("lens-correction-shading-color-blue") != null) p.set("lens-correction-shading-color-blue", String.valueOf(prof.shadingBlue));
         if (p.get("sharpness-gain") != null) p.set("sharpness-gain", String.valueOf(prof.sharpnessGain));
         if (p.get("sharpness-gain-mode") != null) p.set("sharpness-gain-mode", "true");
+        if (p.get("pe-soft-focus-effect-level") != null) p.set("pe-soft-focus-effect-level", String.valueOf(prof.softFocusLevel));
         
         try { c.setParameters(p); } catch (Exception e) { Log.e("filmOS", "ISP Reject: " + e.getMessage()); }
     }
@@ -1166,68 +1186,62 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             try { scn = cameraManager.getCamera().getParameters().getSceneMode().toUpperCase(); } catch(Exception e) {}
         }
 
-        // --- TAB HIGHLIGHTING ---
+        // TABS
         tvTabRTL.setBackgroundColor(menuSelection == -2 && currentMainTab == 0 ? Color.rgb(230, 50, 15) : Color.TRANSPARENT);
         tvTabSettings.setBackgroundColor(menuSelection == -2 && currentMainTab == 1 ? Color.rgb(230, 50, 15) : Color.TRANSPARENT);
         tvTabNetwork.setBackgroundColor(menuSelection == -2 && currentMainTab == 2 ? Color.rgb(230, 50, 15) : Color.TRANSPARENT);
         tvTabSupport.setBackgroundColor(menuSelection == -2 && currentMainTab == 3 ? Color.rgb(230, 50, 15) : Color.TRANSPARENT);
-
         tvTabRTL.setTextColor(currentMainTab == 0 ? Color.WHITE : Color.GRAY);
         tvTabSettings.setTextColor(currentMainTab == 1 ? Color.WHITE : Color.GRAY);
         tvTabNetwork.setTextColor(currentMainTab == 2 ? Color.WHITE : Color.GRAY);
         tvTabSupport.setTextColor(currentMainTab == 3 ? Color.WHITE : Color.GRAY);
 
-        // --- SUBTITLE HIGHLIGHTING ---
+        // SUBTITLE
         tvMenuSubtitle.setBackgroundColor(menuSelection == -1 ? Color.rgb(230, 50, 15) : Color.TRANSPARENT);
-
         if (currentPage == 1) tvMenuSubtitle.setText("1. [SW] Look & Textures");
-        else if (currentPage == 2) tvMenuSubtitle.setText("2. [HW] Global Tone & WB");
+        else if (currentPage == 2) tvMenuSubtitle.setText("2. [HW] Tone & Style");
         else if (currentPage == 3) tvMenuSubtitle.setText("3. [HW] BIONZ Channel Mixer");
         else if (currentPage == 4) tvMenuSubtitle.setText("4. [HW] 6-Axis Fine-Tune");
-        else if (currentPage == 5) tvMenuSubtitle.setText("5. [HW] Pro Base & Optics");
+        else if (currentPage == 5) tvMenuSubtitle.setText("5. [HW] Hacks & Effects");
         else if (currentPage == 6) tvMenuSubtitle.setText("Global Settings");
         else if (currentPage == 7) tvMenuSubtitle.setText("Web Dashboard Server");
         else if (currentPage == 8) tvMenuSubtitle.setText("Resources & Community");
 
         for (int i = 0; i < 8; i++) menuRows[i].setVisibility(View.GONE);
         if (supportTabContainer != null) supportTabContainer.setVisibility(View.GONE);
-
-        if (currentPage == 8) {
-            supportTabContainer.setVisibility(View.VISIBLE);
-            currentItemCount = 0;
-            return;
-        }
+        if (currentPage == 8) { supportTabContainer.setVisibility(View.VISIBLE); currentItemCount = 0; return; }
 
         RTLProfile p = recipeManager.getCurrentProfile();
         int itemCount = 0;
         String[] amtLabels = {"OFF", "LOW", "MED", "HIGH", "V.HIGH", "MAX"};
+        String[] sizeLabels = {"SMALL", "MED", "LARGE"};
 
         if (currentMainTab == 0) {
-            if (currentPage == 1) { // PAGE 1: SOFTWARE ENGINE
-                itemCount = 7;
-                String[] rLabels = {"Recipe Slot", "Profile Name", "LUT File", "LUT Opacity", "SW Grain", "SW Highlght Roll", "SW Vignette"};
-                String[] rValues = { String.valueOf(recipeManager.getCurrentSlot() + 1), p.profileName, recipeManager.getRecipeNames().get(p.lutIndex), p.opacity + "%", amtLabels[p.grain], amtLabels[p.rollOff], amtLabels[p.vignette] };
-                for (int i = 0; i < 7; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
-            } else if (currentPage == 2) { // PAGE 2: HARDWARE TONE
-                itemCount = 5;
-                String[] rLabels = {"Contrast", "Saturation", "Sharpness", "WB Shift (A-B)", "WB Shift (G-M)"};
-                String[] rValues = { String.format("%+d", p.contrast), String.format("%+d", p.saturation), String.format("%+d", p.sharpness), String.format("%+d", p.wbShift), String.format("%+d", p.wbShiftGM) };
-                for (int i = 0; i < 5; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
-            } else if (currentPage == 3) { // PAGE 3: HARDWARE MIXER
+            if (currentPage == 1) {
+                itemCount = 8;
+                String[] rLabels = {"Recipe Slot", "Profile Name", "LUT File", "LUT Opacity", "SW Grain Amt", "SW Grain Size", "SW Highlight Roll", "SW Vignette"};
+                String[] rValues = { String.valueOf(recipeManager.getCurrentSlot() + 1), p.profileName, recipeManager.getRecipeNames().get(p.lutIndex), p.opacity + "%", amtLabels[p.grain], sizeLabels[p.grainSize], amtLabels[p.rollOff], amtLabels[p.vignette] };
+                for (int i = 0; i < 8; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
+            } else if (currentPage == 2) {
+                itemCount = 6;
+                String[] rLabels = {"Creative Style", "Contrast", "Saturation", "Sharpness", "WB Shift (A-B)", "WB Shift (G-M)"};
+                String[] rValues = { p.colorMode.toUpperCase(), String.format("%+d", p.contrast), String.format("%+d", p.saturation), String.format("%+d", p.sharpness), String.format("%+d", p.wbShift), String.format("%+d", p.wbShiftGM) };
+                for (int i = 0; i < 6; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
+            } else if (currentPage == 3) {
                 itemCount = 3;
                 String[] rLabels = {"Mix: Cine Red", "Mix: Gold Green", "Mix: Deep Teal"};
                 String[] rValues = { String.format("%+d", p.mixRedBlue), String.format("%+d", p.mixGreenRed), String.format("%+d", p.mixBlueGreen) };
                 for (int i = 0; i < 3; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
-            } else if (currentPage == 4) { // PAGE 4: HARDWARE 6-AXIS
+            } else if (currentPage == 4) {
                 itemCount = 6;
                 String[] rLabels = {"Red Depth", "Green Depth", "Blue Depth", "Cyan Depth", "Magenta Depth", "Yellow Depth"};
                 String[] rValues = { String.format("%+d", p.colorDepthRed), String.format("%+d", p.colorDepthGreen), String.format("%+d", p.colorDepthBlue), String.format("%+d", p.colorDepthCyan), String.format("%+d", p.colorDepthMagenta), String.format("%+d", p.colorDepthYellow) };
                 for (int i = 0; i < 6; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
-            } else if (currentPage == 5) { // PAGE 5: HARDWARE PRO & OPTICS
-                itemCount = 4;
-                String[] rLabels = {"Pro Mode Base", "Edge Shading (Red)", "Edge Shading (Blue)", "Micro-Contrast Gain"};
-                String[] rValues = { p.proColorMode.toUpperCase(), String.format("%+d", p.shadingRed), String.format("%+d", p.shadingBlue), String.format("%+d", p.sharpnessGain) };
-                for (int i = 0; i < 4; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
+            } else if (currentPage == 5) {
+                itemCount = 5;
+                String[] rLabels = {"Pro Base", "Picture Effect", "Edge Shade (R)", "Edge Shade (B)", "Micro-Contrast"};
+                String[] rValues = { p.proColorMode.toUpperCase(), p.pictureEffect.toUpperCase(), String.format("%+d", p.shadingRed), String.format("%+d", p.shadingBlue), String.format("%+d", p.sharpnessGain) };
+                for (int i = 0; i < 5; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
             }
         } else if (currentPage == 6) {
             itemCount = 6;
@@ -1242,7 +1256,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             for (int i = 0; i < 3; i++) { menuLabels[i].setText(cLabels[i]); menuValues[i].setText(cValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
         }
 
-        // --- ROW HIGHLIGHTING ---
         for (int i = 0; i < itemCount; i++) {
             if (i == menuSelection) {
                 if (isMenuEditing || isNamingMode) {

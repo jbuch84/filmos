@@ -3,15 +3,15 @@ package com.github.ma1co.pmcademo.app;
 public class RTLProfile {
     public String profileName; 
 
-    // Look / Base
+    // Look / Base (Software Engine)
     public int lutIndex = 0;
     public int opacity = 100;
     public int grain = 0;
-    public int grainSize = 1;
+    public int grainSize = 1; // 0=Small, 1=Med, 2=Large (Matches your scaling spec)
     public int rollOff = 0;
     public int vignette = 0;
 
-    // Color & Tone
+    // Color & Tone (Hardware)
     public String whiteBalance = "AUTO";
     public int wbShift = 0;
     public int wbShiftGM = 0;
@@ -19,6 +19,7 @@ public class RTLProfile {
     public int contrast = 0;
     public int saturation = 0;
     public int sharpness = 0;
+    public String colorMode = "standard"; // Creative Styles
 
     // PHASE 3: HIDDEN HARDWARE COLOR MATRIX (-7 to +7)
     public int colorDepthRed = 0;
@@ -28,23 +29,19 @@ public class RTLProfile {
     public int colorDepthMagenta = 0;
     public int colorDepthYellow = 0;
 
-    // PHASE 3: EXPERIMENTAL OPTICS
-    public String colorMode = "standard"; 
-    public String pictureEffect = "off";
-    public String peToyCameraTone = "normal";
-    public int vignetteHardware = 0; // -16 to +16
+    // PHASE 4: CHANNEL MIXER (-200 to +200)
+    public int mixRedBlue = 0;   // Cine Red
+    public int mixGreenRed = 0;  // Gold Green
+    public int mixBlueGreen = 0; // Deep Teal
 
-    // PHASE 4: CHANNEL MIXER (-100 to +100)
-    public int mixRedBlue = 0;   // Adds Blue into Red channel
-    public int mixGreenRed = 0;  // Adds Red into Green channel
-    public int mixBlueGreen = 0; // Adds Green into Blue channel
-    
-    // DEEP HARDWARE HACKS
+    // PHASE 5: EFFECTS & HACKS
     public String proColorMode = "off";
-    public int softFocusLevel = 1; 
-    public int shadingRed = 0;     
-    public int shadingBlue = 0;    
-    public int sharpnessGain = 0;  
+    public String pictureEffect = "off";
+    public int vignetteHardware = 0;
+    public int softFocusLevel = 1;
+    public int shadingRed = 0;
+    public int shadingBlue = 0;
+    public int sharpnessGain = 0;
 
     public RTLProfile(int slotIndex) {
         this.profileName = "RECIPE " + (slotIndex + 1);
