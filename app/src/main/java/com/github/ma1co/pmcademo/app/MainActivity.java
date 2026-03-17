@@ -1723,6 +1723,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         setAutoPowerOffMode(true);
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // FIX: The Sony BIONZ Dalvik implementation leaks C++ JNI camera hooks 
+        // if the Activity is finished but the background process remains alive. 
+        // When relaunched, the daemon panics over the zombie process.
+        // Explicitly killing the process forces a 100% clean boot on the next launch.
+        System.exit(0);
+    }
+    
     private void setHUDVisibility(int v) { 
         if (tvTopStatus != null) tvTopStatus.setVisibility(v); 
         if (llBottomBar != null) llBottomBar.setVisibility(v); 
