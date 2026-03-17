@@ -72,6 +72,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private TextView tvTabSettings;
     private TextView tvTabNetwork;
     private TextView tvMenuSubtitle;
+    // --- NEW SUPPORT TAB VARIABLES ---
+    private TextView tvTabSupport;
+    private LinearLayout supportTabContainer;
     
     // Increased to 8 to accommodate Profile Name row
     private LinearLayout[] menuRows = new LinearLayout[8];
@@ -720,6 +723,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 if (currentMainTab == 0) currentPage = 1;
                 if (currentMainTab == 1) currentPage = 3;
                 if (currentMainTab == 2) currentPage = 4;
+                if (currentMainTab == 3) currentPage = 5;
                 menuSelection = 0; 
                 renderMenu();
             }
@@ -773,6 +777,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 if (currentMainTab == 0) currentPage = 1;
                 if (currentMainTab == 1) currentPage = 3;
                 if (currentMainTab == 2) currentPage = 4;
+                if (currentMainTab == 3) currentPage = 5;
                 menuSelection = 0; 
                 renderMenu();
             }
@@ -1158,14 +1163,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         tvTabRTL.setTextColor(currentMainTab == 0 ? Color.rgb(230, 50, 15) : Color.GRAY);
         tvTabSettings.setTextColor(currentMainTab == 1 ? Color.rgb(230, 50, 15) : Color.GRAY);
         tvTabNetwork.setTextColor(currentMainTab == 2 ? Color.rgb(230, 50, 15) : Color.GRAY);
+        tvTabSupport.setTextColor(currentMainTab == 3 ? Color.rgb(230, 50, 15) : Color.GRAY); // <-- New highlight rule
         
         if (currentPage == 1) tvMenuSubtitle.setText("RTL Base (Page 1/2)");
         else if (currentPage == 2) tvMenuSubtitle.setText("Color & Tone (Page 2/2)");
         else if (currentPage == 3) tvMenuSubtitle.setText("Global Settings");
-        else tvMenuSubtitle.setText("Web Dashboard Server");
+        else if (currentPage == 4) tvMenuSubtitle.setText("Web Dashboard Server");
+        else if (currentPage == 5) tvMenuSubtitle.setText("Resources & Community"); // <-- New subtitle
 
         // Hide all rows initially
         for (int i = 0; i < 8; i++) menuRows[i].setVisibility(View.GONE);
+        if (supportTabContainer != null) supportTabContainer.setVisibility(View.GONE); // <-- Hide QR screen by default
+
+        // --- NEW SUPPORT TAB LOGIC ---
+        // If we are on the Support tab, show the QR screen and skip building the rows!
+        if (currentPage == 5) {
+            supportTabContainer.setVisibility(View.VISIBLE);
+            currentItemCount = 0;
+            return; 
+        }
 
         RTLProfile p = recipeManager.getCurrentProfile();
         int itemCount = 0;
@@ -1375,11 +1391,60 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         tvTabRTL = createTabHeader("[ RTL ]");
         tvTabSettings = createTabHeader("[ SETTINGS ]");
         tvTabNetwork = createTabHeader("[ NETWORK ]");
+        tvTabSupport = createTabHeader("[ SUPPORT ]"); // <-- New Tab
         
         tabHeaderLayout.addView(tvTabRTL);
         tabHeaderLayout.addView(tvTabSettings);
         tabHeaderLayout.addView(tvTabNetwork);
+        tabHeaderLayout.addView(tvTabSupport); // <-- Add to header
         menuContainer.addView(tabHeaderLayout);
+
+        // --- BUILD THE SUPPORT QR SCREEN PROGRAMMATICALLY ---
+        supportTabContainer = new LinearLayout(this);
+        supportTabContainer.setOrientation(LinearLayout.VERTICAL);
+        supportTabContainer.setGravity(Gravity.CENTER);
+        supportTabContainer.setVisibility(View.GONE); // Hidden by default
+
+        TextView tvSupportTitle = new TextView(this);
+        tvSupportTitle.setText("filmOS");
+        tvSupportTitle.setTextColor(Color.WHITE);
+        tvSupportTitle.setTextSize(28);
+        tvSupportTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        
+        TextView tvSupportSub = new TextView(this);
+        tvSupportSub.setText("by JPG Cookbook");
+        tvSupportSub.setTextColor(Color.LTGRAY);
+        tvSupportSub.setTextSize(12);
+        tvSupportSub.setPadding(0, 0, 0, 20);
+
+        ImageView qrView = new ImageView(this);
+        qrView.setImageResource(R.drawable.qr_hub); // Ensure qr_hub.png is in your drawable folder!
+        qrView.setBackgroundColor(Color.WHITE);
+        qrView.setPadding(10, 10, 10, 10);
+        qrView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams qrParams = new LinearLayout.LayoutParams(240, 240); 
+        qrParams.setMargins(0, 0, 0, 20);
+        qrView.setLayoutParams(qrParams);
+
+        TextView tvUrl = new TextView(this);
+        tvUrl.setText("jpgcookbook.com/hub");
+        tvUrl.setTextColor(Color.rgb(230, 50, 15));
+        tvUrl.setTextSize(18);
+        tvUrl.setTypeface(Typeface.DEFAULT_BOLD);
+
+        TextView tvDesc = new TextView(this);
+        tvDesc.setText("Manuals, Lens Profiles, & Support");
+        tvDesc.setTextColor(Color.GRAY);
+        tvDesc.setTextSize(12);
+
+        supportTabContainer.addView(tvSupportTitle);
+        supportTabContainer.addView(tvSupportSub);
+        supportTabContainer.addView(qrView);
+        supportTabContainer.addView(tvUrl);
+        supportTabContainer.addView(tvDesc);
+
+        // Add to main menu container, but keep it at the top so it renders instead of the rows
+        menuContainer.addView(supportTabContainer, new LinearLayout.LayoutParams(-1, -1));
         
         tvMenuSubtitle = new TextView(this);
         tvMenuSubtitle.setTextSize(18);
