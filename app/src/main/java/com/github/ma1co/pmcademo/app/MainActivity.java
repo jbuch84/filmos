@@ -512,14 +512,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         
         RTLProfile p = recipeManager.getCurrentProfile();
         
-        // LAUNCH 6-AXIS HUD (Page 3, Row 3)
-        if (isMenuOpen && currentMainTab == 0 && currentPage == 3 && menuSelection == 3) {
+        // LAUNCH WB HUD (Page 3, Row 0)
+        if (isMenuOpen && currentMainTab == 0 && currentPage == 3 && menuSelection == 0) {
+            launchHudMode(2); // We will build Mode 2 next!
+            return;
+        }
+
+        // LAUNCH 6-AXIS HUD (Page 3, Row 2)
+        if (isMenuOpen && currentMainTab == 0 && currentPage == 3 && menuSelection == 2) {
             launchHudMode(1);
             return;
         }
         
-        // LAUNCH MATRIX HUD (Page 3, Row 4)
-        if (isMenuOpen && currentMainTab == 0 && currentPage == 3 && menuSelection == 4) {
+        // LAUNCH MATRIX HUD (Page 3, Row 3)
+        if (isMenuOpen && currentMainTab == 0 && currentPage == 3 && menuSelection == 3) {
             launchHudMode(0);
             return;
         }
@@ -929,14 +935,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 else if (sel == 4) p.sharpnessGain = Math.max(-50, Math.min(50, p.sharpnessGain + (dir * 5)));
                 
             } else if (currentPage == 3) { // 3. ADVANCED COLOR ENGINE
-                if (sel == 0) p.wbShift = Math.max(-7, Math.min(7, p.wbShift + dir));
-                else if (sel == 1) p.wbShiftGM = Math.max(-7, Math.min(7, p.wbShiftGM + dir));
-                else if (sel == 2) {
+                // sel 0 (WB Grid) is [ENTER] only.
+                if (sel == 1) {
                     String[] modes = {"off", "pro-standard", "pro-vivid", "pro-portrait", "pro-cinema"};
                     int idx = 0; for(int i=0; i<modes.length; i++) if(modes[i].equals(p.proColorMode)) idx = i;
                     p.proColorMode = modes[(idx + dir + modes.length) % modes.length];
                 }
-                // sel 3 (6-Axis) and sel 4 (Matrix) are [ENTER] only. Turning the dial here does nothing.
+                // sel 2 (6-Axis) and sel 3 (Matrix) are [ENTER] only.
 
             } else if (currentPage == 4) { // 4. HACKS & EFFECTS
                 switch(sel) {
@@ -1407,12 +1412,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 String[] rValues = { (p.colorMode != null ? p.colorMode : "STANDARD").toUpperCase(), String.format("%+d", p.contrast), String.format("%+d", p.saturation), String.format("%+d", p.sharpness), String.format("%+d", p.sharpnessGain) };
                 for (int i = 0; i < 5; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
             } else if (currentPage == 3) {
-                itemCount = 5;
+                itemCount = 4; // Shrunk from 5 down to 4!
+                
                 String abStr = p.wbShift == 0 ? "0" : (p.wbShift < 0 ? "B" + Math.abs(p.wbShift) : "A" + p.wbShift);
                 String gmStr = p.wbShiftGM == 0 ? "0" : (p.wbShiftGM < 0 ? "M" + Math.abs(p.wbShiftGM) : "G" + p.wbShiftGM);
-                String[] rLabels = {"White Balance (A-B)", "White Balance (G-M)", "Pro Color Base", "6-Axis Color Depths", "BIONZ RGB Matrix"};
-                String[] rValues = { abStr, gmStr, (p.proColorMode != null ? p.proColorMode : "OFF").toUpperCase(), "[ENTER] >>>", "[ENTER] >>>" };
-                for (int i = 0; i < 5; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
+                String combinedWb = (menuSelection == 0) ? "[ENTER] >>>" : (abStr + ", " + gmStr);
+
+                String[] rLabels = {"White Balance Shift", "Pro Color Base", "6-Axis Color Depths", "BIONZ RGB Matrix"};
+                String[] rValues = { combinedWb, (p.proColorMode != null ? p.proColorMode : "OFF").toUpperCase(), "[ENTER] >>>", "[ENTER] >>>" };
+                for (int i = 0; i < 4; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
             } else if (currentPage == 4) {
                 itemCount = 6;
                 String[] rLabels = {"Picture Effect", "Toy Cam Tone", "Toy Cam Vignette", "Soft Focus Lvl", "Edge Shade (R)", "Edge Shade (B)"};
@@ -1443,9 +1451,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         for (int i = 0; i < itemCount; i++) {
             boolean isActive = true;
             
-            // Page 3: 6-Axis (Row 3) requires Pro Base (Row 2) to be ON
+            // Page 3: 6-Axis (Row 2) requires Pro Base (Row 1) to be ON
             if (currentMainTab == 0 && currentPage == 3) {
-                if (i == 3) isActive = !"off".equals(p.proColorMode); 
+                if (i == 2) isActive = !"off".equals(p.proColorMode); 
             }
             
             // Page 4: Effects Dependencies
