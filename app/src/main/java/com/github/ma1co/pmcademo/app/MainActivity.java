@@ -997,20 +997,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 else if (sel == 5) p.vignette = Math.max(0, Math.min(5, p.vignette + dir));
             }
         } else if (currentPage == 5) { // 5. GLOBAL SETTINGS
-                if (sel == 0) recipeManager.setQualityIndex(Math.max(0, Math.min(2, recipeManager.getQualityIndex() + dir)));
-                else if (sel == 2) prefShowFocusMeter = !prefShowFocusMeter;
-                else if (sel == 3) prefShowCinemaMattes = !prefShowCinemaMattes;
-                else if (sel == 4) prefShowGridLines = !prefShowGridLines;
-                else if (sel == 5) prefJpegQuality = Math.max(60, Math.min(100, prefJpegQuality + (dir * 5)));
-            }
+            if (sel == 0) recipeManager.setQualityIndex(Math.max(0, Math.min(2, recipeManager.getQualityIndex() + dir)));
+            else if (sel == 2) prefShowFocusMeter = !prefShowFocusMeter;
+            else if (sel == 3) prefShowCinemaMattes = !prefShowCinemaMattes;
+            else if (sel == 4) prefShowGridLines = !prefShowGridLines;
+            else if (sel == 5) prefJpegQuality = Math.max(60, Math.min(100, prefJpegQuality + (dir * 5)));
         }
         
+        // --- These are now safely INSIDE the method ---
         renderMenu(); 
         recipeManager.savePreferences(); 
         
         uiHandler.removeCallbacks(applySettingsRunnable); 
         uiHandler.postDelayed(applySettingsRunnable, 300);
-    }
+    } // <--- This final bracket safely closes the handleMenuChange() method.
 
     private String cycleProMode(String current, int dir) {
         String[] modes = {"off", "pro-standard", "pro-vivid", "pro-portrait"};

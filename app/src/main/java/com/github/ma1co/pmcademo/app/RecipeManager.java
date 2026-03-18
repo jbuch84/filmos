@@ -107,21 +107,45 @@ public class RecipeManager {
             
             for(int i=0; i<10; i++) {
                 RTLProfile p = profiles[i];
-                // Ensure we save the path, not the index, to preserve mapping if files change
                 String path = (p.lutIndex >= 0 && p.lutIndex < recipePaths.size()) ? recipePaths.get(p.lutIndex) : "NONE";
+                String safeName = p.profileName != null ? p.profileName : "";
                 
-                sb.append(i).append(",").append(path).append(",")
-                  .append(p.opacity).append(",").append(p.grain).append(",")
-                  .append(p.grainSize).append(",").append(p.rollOff).append(",")
-                  .append(p.vignette).append(",")
-                  .append(p.whiteBalance).append(",")
-                  .append(p.wbShift).append(",")
-                  .append(p.dro).append(",")
-                  .append(p.wbShiftGM).append(",")
-                  .append(p.contrast).append(",")
-                  .append(p.saturation).append(",")
-                  .append(p.sharpness).append(",")
-                  .append(p.profileName).append("\n"); // --- NEW: Appending Custom Name
+                sb.append(i).append(",").append(path).append(",") // 0, 1
+                  .append(p.opacity).append(",").append(p.grain).append(",") // 2, 3
+                  .append(p.grainSize).append(",").append(p.rollOff).append(",") // 4, 5
+                  .append(p.vignette).append(",") // 6
+                  .append(p.whiteBalance).append(",") // 7
+                  .append(p.wbShift).append(",") // 8
+                  .append(p.dro).append(",") // 9
+                  .append(p.wbShiftGM).append(",") // 10
+                  .append(p.contrast).append(",") // 11
+                  .append(p.saturation).append(",") // 12
+                  .append(p.sharpness).append(",") // 13
+                  .append(safeName).append(",") // 14
+                  
+                  // --- NEW HUD HW VARIABLES ---
+                  .append(p.colorMode).append(",") // 15
+                  .append(p.sharpnessGain).append(",") // 16
+                  
+                  // Pack 6-Axis with colons
+                  .append(p.colorDepthRed).append(":").append(p.colorDepthGreen).append(":")
+                  .append(p.colorDepthBlue).append(":").append(p.colorDepthCyan).append(":")
+                  .append(p.colorDepthMagenta).append(":").append(p.colorDepthYellow).append(",") // 17
+                  
+                  // Pack 9-Point Matrix with colons
+                  .append(p.advMatrix[0]).append(":").append(p.advMatrix[1]).append(":")
+                  .append(p.advMatrix[2]).append(":").append(p.advMatrix[3]).append(":")
+                  .append(p.advMatrix[4]).append(":").append(p.advMatrix[5]).append(":")
+                  .append(p.advMatrix[6]).append(":").append(p.advMatrix[7]).append(":")
+                  .append(p.advMatrix[8]).append(",") // 18
+                  
+                  .append(p.proColorMode).append(",") // 19
+                  .append(p.pictureEffect).append(",") // 20
+                  .append(p.peToyCameraTone).append(",") // 21
+                  .append(p.vignetteHardware).append(",") // 22
+                  .append(p.softFocusLevel).append(",") // 23
+                  .append(p.shadingRed).append(",") // 24
+                  .append(p.shadingBlue).append("\n"); // 25
             }
             fos.write(sb.toString().getBytes()); 
             fos.flush(); 
@@ -139,8 +163,11 @@ public class RecipeManager {
                 while ((line = br.readLine()) != null) {
                     if (line.startsWith("quality=")) qualityIndex = Integer.parseInt(line.split("=")[1]);
                     else if (line.startsWith("slot=")) currentSlot = Integer.parseInt(line.split("=")[1]);
-                    else if (!line.startsWith("prefs=")) { // UI Prefs remain in MainActivity for now
-                        String[] parts = line.split(",");
+                    else if (!line.startsWith("prefs=")) { 
+                        
+                        // Use -1 to preserve empty strings (like an empty Profile Name)
+                        String[] parts = line.split(",", -1); 
+                        
                         if (parts.length >= 6) {
                             int idx = Integer.parseInt(parts[0]); 
                             int foundIndex = recipePaths.indexOf(parts[1]);
@@ -169,9 +196,41 @@ public class RecipeManager {
                                 p.saturation = Integer.parseInt(parts[12]);
                                 p.sharpness = Integer.parseInt(parts[13]);
                             }
-                            // --- NEW: Loading Custom Name ---
                             if (parts.length >= 15) {
                                 p.profileName = parts[14];
+                            }
+                            
+                            // --- NEW HUD HW VARIABLES ---
+                            if (parts.length >= 26) {
+                                p.colorMode = parts[15];
+                                p.sharpnessGain = Integer.parseInt(parts[16]);
+                                
+                                // Unpack 6-Axis
+                                String[] cDepths = parts[17].split(":");
+                                if (cDepths.length == 6) {
+                                    p.colorDepthRed = Integer.parseInt(cDepths[0]);
+                                    p.colorDepthGreen = Integer.parseInt(cDepths[1]);
+                                    p.colorDepthBlue = Integer.parseInt(cDepths[2]);
+                                    p.colorDepthCyan = Integer.parseInt(cDepths[3]);
+                                    p.colorDepthMagenta = Integer.parseInt(cDepths[4]);
+                                    p.colorDepthYellow = Integer.parseInt(cDepths[5]);
+                                }
+                                
+                                // Unpack 9-Point Matrix
+                                String[] mtx = parts[18].split(":");
+                                if (mtx.length == 9) {
+                                    for(int m=0; m<9; m++) {
+                                        p.advMatrix[m] = Integer.parseInt(mtx[m]);
+                                    }
+                                }
+                                
+                                p.proColorMode = parts[19];
+                                p.pictureEffect = parts[20];
+                                p.peToyCameraTone = parts[21];
+                                p.vignetteHardware = Integer.parseInt(parts[22]);
+                                p.softFocusLevel = Integer.parseInt(parts[23]);
+                                p.shadingRed = Integer.parseInt(parts[24]);
+                                p.shadingBlue = Integer.parseInt(parts[25]);
                             }
                         }
                     }
@@ -180,4 +239,3 @@ public class RecipeManager {
             } catch (Exception e) {}
         }
     }
-}
