@@ -448,14 +448,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         isMenuOpen = false;
         isNamingMode = false;
         
-        // --- MATRIX HUD SAFETY CLEAR ---
-        isMatrixEditMode = false;
-        if (matrixOverlayContainer != null) matrixOverlayContainer.setVisibility(View.GONE);
+        // --- UNIVERSAL HUD SAFETY CLEAR ---
+        isHudActive = false;
+        if (hudOverlayContainer != null) hudOverlayContainer.setVisibility(View.GONE);
         
         menuContainer.setVisibility(View.GONE); 
         mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE); 
         
-        recipeManager.savePreferences(); 
+        recipeManager.savePreferences();
         
         SharedPreferences.Editor editor = getSharedPreferences("filmOS_Prefs", MODE_PRIVATE).edit();
         editor.putBoolean("focusMeter", prefShowFocusMeter);
@@ -1354,6 +1354,22 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         uiHandler.removeCallbacks(applySettingsRunnable); 
         uiHandler.postDelayed(applySettingsRunnable, 150);
     }
+
+    private void launchHudMode(int mode) {
+        isHudActive = true;
+        currentHudMode = mode;
+        // Default selection logic
+        if (mode == 1) { // 6-Axis
+            hudSelection = Math.max(0, menuSelection - 1);
+        } else {
+            hudSelection = 0; 
+        }
+        menuContainer.setVisibility(View.GONE);
+        mainUIContainer.setVisibility(View.VISIBLE);
+        setHUDVisibility(View.GONE); 
+        hudOverlayContainer.setVisibility(View.VISIBLE);
+        updateHudUI();
+    }
     
     // --- 3. THE MENU RENDERING (Dependencies Visualized & Dynamic Rows) ---
     private void renderMenu() {
@@ -1972,7 +1988,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         
         // --- PREVENT UI OVERLAP DURING HUD EDIT ---
-        if (isMatrixEditMode) {
+        // We changed 'isMatrixEditMode' to 'isHudActive'
+        if (isHudActive) {
             setHUDVisibility(View.GONE);
             if (focusMeter != null) focusMeter.setVisibility(View.GONE);
             if (tvCalibrationPrompt != null) tvCalibrationPrompt.setVisibility(View.GONE);
