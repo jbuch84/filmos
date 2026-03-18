@@ -1280,7 +1280,18 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private void updateMatrixOverlayUI() {
         RTLProfile p = recipeManager.getCurrentProfile();
         for (int i = 0; i < 9; i++) {
-            matrixValues[i].setText(String.valueOf(p.advMatrix[i]));
+            int displayVal = p.advMatrix[i];
+            
+            // UX Magic: Normalize the 1024 diagonals so they appear as "0" to the user
+            if (i == 0 || i == 4 || i == 8) {
+                displayVal -= 1024;
+            }
+            
+            // Format cleanly (e.g., "+200", "-50", "0")
+            String valStr = (displayVal > 0) ? "+" + displayVal : String.valueOf(displayVal);
+            if (displayVal == 0) valStr = "0"; 
+            
+            matrixValues[i].setText(valStr);
             
             if (i == matrixEditSelection) {
                 // Highlight active slot in filmOS Orange
