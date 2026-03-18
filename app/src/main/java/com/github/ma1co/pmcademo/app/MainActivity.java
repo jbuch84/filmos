@@ -1306,20 +1306,33 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     private void handleMatrixAdjustment(int dir) {
         RTLProfile p = recipeManager.getCurrentProfile();
-        
-        // Diagonals (0, 4, 8) max at 2048 to prevent absolute blowouts, min at -1024
-        // Off-Diagonals (Bleeds) max at 1024 (100% crosstalk)
         int step = 25; 
         
-        if (matrixEditSelection == 0 || matrixEditSelection == 4 || matrixEditSelection == 8) {
-            p.advMatrix[matrixEditSelection] = Math.max(-1024, Math.min(2048, p.advMatrix[matrixEditSelection] + (dir * step)));
+        // 1. Establish the mathematical baseline for the selected slot
+        boolean isDiagonal = (matrixEditSelection == 0 || matrixEditSelection == 4 || matrixEditSelection == 8);
+        int base = isDiagonal ? 1024 : 0;
+        
+        // 2. Calculate the user's current offset from that baseline
+        int currentOffset = p.advMatrix[matrixEditSelection] - base;
+        
+        // 3. Apply the dial movement
+        int targetOffset = currentOffset + (dir * step);
+        
+        // 4. UX MAGIC: Snap the offset to the nearest clean multiple of 25
+        targetOffset = Math.round((float)targetOffset / step) * step;
+        
+        // 5. Add the baseline back to get the raw hardware number
+        int finalTarget = base + targetOffset;
+        
+        // 6. Clamp to the absolute BIONZ hardware limits so it never crashes
+        if (isDiagonal) {
+            p.advMatrix[matrixEditSelection] = Math.max(-1024, Math.min(2048, finalTarget));
         } else {
-            p.advMatrix[matrixEditSelection] = Math.max(-1024, Math.min(1024, p.advMatrix[matrixEditSelection] + (dir * step)));
+            p.advMatrix[matrixEditSelection] = Math.max(-1024, Math.min(1024, finalTarget));
         }
         
         updateMatrixOverlayUI();
         
-        // Live view debounce (150ms is fast enough to feel responsive but slow enough to not crash the daemon)
         uiHandler.removeCallbacks(applySettingsRunnable); 
         uiHandler.postDelayed(applySettingsRunnable, 150);
     }
