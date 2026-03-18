@@ -1282,15 +1282,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private void updateHudUI() {
         RTLProfile p = recipeManager.getCurrentProfile();
 
-        // --- MODE 2: 2D GRID LOGIC ---
+        // --- MODE 2: 2D GRID LOGIC (API 10 SAFE) ---
         if (currentHudMode == 2) {
             int ab = p.wbShift;   // X-Axis (-7 to +7)
             int gm = p.wbShiftGM; // Y-Axis (-7 to +7)
             
-            // Grid is 280px wide. 14 total steps means 20 pixels per step.
-            // Screen Y coordinates go down, so positive GM (Up) means a negative Y translation.
-            wbCursor.setTranslationX(ab * 20);
-            wbCursor.setTranslationY(-gm * 20);
+            // Grid is 320x320. Center is 153px. 20 pixels per step.
+            // GM is positive=UP, so we subtract from the Top margin.
+            int leftOffset = 153 + (ab * 20);
+            int topOffset = 153 - (gm * 20);
+            
+            FrameLayout.LayoutParams cursorParams = (FrameLayout.LayoutParams) wbCursor.getLayoutParams();
+            cursorParams.setMargins(leftOffset, topOffset, 0, 0);
+            wbCursor.setLayoutParams(cursorParams);
             
             String abStr = ab == 0 ? "0" : (ab < 0 ? "B" + Math.abs(ab) : "A" + ab);
             String gmStr = gm == 0 ? "0" : (gm < 0 ? "M" + Math.abs(gm) : "G" + gm);
@@ -1840,10 +1844,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         pVal.setMargins(0, 10, 15, 0);
         wbGridContainer.addView(wbValueText, pVal);
         
-        // The Moving Orange Cursor
+        // The Moving Orange Cursor (API 10 Safe)
         wbCursor = new View(this);
         wbCursor.setBackgroundColor(Color.rgb(230, 50, 15));
-        wbGridContainer.addView(wbCursor, new FrameLayout.LayoutParams(14, 14, Gravity.CENTER));
+        FrameLayout.LayoutParams cursorParams = new FrameLayout.LayoutParams(14, 14, Gravity.TOP | Gravity.LEFT);
+        cursorParams.setMargins(153, 153, 0, 0); // 320 grid center (160) minus half cursor size (7) = 153
+        wbGridContainer.addView(wbCursor, cursorParams);
         
         // Add the whole 320x320 grid to the absolute center of the screen
         mainUIContainer.addView(wbGridContainer, new FrameLayout.LayoutParams(320, 320, Gravity.CENTER));
