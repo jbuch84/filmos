@@ -1202,13 +1202,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
 
         // --- BIONZ Channel Mixer (Pure HUD Math) ---
-        if (p2.get("rgb-matrix-mode") != null) {
-            p2.set("rgb-matrix-mode", "true");
+        if (p.get("rgb-matrix-mode") != null) {
+            p.set("rgb-matrix-mode", "true");
             String mStr = String.format("%d,%d,%d,%d,%d,%d,%d,%d,%d",
                 prof.advMatrix[0], prof.advMatrix[1], prof.advMatrix[2],
                 prof.advMatrix[3], prof.advMatrix[4], prof.advMatrix[5],
                 prof.advMatrix[6], prof.advMatrix[7], prof.advMatrix[8]);
-            p2.set("rgb-matrix", mStr);
+            p.set("rgb-matrix", mStr);
         }
 
         if (p.get("lens-correction") != null) p.set("lens-correction", "true");
