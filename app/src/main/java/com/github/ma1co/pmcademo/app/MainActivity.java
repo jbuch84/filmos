@@ -93,6 +93,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private FrameLayout wbGridContainer;
     private View wbCursor;
     private TextView wbValueText;
+
+    private TextView hudTooltipText;
     
     private BatteryView batteryIcon;
     private ImageView playbackImageView;
@@ -541,6 +543,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (isMenuOpen && currentMainTab == 0 && currentPage == 3 && menuSelection == 3) {
             launchHudMode(4); return;
         }
+
+        // LAUNCH FOUNDATION (Page 1, Rows 2-4)
+        if (isMenuOpen && currentMainTab == 0 && currentPage == 1 && (menuSelection == 2 || menuSelection == 4)) {
+            launchHudMode(6, menuSelection == 2 ? 0 : 1); return;
+        }
+        // LAUNCH PRO BASE (Page 2, Row 1)
+        if (isMenuOpen && currentMainTab == 0 && currentPage == 2 && menuSelection == 1) {
+            launchHudMode(7); return;
+        }
+        // LAUNCH EFFECTS (Page 3, Row 0 or Row 2)
+        if (isMenuOpen && currentMainTab == 0 && currentPage == 3 && (menuSelection == 0 || menuSelection == 2)) {
+            launchHudMode(8, menuSelection == 0 ? 0 : 1); return;
+        }
         
         if (isCalibrating && calibStep == 0) {
             calibStep = 10; 
@@ -793,10 +808,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             if (currentHudMode == 2) handleWbAdjustment(1, 0); 
             else {
                 int maxSlots = 0;
-                if (currentHudMode == 0) maxSlots = 8; // Matrix (9 boxes)
-                else if (currentHudMode == 1) maxSlots = 5; // 6-Axis (6 boxes)
-                else if (currentHudMode == 3) maxSlots = 2; // Tone & Style (3 boxes)
-                else if (currentHudMode == 4 || currentHudMode == 5) maxSlots = 1; // Edge/Toy (2 boxes)
+                if (currentHudMode == 0) maxSlots = 8;
+                else if (currentHudMode == 1) maxSlots = 5;
+                else if (currentHudMode == 3) maxSlots = 2;
+                else if (currentHudMode == 4 || currentHudMode == 5 || currentHudMode == 6 || currentHudMode == 8) maxSlots = 1;
+                // Mode 7 is 0 (only 1 slot)
                 
                 hudSelection = Math.min(maxSlots, hudSelection + 1);
                 updateHudUI();
@@ -1351,6 +1367,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             else if (tTone.equals("MAGENTA")) tTone = "MAG";
             values[0] = tTone;
             values[1] = p.vignetteHardware == 0 ? "0" : String.format("%+d", p.vignetteHardware);
+        } else if (currentHudMode == 6) { // MODE 6: FOUNDATION
+            activeCells = 2;
+            labels = new String[]{"STYLE", "M-CON"};
+            values[0] = p.colorMode != null ? p.colorMode.toUpperCase() : "STD";
+            values[1] = p.sharpnessGain == 0 ? "0" : String.format("%+d", p.sharpnessGain);
+        } else if (currentHudMode == 7) { // MODE 7: PRO BASE
+            activeCells = 1;
+            labels = new String[]{"PRO BASE"};
+            values[0] = p.proColorMode != null ? p.proColorMode.toUpperCase() : "OFF";
+        } else if (currentHudMode == 8) { // MODE 8: EFFECTS
+            activeCells = 2;
+            labels = new String[]{"EFFECT", "SOFT-FOCUS"};
+            values[0] = p.pictureEffect != null ? p.pictureEffect.toUpperCase() : "OFF";
+            values[1] = "LVL " + p.softFocusLevel;
         }
 
         // 2. PAINT THE SCREEN
@@ -1370,6 +1400,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             } else {
                 hudCells[i].setVisibility(View.GONE); // Hide unused boxes!
             }
+        }
+
+        // --- TOOLTIP GENERATOR ---
+        String tooltip = "";
+        if (currentHudMode == 0) { // Matrix
+            String[] t = {
+                "Red sensitivity to real-world Red light (Primary)", "Pushes Green light into Red channel (Aerochrome)", "Pushes Blue light into Red channel",
+                "Pushes Red light into Green channel", "Green sensitivity to real-world Green light (Primary)", "Pushes Blue light into Green channel",
+                "Pushes Red light into Blue channel", "Pushes Green light into Blue channel", "Blue sensitivity to real-world Blue light (Primary)"
+            };
+            tooltip = t[hudSelection];
+        } else if (currentHudMode == 1) { // 6-Axis
+            tooltip = "Alters the luminance and depth of the target color phase";
+        } else if (currentHudMode == 3) { // Tone & Style
+            if (hudSelection == 2) tooltip = "Standard hardware sharpness (Micro-Contrast is stronger)";
+        } else if (currentHudMode == 4) { // Edge Shading
+            tooltip = "Injects color shifts into the corners to simulate vintage lens tinting";
+        } else if (currentHudMode == 6) { // Foundation
+            if (hudSelection == 1) tooltip = "Aggressive frequency enhancement (Affects film grain texture)";
+        } else if (currentHudMode == 7) { // Pro Base
+            tooltip = "Under-the-hood color science starting points (Overwrites Standard Styles)";
+        }
+        
+        if (hudTooltipText != null) {
+            hudTooltipText.setText(tooltip);
+            hudTooltipText.setVisibility(tooltip.isEmpty() ? View.GONE : View.VISIBLE);
         }
     }
 
@@ -1418,6 +1474,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             } else if (hudSelection == 1) {
                 p.vignetteHardware = Math.max(-5, Math.min(5, p.vignetteHardware + dir)); 
             }
+        } else if (currentHudMode == 6) { // MODE 6: FOUNDATION MATH
+            if (hudSelection == 0) {
+                String[] styles = {"Standard", "Vivid", "Neutral", "Clear", "Deep", "Light", "Portrait", "Landscape", "Sunset", "Night Scene", "Autumn Leaves", "Black & White", "Sepia"};
+                int idx = 0; for(int i=0; i<styles.length; i++) if(styles[i].equalsIgnoreCase(p.colorMode)) idx = i;
+                p.colorMode = styles[(idx + dir + styles.length) % styles.length];
+            } else if (hudSelection == 1) {
+                p.sharpnessGain = Math.max(-50, Math.min(50, p.sharpnessGain + (dir * 5)));
+            }
+        } else if (currentHudMode == 7) { // MODE 7: PRO BASE MATH
+            String[] modes = {"off", "pro-standard", "pro-vivid", "pro-portrait", "pro-cinema"};
+            int idx = 0; for(int i=0; i<modes.length; i++) if(modes[i].equals(p.proColorMode)) idx = i;
+            p.proColorMode = modes[(idx + dir + modes.length) % modes.length];
+        } else if (currentHudMode == 8) { // MODE 8: EFFECTS MATH
+            if (hudSelection == 0) {
+                String[] eff = {"off", "toy-camera", "pop-color", "posterization", "retro-photo", "soft-high-key", "partial-color", "high-contrast-mono", "soft-focus", "hdr-painting", "rich-tone-mono", "miniature", "watercolor", "illustration"};
+                int idx = 0; for(int i=0; i<eff.length; i++) if(eff[i].equals(p.pictureEffect)) idx = i;
+                p.pictureEffect = eff[(idx + dir + eff.length) % eff.length];
+            } else if (hudSelection == 1) {
+                p.softFocusLevel = Math.max(1, Math.min(3, p.softFocusLevel + dir));
+            }
         }
         
         updateHudUI();
@@ -1436,9 +1512,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         
         if (mode == 2) {
             hudOverlayContainer.setVisibility(View.GONE);
+            if (hudTooltipText != null) hudTooltipText.setVisibility(View.GONE);
             if (wbGridContainer != null) wbGridContainer.setVisibility(View.VISIBLE);
         } else {
             hudOverlayContainer.setVisibility(View.VISIBLE);
+            // updateHudUI() will handle showing the tooltip if needed
             if (wbGridContainer != null) wbGridContainer.setVisibility(View.GONE);
         }
         updateHudUI();
@@ -1502,8 +1580,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     displayHtmlName = sb.toString();
                 }
 
+                // DATA PREVIEW: Tone & Style
+                String tsStr = String.format("[ %+d,  %+d,  %+d ]", p.contrast, p.saturation, p.sharpness);
+
                 String[] rLabels = {"Recipe Slot", "Profile Name", "Creative Style", "Tone & Style (CON/SAT/SHP)", "Micro-Contrast"};
-                String[] rValues = { String.valueOf(recipeManager.getCurrentSlot() + 1), displayHtmlName, (p.colorMode != null ? p.colorMode : "STANDARD").toUpperCase(), "[ENTER] >>>", String.format("%+d", p.sharpnessGain) };
+                String[] rValues = { String.valueOf(recipeManager.getCurrentSlot() + 1), displayHtmlName, (p.colorMode != null ? p.colorMode : "STANDARD").toUpperCase(), tsStr, String.format("%+d", p.sharpnessGain) };
                 
                 for (int i = 0; i < 5; i++) {
                     menuLabels[i].setText(rLabels[i]);
@@ -1517,13 +1598,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 String gmStr = p.wbShiftGM == 0 ? "0" : (p.wbShiftGM < 0 ? "M" + Math.abs(p.wbShiftGM) : "G" + p.wbShiftGM);
                 String combinedWb = (menuSelection == 0) ? "[ENTER] >>>" : (abStr + ", " + gmStr);
 
+                // DATA PREVIEWS: 6-Axis and Matrix
+                boolean sixIsStd = p.colorDepthRed==0 && p.colorDepthGreen==0 && p.colorDepthBlue==0 && p.colorDepthCyan==0 && p.colorDepthMagenta==0 && p.colorDepthYellow==0;
+                String sixStr = sixIsStd ? "[ STANDARD ]" : "[ CUSTOM ]";
+                
+                boolean mtxIsStd = p.advMatrix[0]==1024 && p.advMatrix[1]==0 && p.advMatrix[2]==0 && p.advMatrix[3]==0 && p.advMatrix[4]==1024 && p.advMatrix[5]==0 && p.advMatrix[6]==0 && p.advMatrix[7]==0 && p.advMatrix[8]==1024;
+                String mtxStr = mtxIsStd ? "[ STANDARD ]" : "[ CUSTOM ]";
+
                 String[] rLabels = {"White Balance Shift", "Pro Color Base", "6-Axis Color Depths", "BIONZ RGB Matrix"};
-                String[] rValues = { combinedWb, (p.proColorMode != null ? p.proColorMode : "OFF").toUpperCase(), "[ENTER] >>>", "[ENTER] >>>" };
+                String[] rValues = { combinedWb, (p.proColorMode != null ? p.proColorMode : "OFF").toUpperCase(), sixStr, mtxStr };
                 for (int i = 0; i < 4; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
+                
             } else if (currentPage == 3) {
                 itemCount = 4;
+                // DATA PREVIEWS: Toy Cam and Edge Shading
+                String tTone = p.peToyCameraTone != null ? p.peToyCameraTone.toUpperCase() : "NORM";
+                if (tTone.equals("NORMAL")) tTone = "NORM"; else if (tTone.equals("MAGENTA")) tTone = "MAG";
+                String toyStr = "[ " + tTone + " | " + String.format("%+d", p.vignetteHardware) + " ]";
+                String shadeStr = "[ R " + String.format("%+d", p.shadingRed) + " | B " + String.format("%+d", p.shadingBlue) + " ]";
+
                 String[] rLabels = {"Picture Effect", "Toy Camera Parameters", "Soft Focus Lvl", "Edge Shading Editor"};
-                String[] rValues = { (p.pictureEffect != null ? p.pictureEffect : "OFF").toUpperCase(), "[ENTER] >>>", String.valueOf(p.softFocusLevel), "[ENTER] >>>" };
+                String[] rValues = { (p.pictureEffect != null ? p.pictureEffect : "OFF").toUpperCase(), toyStr, String.valueOf(p.softFocusLevel), shadeStr };
                 for (int i = 0; i < 4; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
             } else if (currentPage == 4) {
                 itemCount = 6;
@@ -1553,10 +1648,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 if (i == 2) isActive = !"off".equals(p.proColorMode); 
             }
             
-            // Page 4: Effects Dependencies
+            // Page 4: SW Effects Dependencies (FIXED GRAIN SIZE)
             if (currentMainTab == 0 && currentPage == 4) {
-                if (i == 1 || i == 2) isActive = "toy-camera".equals(p.pictureEffect);
-                if (i == 3) isActive = "soft-focus".equals(p.pictureEffect);
+                if (i == 3) isActive = (p.grain > 0); // Only active if Grain Amt is not OFF
             }
 
             if (i == menuSelection) {
@@ -1839,10 +1933,24 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             hudOverlayContainer.addView(hudCells[i], new LinearLayout.LayoutParams(0, -2, 1.0f));
         }
         
+        // --- 1. THE MAIN RIBBON ---
         FrameLayout.LayoutParams overlayParams = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM); 
         overlayParams.setMargins(0, 0, 0, 130); 
         mainUIContainer.addView(hudOverlayContainer, overlayParams);
 
+        // --- 2. THE NEW EDUCATIONAL TOOLTIP ---
+        hudTooltipText = new TextView(this);
+        hudTooltipText.setTextColor(Color.LTGRAY);
+        hudTooltipText.setTextSize(12);
+        hudTooltipText.setGravity(Gravity.CENTER);
+        hudTooltipText.setPadding(10, 8, 10, 8);
+        hudTooltipText.setBackgroundColor(Color.argb(200, 15, 15, 15));
+        hudTooltipText.setVisibility(View.GONE);
+        
+        FrameLayout.LayoutParams ttParams = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM); 
+        ttParams.setMargins(0, 0, 0, 205); // Floats exactly above the 130px margin of the ribbon
+        mainUIContainer.addView(hudTooltipText, ttParams);
+        
         // --- WB 2D GRID OVERLAY UI ---
         wbGridContainer = new FrameLayout(this);
         wbGridContainer.setBackgroundColor(Color.argb(160, 20, 20, 20));
