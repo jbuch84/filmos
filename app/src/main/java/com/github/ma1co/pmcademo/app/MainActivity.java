@@ -530,6 +530,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (isMenuOpen && currentMainTab == 0 && currentPage == 1 && menuSelection == 3) {
             launchHudMode(3); return;
         }
+        // LAUNCH DRO HUD (Page 1, Row 4)
+        if (isMenuOpen && currentMainTab == 0 && currentPage == 1 && menuSelection == 4) {
+            launchHudMode(9); return;
+        }
         // LAUNCH WB GRID (Page 2, Row 0)
         if (isMenuOpen && currentMainTab == 0 && currentPage == 2 && menuSelection == 0) {
             launchHudMode(2); return;
@@ -987,7 +991,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     p.colorMode = styles[(idx + dir + styles.length) % styles.length];
                 }
                 // sel 3 is Tone & Style HUD [ENTER]
-                else if (sel == 4) p.sharpnessGain = Math.max(-50, Math.min(50, p.sharpnessGain + (dir * 5)));
+                else if (sel == 4) {
+                    // Cycle through OFF, AUTO, and Levels 1-5
+                    String[] droModes = {"OFF", "AUTO", "LVL 1", "LVL 2", "LVL 3", "LVL 4", "LVL 5"};
+                    int idx = 0; 
+                    for(int i=0; i < droModes.length; i++) {
+                        if(droModes[i].equalsIgnoreCase(p.dro)) idx = i;
+                    }
+                    p.dro = droModes[(idx + dir + droModes.length) % droModes.length];
+                }
                 
             } else if (currentPage == 2) { // 2. ADVANCED COLOR ENGINE
                 // sel 0 is WB Grid HUD [ENTER]
@@ -1286,6 +1298,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (p.get("sharpness-gain") != null) p.set("sharpness-gain", String.valueOf(prof.sharpnessGain));
         if (p.get("sharpness-gain-mode") != null) p.set("sharpness-gain-mode", "true");
 
+        
+        // --- NEW: APPLY DRO HARDWARE SETTINGS ---
+        if (p.get("dro-mode") != null) {
+            String droSetting = prof.dro != null ? prof.dro.toUpperCase() : "OFF";
+            if ("OFF".equals(droSetting)) {
+                p.set("dro-mode", "off");
+            } else if ("AUTO".equals(droSetting)) {
+                p.set("dro-mode", "auto");
+            } else if (droSetting.startsWith("LVL")) {
+                p.set("dro-mode", "on"); // Must be ON to use levels
+                if (p.get("dro-level") != null) {
+                    String lvl = droSetting.replace("LVL", "").trim();
+                    p.set("dro-level", lvl);
+                }
+            }
+        }
+        
         // Now that Pro Mode is active, inject 6-Axis
         if (p.get("color-depth-red") != null) {
             p.set("color-depth-red", String.valueOf(prof.colorDepthRed));
@@ -1437,6 +1466,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             activeCells = 1;
             labels = new String[]{"EFFECT"};
             values[0] = p.pictureEffect != null ? p.pictureEffect.toUpperCase() : "OFF";
+        } else if (currentHudMode == 9) { // MODE 9: DRO
+            activeCells = 1;
+            labels = new String[]{"DRO"};
+            values[0] = p.dro != null ? p.dro.toUpperCase() : "OFF";
         }
 
         // 2. PAINT THE SCREEN
@@ -1477,6 +1510,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             if (hudSelection == 1) tooltip = "Aggressive frequency enhancement (Affects film grain texture)";
         } else if (currentHudMode == 7) { // Pro Base
             tooltip = "Under-the-hood color science starting points (Overwrites Standard Styles)";
+        }else if (currentHudMode == 9) { // DRO
+            tooltip = "Dynamic Range Optimizer: Recovers shadow detail in high-contrast scenes";
         }
         
         if (hudTooltipText != null) {
@@ -1559,6 +1594,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 int idx = 0; for(int i=0; i<eff.length; i++) if(eff[i].equals(p.pictureEffect)) idx = i;
                 p.pictureEffect = eff[(idx + dir + eff.length) % eff.length];
             }
+        } else if (currentHudMode == 9) { // MODE 9: DRO MATH
+            if (hudSelection == 0) {
+                String[] droModes = {"OFF", "AUTO", "LVL 1", "LVL 2", "LVL 3", "LVL 4", "LVL 5"};
+                int idx = 0; for(int i=0; i < droModes.length; i++) if(droModes[i].equalsIgnoreCase(p.dro)) idx = i;
+                p.dro = droModes[(idx + dir + droModes.length) % droModes.length];
+            }
         }
         
         updateHudUI();
@@ -1627,9 +1668,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         String[] amtLabels = {"OFF", "LOW", "MED", "HIGH", "V.HIGH", "MAX"};
         String[] sizeLabels = {"SMALL", "MED", "LARGE"};
 
-        if (currentMainTab == 0) {
-            if (currentPage == 1) {
-                itemCount = 4;
+        if (currentPage == 1) {
+                itemCount = 5; // --- CHANGED: Room for DRO
                 String rawName = p.profileName != null ? p.profileName : "";
                 while (rawName.length() < 8) rawName += " ";
                 if (rawName.length() > 8) rawName = rawName.substring(0, 8);
@@ -1648,10 +1688,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 String fndStr = "[ " + (p.colorMode != null ? p.colorMode : "STD").toUpperCase() + " | M-CON " + String.format("%+d", p.sharpnessGain) + " ]";
                 String tsStr = String.format("[ %+d,  %+d,  %+d ]", p.contrast, p.saturation, p.sharpness);
 
-                String[] rLabels = {"Recipe Slot", "Profile Name", "Foundation Base", "Tone & Style"};
-                String[] rValues = { String.valueOf(recipeManager.getCurrentSlot() + 1), displayHtmlName, fndStr, tsStr };
+                // --- CHANGED: Added DRO to arrays
+                String[] rLabels = {"Recipe Slot", "Profile Name", "Foundation Base", "Tone & Style", "DRO (Dynamic Range)"};
+                String[] rValues = { String.valueOf(recipeManager.getCurrentSlot() + 1), displayHtmlName, fndStr, tsStr, p.dro != null ? p.dro.toUpperCase() : "OFF" };
                 
-                for (int i = 0; i < 4; i++) {
+                for (int i = 0; i < 5; i++) { // --- CHANGED: Loop over 5 items
                     menuLabels[i].setText(rLabels[i]);
                     if (i == 1 && (isNamingMode || displayHtmlName.contains("&nbsp;"))) menuValues[i].setText(android.text.Html.fromHtml(rValues[i]));
                     else menuValues[i].setText(rValues[i].trim());
