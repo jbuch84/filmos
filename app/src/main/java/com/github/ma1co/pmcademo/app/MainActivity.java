@@ -46,7 +46,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private RecipeManager recipeManager;
     private ConnectivityManager connectivityManager;
     
-    private Typeface digitalFont; // --- NEW: Cached Custom Font ---
+    private Typeface digitalFont; 
     
     private ImageProcessor mProcessor;
     private SonyFileScanner mScanner;
@@ -85,7 +85,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     // --- UNIVERSAL HUD VARIABLES ---
     private boolean isHudActive = false;
     private int hudSelection = 0;
-    private int currentHudMode = 0; // 0 = Matrix, 1 = 6-Axis, 2 = Edge Shading, etc.
+    private int currentHudMode = 0; 
     private LinearLayout hudOverlayContainer;
     private LinearLayout[] hudCells = new LinearLayout[9];
     private TextView[] hudLabels = new TextView[9];
@@ -263,7 +263,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         
         recipeManager.loadPreferences();
         
-        // --- NEW: Load the custom font safely into memory ---
         try {
             digitalFont = Typeface.createFromAsset(getAssets(), "fonts/digital-7.ttf");
         } catch (Exception e) {
@@ -318,7 +317,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             @Override 
             public boolean isReadyToProcess() { 
                 RTLProfile p = recipeManager.getCurrentProfile();
-                return isReady && !isProcessing && !isCalibrating && (p.lutIndex != 0 || p.grain != 0 || p.vignette != 0 || p.rollOff != 0); 
+                // --- FIXED: ADDED COLOR CHROME AND CHROME BLUE TO BYPASS CHECK ---
+                return isReady && !isProcessing && !isCalibrating && (p.lutIndex != 0 || p.grain != 0 || p.vignette != 0 || p.rollOff != 0 || p.colorChrome != 0 || p.chromeBlue != 0); 
             }
             @Override 
             public void onNewPhotoDetected(final String path) { 
@@ -465,11 +465,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         isMenuOpen = false;
         isNamingMode = false;
         
-        // --- UNIVERSAL HUD SAFETY CLEAR ---
         isHudActive = false;
         if (hudOverlayContainer != null) hudOverlayContainer.setVisibility(View.GONE);
-        if (hudTooltipText != null) hudTooltipText.setVisibility(View.GONE);   // <-- FIXED: Hide Tooltip
-        if (wbGridContainer != null) wbGridContainer.setVisibility(View.GONE); // <-- FIXED: Hide WB Grid
+        if (hudTooltipText != null) hudTooltipText.setVisibility(View.GONE);  
+        if (wbGridContainer != null) wbGridContainer.setVisibility(View.GONE); 
         
         menuContainer.setVisibility(View.GONE); 
         mainUIContainer.setVisibility(displayState == 0 ? View.VISIBLE : View.GONE);
@@ -518,9 +517,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (isPlaybackMode) { exitPlayback(); return; }
         if (isProcessing) return;
 
-        // --- UNIVERSAL HUD TOGGLE ---
         if (isHudActive) {
-            // EXITING HUD
             isHudActive = false;
             hudOverlayContainer.setVisibility(View.GONE);
             if (hudTooltipText != null) hudTooltipText.setVisibility(View.GONE);
@@ -528,52 +525,42 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             mainUIContainer.setVisibility(View.GONE);
             menuContainer.setVisibility(View.VISIBLE);
             recipeManager.savePreferences();
-            renderMenu(); // <--- ADD THIS SO THE MENU REDRAWS INSTANTLY
+            renderMenu(); 
             return;
         }
         
         RTLProfile p = recipeManager.getCurrentProfile();
         
-        // LAUNCH FOUNDATION (Page 1, Row 2)
         if (isMenuOpen && currentMainTab == 0 && currentPage == 1 && menuSelection == 2) {
             launchHudMode(6); return;
         }
-        // LAUNCH TONE (Page 1, Row 3)
         if (isMenuOpen && currentMainTab == 0 && currentPage == 1 && menuSelection == 3) {
             launchHudMode(3); return;
         }
-        // LAUNCH DRO HUD (Page 1, Row 4)
         if (isMenuOpen && currentMainTab == 0 && currentPage == 1 && menuSelection == 4) {
             launchHudMode(9); return;
         }
-        // LAUNCH WB GRID (Page 2, Row 0)
         if (isMenuOpen && currentMainTab == 0 && currentPage == 2 && menuSelection == 0) {
             launchHudMode(2); return;
         }
-        // LAUNCH PRO BASE (Page 2, Row 1)
         if (isMenuOpen && currentMainTab == 0 && currentPage == 2 && menuSelection == 1) {
             launchHudMode(7); return;
         }
-        // LAUNCH 6-AXIS (Page 2, Row 2)
         if (isMenuOpen && currentMainTab == 0 && currentPage == 2 && menuSelection == 2) {
             launchHudMode(1); return;
         }
-        // LAUNCH MATRIX (Page 2, Row 3)
         if (isMenuOpen && currentMainTab == 0 && currentPage == 2 && menuSelection == 3) {
             launchHudMode(0); return;
         }
-        // LAUNCH EFFECT BASE (Page 3, Row 0)
         if (isMenuOpen && currentMainTab == 0 && currentPage == 3 && menuSelection == 0) {
             launchHudMode(8); return;
         }
-        // LAUNCH EFFECT TWEAKER (Page 3, Row 1)
         if (isMenuOpen && currentMainTab == 0 && currentPage == 3 && menuSelection == 1) {
             String eff = p.pictureEffect != null ? p.pictureEffect : "off";
             if ("toy-camera".equals(eff) || "soft-focus".equals(eff) || "hdr-art".equals(eff) || "illust".equals(eff) || "watercolor".equals(eff) || "part-color".equals(eff) || "miniature".equals(eff)) {
                 launchHudMode(5); return;
             }
         }
-        // LAUNCH EDGE SHADING (Page 3, Row 2)
         if (isMenuOpen && currentMainTab == 0 && currentPage == 3 && menuSelection == 2) {
             launchHudMode(4); return;
         }
@@ -665,7 +652,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override
     public void onUpPressed() {
         if (isHudActive) {
-            if (currentHudMode == 2) handleWbAdjustment(0, 1); // Up is Green (+1)
+            if (currentHudMode == 2) handleWbAdjustment(0, 1); 
             else handleHudAdjustment(1);
             return;
         }
@@ -694,9 +681,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 handleMenuChange(1);
             } else {
                 menuSelection--;
-                // If we go above row 0, we hit Subtitle (-1). 
-                // If we go above Subtitle, we hit Tabs (-2).
-                // If we go above Tabs, we wrap to the bottom of the current list.
                 if (menuSelection < -2) {
                     menuSelection = currentItemCount - 1;
                 }
@@ -710,7 +694,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override
     public void onDownPressed() {
         if (isHudActive) {
-            if (currentHudMode == 2) handleWbAdjustment(0, -1); // Down is Magenta (-1)
+            if (currentHudMode == 2) handleWbAdjustment(0, -1); 
             else handleHudAdjustment(-1);
             return;
         }
@@ -742,7 +726,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 handleMenuChange(-1);
             } else {
                 menuSelection++;
-                // If we go past the last item, we wrap back to the Tabs (-2)
                 if (menuSelection >= currentItemCount) {
                     menuSelection = -2;
                 }
@@ -756,7 +739,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override
     public void onLeftPressed() {
         if (isHudActive) {
-            if (currentHudMode == 2) handleWbAdjustment(-1, 0); // Left is Blue (-1)
+            if (currentHudMode == 2) handleWbAdjustment(-1, 0); 
             else {
                 hudSelection = Math.max(0, hudSelection - 1);
                 updateHudUI();
@@ -795,15 +778,15 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
 
         if (isMenuOpen) {
-            if (menuSelection == -2) { // TABS ARE HIGHLIGHTED
+            if (menuSelection == -2) { 
                 currentMainTab = (currentMainTab - 1 + 4) % 4;
                 if (currentMainTab == 0) currentPage = 1;
-                else if (currentMainTab == 1) currentPage = 5; // Was 6
-                else if (currentMainTab == 2) currentPage = 6; // Was 7
-                else if (currentMainTab == 3) currentPage = 7; // Was 8
+                else if (currentMainTab == 1) currentPage = 5; 
+                else if (currentMainTab == 2) currentPage = 6; 
+                else if (currentMainTab == 3) currentPage = 7; 
                 renderMenu();
-            } else if (menuSelection == -1) { // SUBTITLE IS HIGHLIGHTED
-                if (currentMainTab == 0) { // Now only 4 pages in Tab 0!
+            } else if (menuSelection == -1) { 
+                if (currentMainTab == 0) { 
                     currentPage = (currentPage - 2 + 4) % 4 + 1;
                     renderMenu();
                 }
@@ -833,7 +816,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 else if (currentHudMode == 1) maxSlots = 5;
                 else if (currentHudMode == 3) maxSlots = 2;
                 else if (currentHudMode == 4 || currentHudMode == 5 || currentHudMode == 6 || currentHudMode == 8) maxSlots = 1;
-                // Mode 7 is 0 (only 1 slot)
                 
                 hudSelection = Math.min(maxSlots, hudSelection + 1);
                 updateHudUI();
@@ -859,16 +841,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
 
         if (isMenuOpen) {
-            if (menuSelection == -2) { // TABS ARE HIGHLIGHTED
+            if (menuSelection == -2) { 
                 currentMainTab = (currentMainTab + 1) % 4;
                 if (currentMainTab == 0) currentPage = 1;
-                else if (currentMainTab == 1) currentPage = 5; // Was 6
-                else if (currentMainTab == 2) currentPage = 6; // Was 7
-                else if (currentMainTab == 3) currentPage = 7; // Was 8
+                else if (currentMainTab == 1) currentPage = 5; 
+                else if (currentMainTab == 2) currentPage = 6; 
+                else if (currentMainTab == 3) currentPage = 7; 
                 renderMenu();
-            } else if (menuSelection == -1) { // SUBTITLE IS HIGHLIGHTED
+            } else if (menuSelection == -1) { 
                 if (currentMainTab == 0) { 
-                    currentPage = (currentPage % 4) + 1; // Was % 5
+                    currentPage = (currentPage % 4) + 1; 
                     renderMenu();
                 }
             } else if (isNamingMode) {
@@ -890,7 +872,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override 
     public void onDialRotated(int direction) { 
         if (isHudActive) {
-            if (currentHudMode == 2) handleWbAdjustment(direction, 0); // Map Dial to A-B Axis
+            if (currentHudMode == 2) handleWbAdjustment(direction, 0); 
             else handleHudAdjustment(direction);
             return;
         }
@@ -979,13 +961,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         renderMenu();
     }
 
-    // --- 2. THE MENU HANDLER (Reorganized & Debounced) ---
     private void handleMenuChange(int dir) {
         RTLProfile p = recipeManager.getCurrentProfile(); 
         int sel = menuSelection; 
         
         if (currentMainTab == 0) {
-            if (currentPage == 1) { // 1. RECIPE IDENTITY & BASE
+            if (currentPage == 1) { 
                 if (sel == 0) {
                     if (!isNamingMode) {
                         recipeManager.savePreferences();
@@ -993,18 +974,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                         triggerLutPreload();
                     }
                 }
-                // sel 1 is Profile Name (Handled via D-Pad)
-                // sel 2 is Foundation HUD [ENTER]
-                // sel 3 is Tone & Style HUD [ENTER]
-                // sel 1 is Profile Name (Handled via D-Pad in onLeft/Right/Up/Down)
                 else if (sel == 2) {
                     String[] styles = {"Standard", "Vivid", "Neutral", "Clear", "Deep", "Light", "Portrait", "Landscape", "Sunset", "Night Scene", "Autumn Leaves", "Black & White", "Sepia"};
                     int idx = 0; for(int i=0; i<styles.length; i++) if(styles[i].equalsIgnoreCase(p.colorMode)) idx = i;
                     p.colorMode = styles[(idx + dir + styles.length) % styles.length];
                 }
-                // sel 3 is Tone & Style HUD [ENTER]
                 else if (sel == 4) {
-                    // Cycle through OFF, AUTO, and Levels 1-5
                     String[] droModes = {"OFF", "AUTO", "LVL 1", "LVL 2", "LVL 3", "LVL 4", "LVL 5"};
                     int idx = 0; 
                     for(int i=0; i < droModes.length; i++) {
@@ -1013,26 +988,20 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     p.dro = droModes[(idx + dir + droModes.length) % droModes.length];
                 }
                 
-            } else if (currentPage == 2) { // 2. ADVANCED COLOR ENGINE
-                // sel 0 is WB Grid HUD [ENTER]
+            } else if (currentPage == 2) { 
                 if (sel == 1) {
                     String[] modes = {"off", "pro-standard", "pro-vivid", "pro-portrait", "pro-cinema"};
                     int idx = 0; for(int i=0; i<modes.length; i++) if(modes[i].equals(p.proColorMode)) idx = i;
                     p.proColorMode = modes[(idx + dir + modes.length) % modes.length];
                 }
-                // sel 2 is 6-Axis HUD [ENTER]
-                // sel 3 is Matrix HUD [ENTER]
 
-            } else if (currentPage == 3) { // 3. EFFECTS & SHADING
+            } else if (currentPage == 3) { 
                 if (sel == 0) {
                     String[] eff = {"off", "toy-camera", "pop-color", "posterization", "retro-photo", "soft-high-key", "partial-color", "high-contrast-mono", "soft-focus", "hdr-painting", "rich-tone-mono", "miniature", "watercolor", "illustration"};
                     int idx = 0; for(int i=0; i<eff.length; i++) if(eff[i].equals(p.pictureEffect)) idx = i;
                     p.pictureEffect = eff[(idx + dir + eff.length) % eff.length];
                 }
-                // sel 1 is Dynamic Effect HUD [ENTER]
-                // sel 2 is Edge Shading HUD [ENTER]
                 else if (sel == 2) p.softFocusLevel = Math.max(1, Math.min(3, p.softFocusLevel + dir));
-                // sel 3 is Edge Shading HUD [ENTER]
                 
             } else if (currentPage == 4) { // 4. LUTS & TEXTURES (SW)
                 if (sel == 0) {
@@ -1044,6 +1013,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 else if (sel == 3) p.grainSize = Math.max(0, Math.min(2, p.grainSize + dir));
                 else if (sel == 4) p.rollOff = Math.max(0, Math.min(5, p.rollOff + dir));
                 else if (sel == 5) p.vignette = Math.max(0, Math.min(5, p.vignette + dir));
+                
+                // --- FIXED: ADDED FUJI CHROME CONTROLS TO D-PAD LOGIC ---
+                else if (sel == 6) p.colorChrome = Math.max(0, Math.min(2, p.colorChrome + dir));
+                else if (sel == 7) p.chromeBlue = Math.max(0, Math.min(2, p.chromeBlue + dir));
             }
         } else if (currentPage == 5) { // 5. GLOBAL SETTINGS
             if (sel == 0) recipeManager.setQualityIndex(Math.max(0, Math.min(2, recipeManager.getQualityIndex() + dir)));
@@ -1053,13 +1026,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             else if (sel == 5) prefJpegQuality = Math.max(60, Math.min(100, prefJpegQuality + (dir * 5)));
         }
         
-        // --- These are now safely INSIDE the method ---
         renderMenu(); 
         recipeManager.savePreferences(); 
         
         uiHandler.removeCallbacks(applySettingsRunnable); 
         uiHandler.postDelayed(applySettingsRunnable, 300);
-    } // <--- This final bracket safely closes the handleMenuChange() method.
+    } 
 
     private String cycleProMode(String current, int dir) {
         String[] modes = {"off", "pro-standard", "pro-vivid", "pro-portrait"};
@@ -1223,40 +1195,31 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         updateMainHUD(); 
     }
     
-    // --- 1. THE HARDWARE ENGINE (1024 Baseline & 6-Axis Unlock) ---
     private void applyHardwareRecipe() {
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         Camera c = cameraManager.getCamera(); 
         RTLProfile prof = recipeManager.getCurrentProfile(); 
         Camera.Parameters p = c.getParameters();
         
-        // ==========================================
-        // STAGE 1: THE FOUNDATION (Modes & Styles)
-        // ==========================================
         if (p.get("picture-profile") != null) p.set("picture-profile", "off");
         
-        // SAFE CREATIVE STYLE & PRO BASE RESOLUTION
         String safeProMode = prof.proColorMode != null ? prof.proColorMode.toLowerCase() : "off";
         String safeColorMode = prof.colorMode != null ? prof.colorMode.toLowerCase() : "standard";
         
         if (!"off".equals(safeProMode)) {
-            // If Pro Base is active, force standard Creative Style to yield control
             if (p.get("creative-style") != null) p.set("creative-style", "standard");
             if (p.get("color-mode") != null) p.set("color-mode", "standard");
             if (p.get("pro-color-mode") != null) p.set("pro-color-mode", safeProMode);
         } else {
-            // Otherwise, use the standard Creative Style and turn off Pro Base
             if (p.get("creative-style") != null) p.set("creative-style", safeColorMode);
             if (p.get("color-mode") != null) p.set("color-mode", safeColorMode);
             if (p.get("pro-color-mode") != null) p.set("pro-color-mode", "off");
         }
 
-        // SAFE PICTURE EFFECTS (Matches PARAMS.TXT Exactly)
         if (p.get("picture-effect") != null) {
             String eff = prof.pictureEffect != null ? prof.pictureEffect.toLowerCase() : "off";
             p.set("picture-effect", eff);
             
-            // The Shapeshifter: Reusing peToyCameraTone for multiple effects safely
             String effStr = prof.peToyCameraTone != null ? prof.peToyCameraTone.toLowerCase() : "normal";
             
             if ("toy-camera".equals(eff)) {
@@ -1281,17 +1244,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             }
         }
         
-        // GLOBAL VIGNETTE HACK (Applies corner shading regardless of effect)
         if (p.get("vignetting") != null) p.set("vignetting", String.valueOf(prof.vignetteHardware));
         if (p.get("vignette") != null) p.set("vignette", String.valueOf(prof.vignetteHardware));
         
-        // Apply Stage 1 to wake up dormant registers
         try { c.setParameters(p); } catch (Exception e) { Log.e("filmOS", "Stage 1 Reject: " + e.getMessage()); }
 
-        // ==========================================
-        // STAGE 2: THE DETAILS (Depths, Matrix, Tone)
-        // ==========================================
-        p = c.getParameters(); // Fetch the newly refreshed state from the ISP
+        p = c.getParameters(); 
 
         String wb = "auto";
         if ("DAY".equals(prof.whiteBalance)) wb = "daylight"; 
@@ -1310,8 +1268,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (p.get("sharpness-gain") != null) p.set("sharpness-gain", String.valueOf(prof.sharpnessGain));
         if (p.get("sharpness-gain-mode") != null) p.set("sharpness-gain-mode", "true");
 
-        
-        // --- NEW: APPLY DRO HARDWARE SETTINGS ---
         if (p.get("dro-mode") != null) {
             String droSetting = prof.dro != null ? prof.dro.toUpperCase() : "OFF";
             if ("OFF".equals(droSetting)) {
@@ -1319,7 +1275,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             } else if ("AUTO".equals(droSetting)) {
                 p.set("dro-mode", "auto");
             } else if (droSetting.startsWith("LVL")) {
-                p.set("dro-mode", "on"); // Must be ON to use levels
+                p.set("dro-mode", "on"); 
                 if (p.get("dro-level") != null) {
                     String lvl = droSetting.replace("LVL", "").trim();
                     p.set("dro-level", lvl);
@@ -1327,7 +1283,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             }
         }
         
-        // Now that Pro Mode is active, inject 6-Axis
         if (p.get("color-depth-red") != null) {
             p.set("color-depth-red", String.valueOf(prof.colorDepthRed));
             p.set("color-depth-green", String.valueOf(prof.colorDepthGreen));
@@ -1337,7 +1292,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             p.set("color-depth-yellow", String.valueOf(prof.colorDepthYellow));
         }
 
-        // --- BIONZ Channel Mixer (Pure HUD Math) ---
         if (p.get("rgb-matrix-mode") != null) {
             p.set("rgb-matrix-mode", "true");
             String mStr = String.format("%d,%d,%d,%d,%d,%d,%d,%d,%d",
@@ -1386,17 +1340,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         renderMenu(); 
     }
 
-    // --- UNIVERSAL HUD ENGINE ---
     private void updateHudUI() {
         RTLProfile p = recipeManager.getCurrentProfile();
 
-        // --- MODE 2: 2D GRID LOGIC (API 10 SAFE) ---
         if (currentHudMode == 2) {
-            int ab = p.wbShift;   // X-Axis (-7 to +7)
-            int gm = p.wbShiftGM; // Y-Axis (-7 to +7)
+            int ab = p.wbShift;   
+            int gm = p.wbShiftGM; 
             
-            // Grid is 320x320. Center is 153px. 20 pixels per step.
-            // GM is positive=UP, so we subtract from the Top margin.
             int leftOffset = 153 + (ab * 20);
             int topOffset = 153 - (gm * 20);
             
@@ -1407,42 +1357,41 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             String abStr = ab == 0 ? "0" : (ab < 0 ? "B" + Math.abs(ab) : "A" + ab);
             String gmStr = gm == 0 ? "0" : (gm < 0 ? "M" + Math.abs(gm) : "G" + gm);
             wbValueText.setText(abStr + ", " + gmStr);
-            return; // Exit here so it doesn't try to draw the normal ribbon
+            return; 
         }
 
         int activeCells = 0;
         String[] labels = new String[9];
         String[] values = new String[9];
 
-        // 1. FETCH DATA BASED ON MODE
-        if (currentHudMode == 0) { // MODE 0: MATRIX (9 Slots)
+        if (currentHudMode == 0) { 
             activeCells = 9;
             labels = new String[]{"R-R", "G-R", "B-R", "R-G", "G-G", "B-G", "R-B", "G-B", "B-B"};
             for (int i=0; i<9; i++) {
                 int displayVal = p.advMatrix[i];
-                if (i==0 || i==4 || i==8) displayVal -= 1024; // Hide unity gain from user
+                if (i==0 || i==4 || i==8) displayVal -= 1024; 
                 values[i] = displayVal == 0 ? "0" : (displayVal > 0 ? "+" + displayVal : String.valueOf(displayVal));
             }
-        } else if (currentHudMode == 1) { // MODE 1: 6-AXIS (6 Slots)
+        } else if (currentHudMode == 1) { 
             activeCells = 6;
             labels = new String[]{"RED", "GRN", "BLU", "CYN", "MAG", "YEL"};
             int[] depths = {p.colorDepthRed, p.colorDepthGreen, p.colorDepthBlue, p.colorDepthCyan, p.colorDepthMagenta, p.colorDepthYellow};
             for (int i=0; i<6; i++) {
                 values[i] = depths[i] == 0 ? "0" : String.format("%+d", depths[i]);
             }
-        } else if (currentHudMode == 3) { // MODE 3: TONE & STYLE (3 Slots)
+        } else if (currentHudMode == 3) { 
             activeCells = 3;
             labels = new String[]{"CONTRAST", "SATURATION", "SHARPNESS"};
             int[] vals = {p.contrast, p.saturation, p.sharpness};
             for (int i=0; i<3; i++) values[i] = vals[i] == 0 ? "0" : String.format("%+d", vals[i]);
             
-        } else if (currentHudMode == 4) { // MODE 4: EDGE SHADING (2 Slots)
+        } else if (currentHudMode == 4) { 
             activeCells = 2;
             labels = new String[]{"SHADE RED", "SHADE BLUE"};
             int[] vals = {p.shadingRed, p.shadingBlue};
             for (int i=0; i<2; i++) values[i] = vals[i] == 0 ? "0" : String.format("%+d", vals[i]);
             
-        } else if (currentHudMode == 5) { // MODE 5: SHAPESHIFTING EFFECT TWEAKER
+        } else if (currentHudMode == 5) { 
             activeCells = 1;
             String eff = p.pictureEffect != null ? p.pictureEffect : "off";
             String genericStr = p.peToyCameraTone != null ? p.peToyCameraTone.toUpperCase() : "NORM";
@@ -1465,26 +1414,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 labels = new String[]{"EFFECT"};
                 values[0] = "NO PARAMS";
             }
-        } else if (currentHudMode == 6) { // MODE 6: FOUNDATION
+        } else if (currentHudMode == 6) { 
             activeCells = 2;
             labels = new String[]{"STYLE", "MICRO-CONTRAST"};
             values[0] = p.colorMode != null ? p.colorMode.toUpperCase() : "STD";
             values[1] = p.sharpnessGain == 0 ? "0" : String.format("%+d", p.sharpnessGain);
-        } else if (currentHudMode == 7) { // MODE 7: PRO BASE
+        } else if (currentHudMode == 7) { 
             activeCells = 1;
             labels = new String[]{"PRO BASE"};
             values[0] = p.proColorMode != null ? p.proColorMode.toUpperCase() : "OFF";
-        } else if (currentHudMode == 8) { // MODE 8: EFFECTS
+        } else if (currentHudMode == 8) { 
             activeCells = 1;
             labels = new String[]{"EFFECT"};
             values[0] = p.pictureEffect != null ? p.pictureEffect.toUpperCase() : "OFF";
-        } else if (currentHudMode == 9) { // MODE 9: DRO
+        } else if (currentHudMode == 9) { 
             activeCells = 1;
             labels = new String[]{"DYNAMIC RANGE"};
             values[0] = p.dro != null ? p.dro.toUpperCase() : "OFF";
         }
 
-        // 2. PAINT THE SCREEN
         for (int i = 0; i < 9; i++) {
             if (i < activeCells) {
                 hudCells[i].setVisibility(View.VISIBLE);
@@ -1499,30 +1447,29 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     hudValues[i].setTextColor(Color.WHITE);
                 }
             } else {
-                hudCells[i].setVisibility(View.GONE); // Hide unused boxes!
+                hudCells[i].setVisibility(View.GONE); 
             }
         }
 
-        // --- TOOLTIP GENERATOR ---
         String tooltip = "";
-        if (currentHudMode == 0) { // Matrix
+        if (currentHudMode == 0) { 
             String[] t = {
                 "Red sensitivity to real-world Red light (Primary)", "Pushes Green light into Red channel (Aerochrome)", "Pushes Blue light into Red channel",
                 "Pushes Red light into Green channel", "Green sensitivity to real-world Green light (Primary)", "Pushes Blue light into Green channel",
                 "Pushes Red light into Blue channel", "Pushes Green light into Blue channel", "Blue sensitivity to real-world Blue light (Primary)"
             };
             tooltip = t[hudSelection];
-        } else if (currentHudMode == 1) { // 6-Axis
+        } else if (currentHudMode == 1) { 
             tooltip = "Alters the luminance and depth of the target color phase";
-        } else if (currentHudMode == 3) { // Tone & Style
+        } else if (currentHudMode == 3) { 
             if (hudSelection == 2) tooltip = "Standard hardware sharpness (Micro-Contrast is stronger)";
-        } else if (currentHudMode == 4) { // Edge Shading
+        } else if (currentHudMode == 4) { 
             tooltip = "Injects color shifts into the corners to simulate vintage lens tinting";
-        } else if (currentHudMode == 6) { // Foundation
+        } else if (currentHudMode == 6) { 
             if (hudSelection == 1) tooltip = "Aggressive frequency enhancement (Affects film grain texture)";
-        } else if (currentHudMode == 7) { // Pro Base
+        } else if (currentHudMode == 7) { 
             tooltip = "Under-the-hood color science starting points (Overwrites Standard Styles)";
-        }else if (currentHudMode == 9) { // DRO
+        }else if (currentHudMode == 9) { 
             tooltip = "Dynamic Range Optimizer: Recovers shadow detail in high-contrast scenes";
         }
         
@@ -1544,32 +1491,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private void handleHudAdjustment(int dir) {
         RTLProfile p = recipeManager.getCurrentProfile();
         
-        if (currentHudMode == 0) { // MODE 0: MATRIX MATH
+        if (currentHudMode == 0) { 
             int step = 25; 
             boolean isDiagonal = (hudSelection == 0 || hudSelection == 4 || hudSelection == 8);
             int base = isDiagonal ? 1024 : 0;
             int offset = p.advMatrix[hudSelection] - base;
-            int target = Math.round((float)(offset + (dir * step)) / step) * step; // Rubber-band math
+            int target = Math.round((float)(offset + (dir * step)) / step) * step; 
             int finalVal = base + target;
             p.advMatrix[hudSelection] = Math.max(-1024, Math.min(isDiagonal ? 2048 : 1024, finalVal));
             
-        } else if (currentHudMode == 1) { // MODE 1: 6-AXIS MATH
+        } else if (currentHudMode == 1) { 
             if (hudSelection == 0) p.colorDepthRed = Math.max(-7, Math.min(7, p.colorDepthRed + dir));
             else if (hudSelection == 1) p.colorDepthGreen = Math.max(-7, Math.min(7, p.colorDepthGreen + dir));
             else if (hudSelection == 2) p.colorDepthBlue = Math.max(-7, Math.min(7, p.colorDepthBlue + dir));
             else if (hudSelection == 3) p.colorDepthCyan = Math.max(-7, Math.min(7, p.colorDepthCyan + dir));
             else if (hudSelection == 4) p.colorDepthMagenta = Math.max(-7, Math.min(7, p.colorDepthMagenta + dir));
             else if (hudSelection == 5) p.colorDepthYellow = Math.max(-7, Math.min(7, p.colorDepthYellow + dir));
-        } else if (currentHudMode == 3) { // MODE 3: TONE MATH
+        } else if (currentHudMode == 3) { 
             if (hudSelection == 0) p.contrast = Math.max(-3, Math.min(3, p.contrast + dir));
             else if (hudSelection == 1) p.saturation = Math.max(-3, Math.min(3, p.saturation + dir));
             else if (hudSelection == 2) p.sharpness = Math.max(-3, Math.min(3, p.sharpness + dir));
             
-        } else if (currentHudMode == 4) { // MODE 4: EDGE SHADING MATH
+        } else if (currentHudMode == 4) { 
             if (hudSelection == 0) p.shadingRed = Math.max(-7, Math.min(7, p.shadingRed + dir));
             else if (hudSelection == 1) p.shadingBlue = Math.max(-7, Math.min(7, p.shadingBlue + dir));
             
-        } else if (currentHudMode == 5) { // MODE 5: EFFECT SHAPESHIFTER MATH
+        } else if (currentHudMode == 5) { 
             String eff = p.pictureEffect != null ? p.pictureEffect : "off";
             if (hudSelection == 0) {
                 if ("soft-focus".equals(eff) || "hdr-art".equals(eff) || "illust".equals(eff) || "watercolor".equals(eff)) {
@@ -1588,7 +1535,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             } else if (hudSelection == 1 && "toy-camera".equals(eff)) {
                 p.vignetteHardware = Math.max(-16, Math.min(16, p.vignetteHardware + dir)); 
             }
-        } else if (currentHudMode == 6) { // MODE 6: FOUNDATION MATH
+        } else if (currentHudMode == 6) { 
             if (hudSelection == 0) {
                 String[] styles = {"standard", "vivid", "portrait", "landscape", "mono", "sunset", "sepia"};
                 int idx = 0; for(int i=0; i<styles.length; i++) if(styles[i].equalsIgnoreCase(p.colorMode)) idx = i;
@@ -1596,17 +1543,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             } else if (hudSelection == 1) {
                 p.sharpnessGain = Math.max(-50, Math.min(50, p.sharpnessGain + (dir * 5)));
             }
-        } else if (currentHudMode == 7) { // MODE 7: PRO BASE MATH
+        } else if (currentHudMode == 7) { 
             String[] modes = {"off", "pro-standard", "pro-vivid", "pro-portrait"};
             int idx = 0; for(int i=0; i<modes.length; i++) if(modes[i].equals(p.proColorMode)) idx = i;
             p.proColorMode = modes[(idx + dir + modes.length) % modes.length];
-        } else if (currentHudMode == 8) { // MODE 8: EFFECTS MATH
+        } else if (currentHudMode == 8) { 
             if (hudSelection == 0) {
                 String[] eff = {"off", "toy-camera", "pop-color", "posterization", "retro-photo", "soft-high-key", "part-color", "rough-mono", "soft-focus", "hdr-art", "richtone-mono", "miniature", "watercolor", "illust"};
                 int idx = 0; for(int i=0; i<eff.length; i++) if(eff[i].equals(p.pictureEffect)) idx = i;
                 p.pictureEffect = eff[(idx + dir + eff.length) % eff.length];
             }
-        } else if (currentHudMode == 9) { // MODE 9: DRO MATH
+        } else if (currentHudMode == 9) { 
             if (hudSelection == 0) {
                 String[] droModes = {"OFF", "AUTO", "LVL 1", "LVL 2", "LVL 3", "LVL 4", "LVL 5"};
                 int idx = 0; for(int i=0; i < droModes.length; i++) if(droModes[i].equalsIgnoreCase(p.dro)) idx = i;
@@ -1634,7 +1581,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             if (wbGridContainer != null) wbGridContainer.setVisibility(View.VISIBLE);
         } else {
             hudOverlayContainer.setVisibility(View.VISIBLE);
-            // updateHudUI() will handle showing the tooltip if needed
             if (wbGridContainer != null) wbGridContainer.setVisibility(View.GONE);
         }
         updateHudUI();
@@ -1644,14 +1590,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         launchHudMode(mode, 0); 
     }
     
-    // --- 3. THE MENU RENDERING (Dependencies Visualized & Dynamic Rows) ---
     private void renderMenu() {
         String scn = "UNKNOWN";
         if (cameraManager != null && cameraManager.getCamera() != null) {
             try { scn = cameraManager.getCamera().getParameters().getSceneMode().toUpperCase(); } catch(Exception e) {}
         }
 
-        // TABS
         tvTabRTL.setBackgroundColor(menuSelection == -2 && currentMainTab == 0 ? Color.rgb(227, 69, 20) : Color.TRANSPARENT);
         tvTabSettings.setBackgroundColor(menuSelection == -2 && currentMainTab == 1 ? Color.rgb(227, 69, 20) : Color.TRANSPARENT);
         tvTabNetwork.setBackgroundColor(menuSelection == -2 && currentMainTab == 2 ? Color.rgb(227, 69, 20) : Color.TRANSPARENT);
@@ -1661,7 +1605,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         tvTabNetwork.setTextColor(currentMainTab == 2 ? Color.WHITE : Color.GRAY);
         tvTabSupport.setTextColor(currentMainTab == 3 ? Color.WHITE : Color.GRAY);
 
-        // SUBTITLE
         tvMenuSubtitle.setBackgroundColor(menuSelection == -1 ? Color.rgb(227, 69, 20) : Color.TRANSPARENT);
         if (currentPage == 1) tvMenuSubtitle.setText("1. Recipe Identity & Base [HW]");
         else if (currentPage == 2) tvMenuSubtitle.setText("2. Advanced Color Engine [HW]");
@@ -1682,7 +1625,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         if (currentMainTab == 0) {
             if (currentPage == 1) {
-                itemCount = 5; // --- CHANGED: Room for DRO
+                itemCount = 5; 
                 String rawName = p.profileName != null ? p.profileName : "";
                 while (rawName.length() < 8) rawName += " ";
                 if (rawName.length() > 8) rawName = rawName.substring(0, 8);
@@ -1760,10 +1703,28 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     menuRows[i].setVisibility(View.VISIBLE); 
                 }
             } else if (currentPage == 4) {
-                itemCount = 6;
-                String[] rLabels = {"LUT File", "LUT Opacity", "SW Grain Amt", "SW Grain Size", "SW Highlight Roll", "SW Vignette"};
-                String[] rValues = { recipeManager.getRecipeNames().get(p.lutIndex), p.opacity + "%", amtLabels[Math.max(0, Math.min(5, p.grain))], sizeLabels[Math.max(0, Math.min(2, p.grainSize))], amtLabels[Math.max(0, Math.min(5, p.rollOff))], amtLabels[Math.max(0, Math.min(5, p.vignette))] };
-                for (int i = 0; i < 6; i++) { menuLabels[i].setText(rLabels[i]); menuValues[i].setText(rValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
+                itemCount = 8; 
+                
+                String chromeStr = p.colorChrome == 0 ? "OFF" : (p.colorChrome == 1 ? "WEAK" : "STRONG");
+                String chromeBlueStr = p.chromeBlue == 0 ? "OFF" : (p.chromeBlue == 1 ? "WEAK" : "STRONG");
+
+                String[] rLabels = {"LUT File", "LUT Opacity", "SW Grain Amt", "SW Grain Size", "SW Highlight Roll", "SW Vignette", "SW Color Chrome", "SW Chrome Blue"};
+                String[] rValues = { 
+                    recipeManager.getRecipeNames().get(p.lutIndex), 
+                    p.opacity + "%", 
+                    amtLabels[Math.max(0, Math.min(5, p.grain))], 
+                    sizeLabels[Math.max(0, Math.min(2, p.grainSize))], 
+                    amtLabels[Math.max(0, Math.min(5, p.rollOff))], 
+                    amtLabels[Math.max(0, Math.min(5, p.vignette))],
+                    chromeStr,
+                    chromeBlueStr
+                };
+                
+                for (int i = 0; i < 8; i++) { 
+                    menuLabels[i].setText(rLabels[i]); 
+                    menuValues[i].setText(rValues[i]); 
+                    menuRows[i].setVisibility(View.VISIBLE); 
+                }
             }
         } else if (currentPage == 5) {
             itemCount = 6;
@@ -1778,34 +1739,28 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             for (int i = 0; i < 3; i++) { menuLabels[i].setText(cLabels[i]); menuValues[i].setText(cValues[i]); menuRows[i].setVisibility(View.VISIBLE); }
         }
 
-        // ROW COLOR HIGHLIGHTING WITH DEPENDENCY LOGIC
         for (int i = 0; i < itemCount; i++) {
             boolean isActive = true;
             
-            // [DEV FLAG] Page 2: Lock Pro Base to OFF (Consumer ISP bypasses this)
-            // To re-enable testing, simply comment out these two lines:
             if (currentMainTab == 0 && currentPage == 2 && i == 1) {
                 isActive = false; 
                 p.proColorMode = "off";
             }
             
-            // Page 3: Effect Tweaker Dependencies
             if (currentMainTab == 0 && currentPage == 3 && i == 1) {
                 String eff = p.pictureEffect != null ? p.pictureEffect : "off";
                 isActive = ("toy-camera".equals(eff) || "soft-focus".equals(eff) || "hdr-art".equals(eff) || "illust".equals(eff) || "watercolor".equals(eff) || "part-color".equals(eff) || "miniature".equals(eff));
             }
             
-            // Page 4: SW Effects Dependencies
             if (currentMainTab == 0 && currentPage == 4) {
-                if (i == 1) isActive = (p.lutIndex > 0); // Opacity requires a LUT!
-                if (i == 3) isActive = (p.grain > 0);    // Grain Size requires Grain Amt
+                if (i == 1) isActive = (p.lutIndex > 0); 
+                if (i == 3) isActive = (p.grain > 0);    
             }
 
-            // --- NEW: Extract the plain text so we can inject arrows safely ---
             String plainText = menuLabels[i].getText().toString().replace("> ", "").replace("  ", "");
 
             if (i == menuSelection) {
-                menuLabels[i].setText("> " + plainText); // <-- INJECT ACTIVE ARROW
+                menuLabels[i].setText("> " + plainText); 
 
                 if (!isActive) {
                     menuRows[i].setBackgroundColor(Color.TRANSPARENT);
@@ -1814,14 +1769,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 } else if (isMenuEditing || isNamingMode) {
                     menuRows[i].setBackgroundColor(Color.TRANSPARENT);
                     menuLabels[i].setTextColor(Color.WHITE);
-                    menuValues[i].setTextColor(Color.rgb(227, 69, 20)); // Alpha Orange
+                    menuValues[i].setTextColor(Color.rgb(227, 69, 20)); 
                 } else {
-                    menuRows[i].setBackgroundColor(Color.rgb(227, 69, 20)); // Alpha Orange
+                    menuRows[i].setBackgroundColor(Color.rgb(227, 69, 20)); 
                     menuLabels[i].setTextColor(Color.WHITE);
                     menuValues[i].setTextColor(Color.WHITE);
                 }
             } else {
-                menuLabels[i].setText("  " + plainText); // <-- INJECT SPACING TO KEEP ALIGNMENT
+                menuLabels[i].setText("  " + plainText); 
 
                 menuRows[i].setBackgroundColor(Color.TRANSPARENT);
                 if (!isActive) {
@@ -2061,7 +2016,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         
         rootLayout.addView(playbackContainer, new FrameLayout.LayoutParams(-1, -1));
 
-        // --- UNIVERSAL HUD OVERLAY UI ---
         hudOverlayContainer = new LinearLayout(this); 
         hudOverlayContainer.setOrientation(LinearLayout.HORIZONTAL); 
         hudOverlayContainer.setBackgroundColor(Color.argb(220, 15, 15, 15)); 
@@ -2072,10 +2026,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             hudCells[i] = new LinearLayout(this);
             hudCells[i].setOrientation(LinearLayout.VERTICAL);
             hudCells[i].setGravity(Gravity.CENTER);
-            // Box background removed so the UI can breathe!
             
             hudLabels[i] = new TextView(this);
-            hudLabels[i].setTextColor(Color.GRAY); // Restored to a readable, clean Gray
+            hudLabels[i].setTextColor(Color.GRAY); 
             hudLabels[i].setTextSize(14);
             if (digitalFont != null) hudLabels[i].setTypeface(digitalFont);
             else hudLabels[i].setTypeface(Typeface.DEFAULT_BOLD);
@@ -2091,12 +2044,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             hudOverlayContainer.addView(hudCells[i], new LinearLayout.LayoutParams(0, -2, 1.0f));
         }
         
-        // --- 1. THE MAIN RIBBON ---
         FrameLayout.LayoutParams overlayParams = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM); 
         overlayParams.setMargins(0, 0, 0, 130); 
         mainUIContainer.addView(hudOverlayContainer, overlayParams);
 
-        // --- 2. THE NEW EDUCATIONAL TOOLTIP ---
         hudTooltipText = new TextView(this);
         hudTooltipText.setTextColor(Color.LTGRAY);
         hudTooltipText.setTextSize(12);
@@ -2106,25 +2057,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         hudTooltipText.setVisibility(View.GONE);
         
         FrameLayout.LayoutParams ttParams = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM); 
-        ttParams.setMargins(0, 0, 0, 205); // Floats exactly above the 130px margin of the ribbon
+        ttParams.setMargins(0, 0, 0, 205); 
         mainUIContainer.addView(hudTooltipText, ttParams);
         
-        // --- WB 2D GRID OVERLAY UI ---
         wbGridContainer = new FrameLayout(this);
         wbGridContainer.setBackgroundColor(Color.argb(160, 20, 20, 20));
         wbGridContainer.setVisibility(View.GONE);
         
-        // Vertical Axis (G-M)
         View vAxis = new View(this);
         vAxis.setBackgroundColor(Color.GRAY);
         wbGridContainer.addView(vAxis, new FrameLayout.LayoutParams(2, 280, Gravity.CENTER));
         
-        // Horizontal Axis (A-B)
         View hAxis = new View(this);
         hAxis.setBackgroundColor(Color.GRAY);
         wbGridContainer.addView(hAxis, new FrameLayout.LayoutParams(280, 2, Gravity.CENTER));
         
-        // Labels
         TextView lG = new TextView(this); lG.setText("G"); lG.setTextColor(Color.WHITE);
         wbGridContainer.addView(lG, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL));
         
@@ -2139,7 +2086,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         FrameLayout.LayoutParams pA = new FrameLayout.LayoutParams(-2, -2, Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         pA.setMargins(0, 0, 10, 0); wbGridContainer.addView(lA, pA);
         
-        // Live Coordinates Text (e.g., A2, G1)
         wbValueText = new TextView(this);
         wbValueText.setTextColor(Color.rgb(227, 69, 20));
         if (digitalFont != null) wbValueText.setTypeface(digitalFont);
@@ -2149,14 +2095,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         pVal.setMargins(0, 10, 15, 0);
         wbGridContainer.addView(wbValueText, pVal);
         
-        // The Moving Orange Cursor (API 10 Safe)
         wbCursor = new View(this);
         wbCursor.setBackgroundColor(Color.rgb(227, 69, 20));
         FrameLayout.LayoutParams cursorParams = new FrameLayout.LayoutParams(14, 14, Gravity.TOP | Gravity.LEFT);
-        cursorParams.setMargins(153, 153, 0, 0); // 320 grid center (160) minus half cursor size (7) = 153
+        cursorParams.setMargins(153, 153, 0, 0); 
         wbGridContainer.addView(wbCursor, cursorParams);
         
-        // Add the whole 320x320 grid to the absolute center of the screen
         mainUIContainer.addView(wbGridContainer, new FrameLayout.LayoutParams(320, 320, Gravity.CENTER));
     }
 
@@ -2235,25 +2179,21 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         super.onPause(); 
         uiHandler.removeCallbacksAndMessages(null); 
         
-        // --- EXPLICIT HARDWARE RESET (RELAUNCH CRASH FIX) ---
         if (cameraManager != null && cameraManager.getCamera() != null) {
             try {
                 Camera c = cameraManager.getCamera();
                 Camera.Parameters p = c.getParameters();
                 
-                // 1. Force hardware experimental features off
                 if (p.get("picture-effect") != null) p.set("picture-effect", "off");
                 if (p.get("rgb-matrix-mode") != null) p.set("rgb-matrix-mode", "false");
                 if (p.get("pro-color-mode") != null) p.set("pro-color-mode", "off");
                 if (p.get("sharpness-gain-mode") != null) p.set("sharpness-gain-mode", "false");
                 if (p.get("white-balance-shift-mode") != null) p.set("white-balance-shift-mode", "false");
                 
-                // 2. Reset Matrix and Edge Shading back to 0/Neutral
                 if (p.get("rgb-matrix") != null) p.set("rgb-matrix", "256,0,0,0,256,0,0,0,256");
                 if (p.get("lens-correction-shading-color-red") != null) p.set("lens-correction-shading-color-red", "0");
                 if (p.get("lens-correction-shading-color-blue") != null) p.set("lens-correction-shading-color-blue", "0");
                 
-                // 3. Zero out the hidden 6-axis color depths
                 if (p.get("color-depth-red") != null) {
                     p.set("color-depth-red", "0");
                     p.set("color-depth-green", "0");
@@ -2266,10 +2206,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 c.setParameters(p);
                 Log.d("filmOS", "Successfully zeroed out hardware hacks.");
                 
-                // FIX: The BIONZ hardware daemon is slow. If we close the camera
-                // immediately after setting parameters, we sever the IPC channel
-                // while the daemon is still working, causing a kernel panic on next launch.
-                // A tiny 200ms sleep gives the daemon time to safely apply the reset.
                 Thread.sleep(200);
             } catch (Exception e) {
                 Log.e("filmOS", "Failed to reset hardware: " + e.getMessage());
@@ -2286,10 +2222,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        // FIX: The Sony BIONZ Dalvik implementation leaks C++ JNI camera hooks 
-        // if the Activity is finished but the background process remains alive. 
-        // When relaunched, the daemon panics over the zombie process.
-        // Explicitly killing the process forces a 100% clean boot on the next launch.
         System.exit(0);
     }
     
@@ -2363,13 +2295,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private void updateMainHUD() {
         if (cameraManager == null || cameraManager.getCamera() == null) return;
         
-        // --- PREVENT UI OVERLAP DURING HUD EDIT ---
-        // We changed 'isMatrixEditMode' to 'isHudActive'
         if (isHudActive) {
             setHUDVisibility(View.GONE);
             if (focusMeter != null) focusMeter.setVisibility(View.GONE);
             if (tvCalibrationPrompt != null) tvCalibrationPrompt.setVisibility(View.GONE);
-            return; // Skip drawing the normal UI!
+            return; 
         }
         
         Camera c = cameraManager.getCamera(); 
@@ -2387,11 +2317,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             tvTopStatus.setText(customName + " [" + displayName + "]\n" + (isReady ? "READY" : "LOADING.."));
             
             if (mDialMode == DIAL_MODE_RTL) {
-                tvTopStatus.setTextColor(Color.WHITE); // Selected state is now White
+                tvTopStatus.setTextColor(Color.WHITE); 
             } else if (isReady) {
-                tvTopStatus.setTextColor(Color.rgb(0, 230, 118)); // System is hot (Cinema Green)
+                tvTopStatus.setTextColor(Color.rgb(0, 230, 118)); 
             } else {
-                tvTopStatus.setTextColor(Color.rgb(227, 69, 20)); // Unselected state is Alpha Orange
+                tvTopStatus.setTextColor(Color.rgb(227, 69, 20)); 
             }
         }
         
@@ -2419,13 +2349,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (tvValIso != null) tvValIso.setText(pm.getISOSensitivity() == 0 ? "ISO AUTO" : "ISO " + pm.getISOSensitivity());
         if (tvValEv != null) tvValEv.setText(String.format("%+.1f", p.getExposureCompensation() * p.getExposureCompensationStep()));
         
-        // Note: For the Review button, we flip the background to White when active, but we MUST make the text Black so it's readable!
         if (tvReview != null) {
             tvReview.setBackgroundColor(mDialMode == DIAL_MODE_REVIEW ? Color.WHITE : Color.argb(140, 40, 40, 40));
             tvReview.setTextColor(mDialMode == DIAL_MODE_REVIEW ? Color.BLACK : Color.rgb(227, 69, 20));
         }
 
-        // Flipped: White when active, Alpha Orange when inactive
         if (tvValShutter != null) tvValShutter.setTextColor(mDialMode == DIAL_MODE_SHUTTER ? Color.WHITE : Color.rgb(227, 69, 20));
         if (tvValAperture != null) tvValAperture.setTextColor(mDialMode == DIAL_MODE_APERTURE ? Color.WHITE : Color.rgb(227, 69, 20));
         if (tvValIso != null) tvValIso.setTextColor(mDialMode == DIAL_MODE_ISO ? Color.WHITE : Color.rgb(227, 69, 20));
@@ -2445,7 +2373,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             else if ("continuous-video".equals(fm) || "continuous-picture".equals(fm)) tvFocusMode.setText("AF-C"); 
             else tvFocusMode.setText(fm != null ? fm.toUpperCase() : "AF");
             
-            // Flipped: White when active, Alpha Orange when inactive
             tvFocusMode.setTextColor(mDialMode == DIAL_MODE_FOCUS ? Color.WHITE : Color.rgb(227, 69, 20));
         }
         
@@ -2514,7 +2441,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             }
         }
         
-        // --- NEW: FORCE HARDWARE TO INGEST THE BOOT RECIPE ---
         applyHardwareRecipe();
         
         updateMainHUD();

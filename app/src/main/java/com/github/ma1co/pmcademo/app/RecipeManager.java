@@ -24,7 +24,6 @@ public class RecipeManager {
         scanRecipes();
     }
 
-    // --- GETTERS & SETTERS ---
     public int getCurrentSlot() { return currentSlot; }
     public void setCurrentSlot(int slot) { this.currentSlot = (slot + 10) % 10; }
     public int getQualityIndex() { return qualityIndex; }
@@ -34,8 +33,6 @@ public class RecipeManager {
     public ArrayList<String> getRecipePaths() { return recipePaths; }
     public ArrayList<String> getRecipeNames() { return recipeNames; }
 
-    // --- CORE LOGIC ---
-    
     public void scanRecipes() { 
         recipePaths.clear(); 
         recipeNames.clear(); 
@@ -48,22 +45,16 @@ public class RecipeManager {
                 String rawName = f.getName();
                 String u = rawName.toUpperCase();
                 
-                // 1. Ignore Mac hidden dot-files (._MyLUT.cube)
                 if (rawName.startsWith(".")) continue;
 
-                // 2. Relaxed file size limit to 2KB (2048 bytes) to catch smaller LUTs!
                 if (f.length() > 2048 && (u.endsWith(".CUB") || u.endsWith(".CUBE"))) {
                     recipePaths.add(f.getAbsolutePath());
-                    
-                    // Scrub the extensions
                     String prettyName = u.replace(".CUB", "").replace(".CUBE", "");
                     
-                    // 3. Scrub the ugly 8.3 FAT32 tilde (e.g., MYCINE~1 becomes MYCINE)
                     if (prettyName.contains("~")) {
                         prettyName = prettyName.substring(0, prettyName.indexOf("~"));
                     }
                     
-                    // Attempt to extract the TITLE metadata directly from the .cube file header
                     try {
                         BufferedReader br = new BufferedReader(new FileReader(f));
                         String line;
@@ -90,10 +81,6 @@ public class RecipeManager {
         return lutDir;
     }
 
-    /**
-     * INSTANT-SAVE: Force strict SD Card save logic.
-     * Prevents data loss when Sony OS aggressively kills background apps.
-     */
     public void savePreferences() {
         try {
             File lutDir = getLutDir();
@@ -147,7 +134,7 @@ public class RecipeManager {
                   .append(p.shadingRed).append(",") // 24
                   .append(p.shadingBlue).append(",") // 25
                   
-                  // --- NEW: Fuji-Style Chrome Effects ---
+                  // --- NEW: Fuji Chrome Effects ---
                   .append(p.colorChrome).append(",") // 26
                   .append(p.chromeBlue).append("\n"); // 27
             }
@@ -236,8 +223,8 @@ public class RecipeManager {
                                 p.shadingRed = Integer.parseInt(parts[24]);
                                 p.shadingBlue = Integer.parseInt(parts[25]);
                             }
-                            
-                            // --- NEW: Fuji-Style Chrome Effects ---
+
+                            // --- NEW: Fuji Chrome Effects ---
                             if (parts.length >= 28) {
                                 p.colorChrome = Integer.parseInt(parts[26]);
                                 p.chromeBlue = Integer.parseInt(parts[27]);
