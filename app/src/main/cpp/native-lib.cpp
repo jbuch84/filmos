@@ -12,7 +12,10 @@
 #define LOG_TAG "COOKBOOK_NATIVE"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
-std::vector<uint8_t> nativeLut; 
+// --- ADD THIS LINE TO FIX THE ERROR ---
+#define CLAMP(x) ((x) < 0 ? 0 : ((x) > 255 ? 255 : (x)))
+
+std::vector<uint8_t> nativeLut;
 int nativeLutSize = 0;
 
 struct my_error_mgr { struct jpeg_error_mgr pub; jmp_buf setjmp_buffer; };
