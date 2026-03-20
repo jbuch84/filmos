@@ -34,10 +34,13 @@ long long get_time_ms() {
 
 extern "C" JNIEXPORT jboolean JNICALL
 Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject obj, jstring path) {
+    // --- FIXED: DESTROY OLD LUT IMMEDIATELY ---
+    nativeLut.clear(); 
+    nativeLutSize = 0;
+
     const char *file_path = env->GetStringUTFChars(path, NULL);
     FILE *file = fopen(file_path, "r");
     if (!file) { env->ReleaseStringUTFChars(path, file_path); return JNI_FALSE; }
-    nativeLut.clear(); nativeLutSize = 0;
     char line[256];
     while(fgets(line, sizeof(line), file)) {
         if (strncmp(line, "LUT_3D_SIZE", 11) == 0) {
@@ -265,11 +268,24 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
                 outG = g + (((lG - g) * opac_mapped) >> 8);
                 outB = b + (((lB - b) * opac_mapped) >> 8);
                 
-                if (rollOff > 0) { 
-                    int r_t = (outR > 200) ? outR - ((outR - 200) * (outR - 200) * rollOff) / 11000 : outR;
-                    int g_t = (outG > 200) ? outG - ((outG - 200) * (outG - 200) * rollOff) / 11000 : outG;
-                    int b_t = (outB > 200) ? outB - ((outB - 200) * (outB - 200) * rollOff) / 11000 : outB;
-                    outR = r_t < 0 ? 0 : r_t; outG = g_t < 0 ? 0 : g_t; outB = b_t < 0 ? 0 : b_t;
+                // --- FIXED: RGB CHROMA SCALER ---
+                if (rollOff > 0) {
+                    // 1. Find the brightest channel in the pixel
+                    int maxC = outR > outG ? (outR > outB ? outR : outB) : (outG > outB ? outG : outB);
+                    
+                    if (maxC > 200) {
+                        // 2. Apply the film shoulder curve ONLY to the brightest channel
+                        int targetMax = maxC - ((maxC - 200) * (maxC - 200) * rollOff) / 11000;
+                        if (targetMax < 0) targetMax = 0;
+                        
+                        // 3. Create a multiplier ratio to scale everything equally
+                        int ratio_256 = (targetMax * 256) / maxC;
+                        
+                        // 4. Scale all channels to preserve the exact hue of the LUT!
+                        outR = (outR * ratio_256) >> 8;
+                        outG = (outG * ratio_256) >> 8;
+                        outB = (outB * ratio_256) >> 8;
+                    }
                 }
                 if (vignette > 0) {
                     long long d_sq = ((long long)(x/3)-cx)*((long long)(x/3)-cx) + (long long)(abs_y-cy_center)*(abs_y-cy_center);
@@ -298,29 +314,34 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
             long long d_sq_y = (long long)(abs_y - cy_center) * (abs_y - cy_center);
             
             for (int x = 0, px = 0; x < row_stride; x += 3, ++px) {
-                int outY = row_buf[x];
+                int oldY = row_buf[x];
+                int outY = oldY;
                 
                 // 1. 1D LUT Highlight Roll-Off
                 if (rollOff > 0) {
                     outY = rolloff_lut[outY];
                 }
                 
-                // 2. Vignette (Darken Y, Neutralize Cb/Cr)
+                // 2. Vignette (Darken Y)
                 if (vignette > 0) {
                     long long d_sq = ((long long)px - cx) * ((long long)px - cx) + d_sq_y;
                     int v_m = 256 - (int)((d_sq * vig_coef) >> 24); 
                     if (v_m < 0) v_m = 0;
                     
                     outY = (outY * v_m) >> 8;
-                    
-                    // Neutralize color towards 128 (Gray) so corners don't turn radioactive
+                }
+
+                // --- FIXED: CHROMA SCALER ---
+                // If Brightness changed, we MUST scale the Color by the exact same ratio!
+                if (oldY != outY) {
+                    int ratio_256 = (outY * 256) / (oldY == 0 ? 1 : oldY);
                     int cb = row_buf[x+1] - 128;
                     int cr = row_buf[x+2] - 128;
-                    row_buf[x+1] = (unsigned char)(128 + ((cb * v_m) >> 8));
-                    row_buf[x+2] = (unsigned char)(128 + ((cr * v_m) >> 8));
+                    row_buf[x+1] = (unsigned char)(128 + ((cb * ratio_256) >> 8));
+                    row_buf[x+2] = (unsigned char)(128 + ((cr * ratio_256) >> 8));
                 }
                 
-                // 3. Fast Spatially Hashed Organic Grain
+                // 3. Fast Spatially Hashed Organic Grain (Applied AFTER color scaling, just like real film!)
                 if (grain > 0) {
                     int mod_x = px >> grainSize;
                     
