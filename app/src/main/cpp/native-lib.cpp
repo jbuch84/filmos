@@ -332,25 +332,26 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
                     outY = (outY * v_m) >> 8;
                 }
 
-                // --- NEW: FUJI COLOR SCIENCE & CHROMA SCALER ---
+                // --- NEW: FUJI COLOR SCIENCE (Aggressive High-Oomph Version) ---
                 int cb = row_buf[x+1] - 128;
                 int cr = row_buf[x+2] - 128;
 
-                // Fuji "Color Chrome" (Deepens bright, highly saturated colors)
+                // Fuji "Color Chrome" (Crushes luminance of saturated reds/yellows)
                 if (colorChrome > 0) {
-                    int saturation = (cb >= 0 ? cb : -cb) + (cr >= 0 ? cr : -cr); // Fast Absolute Value
-                    if (outY > 150 && saturation > 40) {
-                        outY -= (saturation * colorChrome) >> 2;
+                    int saturation = (cb >= 0 ? cb : -cb) + (cr >= 0 ? cr : -cr); 
+                    if (outY > 110 && saturation > 30) { // Trigger earlier in the brightness curve
+                        int drop = (saturation * colorChrome) >> 1; // Double the darkening power
+                        outY -= drop;
                         if (outY < 0) outY = 0;
                     }
                 }
                 
-                // Fuji "Chrome FX Blue" (Deepens and enriches skies specifically)
+                // Fuji "Chrome FX Blue" (Dramatically deepens blue skies)
                 if (chromeBlue > 0) {
-                    if (outY > 120 && cb > 20 && cr < 10) { // Sky Detection
-                        outY -= (cb * chromeBlue) >> 1; // Darken luminance
+                    if (outY > 90 && cb > 15 && cr < 20) { // Broad sky detection
+                        outY -= (cb * chromeBlue); // Subtract blue-power directly from brightness
                         if (outY < 0) outY = 0;
-                        cb += (cb * chromeBlue) >> 3;   // Boost blue saturation
+                        cb += (cb * chromeBlue) >> 1; // Boost the blue saturation
                     }
                 }
 
