@@ -284,12 +284,16 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
                     outB = (outB * r256) >> 8;
                 }
                 
-                // 4. TRUE HALATION (Luminance Tinting)
-                if (halation > 0 && targetY > 200) {
-                    int halo_factor = targetY - 200; 
+                // 4. REFINED HALATION (Specular Highlight Targeting)
+                if (halation > 0 && targetY > 230) {
+                    int halo_factor = targetY - 230; 
                     int h_str = (halation == 1) ? 1 : 2;
-                    outR += (halo_factor * h_str); 
-                    outB -= (halo_factor * h_str) >> 1; 
+                    
+                    // Exponential ramp: ignores white paint, targets pure light
+                    int push = (halo_factor * halo_factor * h_str) >> 4; 
+                    
+                    outR += push; 
+                    outB -= (push >> 1); 
                 }
 
                 // 5. Vignette
@@ -375,12 +379,16 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
                 
                 if (outY < 8) outY = 8; // Safety
 
-                // 5. TRUE HALATION (Luminance Tinting)
-                if (halation > 0 && outY > 200) {
-                    int halo_factor = outY - 200; 
+                // 5. REFINED HALATION (Specular Highlight Targeting)
+                if (halation > 0 && outY > 230) {
+                    int halo_factor = outY - 230; 
                     int h_str = (halation == 1) ? 1 : 2;
-                    cr += (halo_factor * h_str); 
-                    cb -= (halo_factor * h_str) >> 1; 
+                    
+                    // Exponential ramp: ignores white paint, targets pure light
+                    int push = (halo_factor * halo_factor * h_str) >> 4; 
+                    
+                    cr += push; 
+                    cb -= (push >> 1); 
                 }
 
                 // Preserve Hues
