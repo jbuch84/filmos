@@ -5,47 +5,208 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>filmOS Dashboard</title>
     <style>
-        :root { --bg-dark: #0a0a0a; --bg-panel: #1a1a1a; --accent: #ff5000; --text-main: #ffffff; --text-muted: #888888; }
-        body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background-color: var(--bg-dark); color: var(--text-main); -webkit-user-select: none; }
-        header { background-color: var(--bg-panel); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a2a2a; }
-        .sys-info { font-size: 11px; color: var(--accent); font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
-        .toolbar { position: sticky; top: 0; background: rgba(10, 10, 10, 0.9); backdrop-filter: blur(15px); padding: 10px 20px; z-index: 100; border-bottom: 1px solid #222; }
-        .row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-        .btn-group { display: flex; gap: 5px; background: #111; padding: 4px; border-radius: 8px; }
-        .btn { background: none; border: none; color: #666; padding: 6px 14px; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: bold; transition: 0.2s; }
-        .btn.active { background: var(--accent); color: white; }
-        .action-btn { background: var(--accent); color: white; border: none; padding: 8px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: transform 0.1s; }
-        .action-btn:active { transform: scale(0.95); }
-        .action-btn:disabled { background: #222; color: #444; }
-        .secondary-btn { background: #222; border: 1px solid #333; color: #888; margin-right: 10px; }
-        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; padding: 20px; }
-        .card { background: var(--bg-panel); border-radius: 10px; overflow: hidden; position: relative; border: 2px solid transparent; transition: 0.2s; cursor: pointer; }
-        .card.selected { border-color: var(--accent); background: #25120a; }
-        .card img { width: 100%; height: 140px; object-fit: cover; background: #000; }
-        .card-info { padding: 10px; font-size: 11px; display: flex; justify-content: space-between; color: #888; }
-        .checkbox-hitbox { position: absolute; top: 0; left: 0; width: 60px; height: 60px; z-index: 10; }
-        .sel-indicator { position: absolute; top: 10px; left: 10px; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,0.4); border-radius: 4px; background: rgba(0,0,0,0.5); }
-        .card.selected .sel-indicator { background: var(--accent); border-color: var(--accent); }
-        .card.selected .sel-indicator::after { content: '✓'; color: white; font-size: 12px; position: absolute; left: 4px; top: 0px; font-weight: bold; }
-        
-        .load-more-container { grid-column: 1 / -1; text-align: center; padding: 20px 0; }
-        
-        #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 1000; justify-content: center; align-items: center; flex-direction: column; cursor: zoom-out; }
-        #lightbox img { max-width: 90%; max-height: 65vh; border-radius: 2px; transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); cursor: default; }
-        .lb-meta { margin-top: 20px; text-align: center; max-width: 90%; pointer-events: none; }
-        .exif-tag { color: var(--accent); font-family: monospace; font-size: 13px; font-weight: bold; text-transform: uppercase; background: rgba(255,80,0,0.1); padding: 4px 12px; border-radius: 4px; border: 1px solid rgba(255,80,0,0.2); }
-        .lb-tools { margin-top: 25px; display: flex; gap: 15px; cursor: default; }
+        /* --- CUSTOM CAMERA FONT --- */
+        @font-face {
+            font-family: 'Digital7';
+            src: url('/fonts/digital-7.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }
 
-        /* Import Manager Modal */
-        #import-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 2000; justify-content: center; align-items: center; backdrop-filter: blur(5px); }
-        .modal-content { background: var(--bg-panel); padding: 30px; border-radius: 12px; border: 1px solid #333; width: 320px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        /* --- THEME VARIABLES (Matched to React filmos-theme) --- */
+        :root { 
+            --bg-dark: hsl(0, 0%, 5%); 
+            --bg-panel: hsl(0, 0%, 10%); 
+            --accent: rgb(227, 69, 20); /* filmOS Orange */
+            --text-main: hsl(30, 10%, 88%); 
+            --text-muted: hsl(30, 5%, 55%);
+            --border-color: hsl(0, 0%, 20%);
+        }
+
+        /* --- BASE STYLES & TEXTURES --- */
+        body { 
+            margin: 0; 
+            font-family: 'Inter', -apple-system, system-ui, sans-serif; 
+            background-color: var(--bg-dark); 
+            color: var(--text-main); 
+            -webkit-user-select: none; 
+            min-height: 100vh;
+            position: relative;
+        }
+
+        /* Subtle radial glow texture */
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: -1;
+            opacity: 0.03;
+            background-image: 
+              radial-gradient(circle at 25% 25%, rgba(227, 69, 20, 1), transparent 50%),
+              radial-gradient(circle at 75% 75%, rgba(227, 69, 20, 0.8), transparent 50%);
+        }
+
+        /* --- HEADER & GLOWING LCD TEXT --- */
+        header { 
+            background-color: var(--bg-panel); 
+            padding: 18px 25px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border-bottom: 1px solid var(--border-color); 
+        }
+
+        .text-filmos-glow {
+            margin: 0;
+            font-family: 'Digital7', monospace;
+            color: var(--accent);
+            font-size: 28px;
+            font-weight: normal;
+            letter-spacing: 2px;
+            text-shadow: 0 0 15px rgba(227, 69, 20, 0.5), 0 0 30px rgba(227, 69, 20, 0.3);
+        }
+
+        .sys-info { 
+            font-size: 11px; 
+            color: var(--accent); 
+            font-weight: 800; 
+            text-transform: uppercase; 
+            letter-spacing: 1px; 
+            background: rgba(227, 69, 20, 0.1);
+            padding: 4px 10px;
+            border-radius: 20px;
+            border: 1px solid rgba(227, 69, 20, 0.2);
+        }
+
+        /* --- TOOLBAR --- */
+        .toolbar { 
+            position: sticky; 
+            top: 0; 
+            background: rgba(13, 13, 13, 0.85); 
+            backdrop-filter: blur(16px); 
+            -webkit-backdrop-filter: blur(16px);
+            padding: 12px 25px; 
+            z-index: 100; 
+            border-bottom: 1px solid var(--border-color); 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+        .row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .row:last-child { margin-bottom: 0; }
+
+        /* --- BUTTONS --- */
+        .btn-group { display: flex; gap: 5px; background: rgba(0,0,0,0.4); padding: 4px; border-radius: 8px; border: 1px solid #222; }
+        .btn { background: none; border: none; color: var(--text-muted); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; transition: all 0.2s ease; }
+        .btn:hover { color: var(--text-main); }
+        .btn.active { background: var(--border-color); color: var(--text-main); box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        
+        .action-btn { 
+            background: var(--accent); 
+            color: white; 
+            border: none; 
+            padding: 10px 20px; 
+            border-radius: 8px; 
+            font-weight: 700; 
+            font-size: 12px;
+            cursor: pointer; 
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .action-btn:hover {
+            box-shadow: 0 0 15px rgba(227, 69, 20, 0.4), 0 4px 8px rgba(0,0,0,0.3);
+            transform: translateY(-1px);
+        }
+        .action-btn:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
+        .action-btn:disabled { background: #222; color: #555; box-shadow: none; transform: none; cursor: not-allowed; }
+        
+        .secondary-btn { 
+            background: transparent; 
+            border: 1px solid var(--border-color); 
+            color: var(--text-main); 
+            margin-right: 10px; 
+        }
+        .secondary-btn:hover {
+            background: rgba(255,255,255,0.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        /* --- PHOTO GALLERY & CARDS --- */
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; padding: 25px; padding-bottom: 60px; }
+        
+        .card { 
+            background: var(--bg-panel); 
+            border-radius: 12px; 
+            overflow: hidden; 
+            position: relative; 
+            border: 1px solid var(--border-color); 
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+            cursor: pointer; 
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(227, 69, 20, 0.5);
+            box-shadow: 0 0 20px rgba(227, 69, 20, 0.15), 0 10px 15px rgba(0,0,0,0.3);
+        }
+        .card.selected { 
+            border-color: var(--accent); 
+            background: rgba(227, 69, 20, 0.05); 
+            box-shadow: 0 0 0 1px var(--accent), 0 8px 15px rgba(0,0,0,0.3);
+        }
+        
+        .card img { width: 100%; height: 160px; object-fit: cover; background: #000; border-bottom: 1px solid var(--border-color); transition: opacity 0.2s; }
+        .card.selected img { opacity: 0.85; }
+        
+        .card-info { padding: 12px; font-size: 11px; display: flex; justify-content: space-between; color: var(--text-muted); font-weight: 500; }
+        .card.selected .card-info { color: var(--text-main); }
+        
+        .checkbox-hitbox { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; }
+        
+        .sel-indicator { position: absolute; top: 12px; left: 12px; width: 22px; height: 22px; border: 2px solid rgba(255,255,255,0.6); border-radius: 6px; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); transition: all 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
+        .card.selected .sel-indicator { background: var(--accent); border-color: var(--accent); }
+        .card.selected .sel-indicator::after { content: '✓'; color: white; font-size: 14px; position: absolute; left: 4px; top: 0px; font-weight: 900; }
+        
+        .load-more-container { grid-column: 1 / -1; text-align: center; padding: 30px 0; }
+        
+        /* --- LIGHTBOX --- */
+        #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); backdrop-filter: blur(10px); z-index: 1000; justify-content: center; align-items: center; flex-direction: column; cursor: zoom-out; }
+        #lightbox img { max-width: 90%; max-height: 65vh; border-radius: 4px; transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); cursor: default; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
+        .lb-meta { margin-top: 25px; text-align: center; max-width: 90%; pointer-events: none; }
+        .exif-tag { color: var(--accent); font-family: 'Inter', monospace; font-size: 13px; font-weight: 700; text-transform: uppercase; background: rgba(227,69,20,0.1); padding: 6px 14px; border-radius: 6px; border: 1px solid rgba(227,69,20,0.25); letter-spacing: 0.5px; }
+        .lb-tools { margin-top: 30px; display: flex; gap: 15px; cursor: default; }
+
+        /* --- IMPORT MODAL --- */
+        #import-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 2000; justify-content: center; align-items: center; backdrop-filter: blur(8px); }
+        .modal-content { background: var(--bg-panel); padding: 35px; border-radius: 16px; border: 1px solid var(--border-color); width: 340px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
+
+        /* --- RAINBOW STRIPE --- */
+        .rainbow-stripe {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(90deg, 
+                #E54D3A, #E88B2A, #F2CC40, #4BA653, #2A7DB8, #E54D3A
+            );
+            background-size: 200% 100%;
+            animation: rainbow-shimmer 5s linear infinite;
+            z-index: 9999;
+            box-shadow: 0 0 15px rgba(227, 69, 20, 0.4);
+        }
+
+        @keyframes rainbow-shimmer {
+            0% { background-position: 0% 50%; }
+            100% { background-position: -200% 50%; }
+        }
     </style>
 </head>
 <body>
 
     <header>
         <div style="display:flex; align-items:center; gap: 15px;">
-            <h3 style="margin:0; letter-spacing:1px; font-weight:900;">filmOS DASHBOARD</h3>
+            <h3 class="text-filmos-glow">filmOS DASHBOARD</h3>
             <button class="action-btn secondary-btn" style="padding: 6px 12px; font-size:10px; margin:0;" onclick="showImportManager()">IMPORT FILES</button>
         </div>
         <div class="sys-info" id="sys-info">SYNCING HARDWARE...</div>
@@ -63,7 +224,7 @@
             </div>
         </div>
         <div class="row">
-            <span id="sel-count" style="font-size:12px; color:var(--text-muted)">0 ITEMS SELECTED</span>
+            <span id="sel-count" style="font-size:12px; color:var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">0 ITEMS SELECTED</span>
             <div>
                 <button class="action-btn secondary-btn" id="unsel-btn" style="display:none" onclick="unselectAll()">UNSELECT ALL</button>
                 <button class="action-btn" id="dl-btn" disabled onclick="downloadSelected()">DOWNLOAD SELECTED</button>
@@ -77,24 +238,26 @@
         <img id="lb-img" src="" onclick="event.stopPropagation()">
         <div class="lb-meta" id="lb-meta"></div>
         <div class="lb-tools" onclick="event.stopPropagation()">
-            <button class="action-btn" style="background:#222; border:1px solid #444;" onclick="rotatePreview()">ROTATE 90°</button>
+            <button class="action-btn secondary-btn" onclick="rotatePreview()">ROTATE 90°</button>
             <button class="action-btn" onclick="downloadCurrent()">SAVE TO DEVICE</button>
         </div>
     </div>
 
     <div id="import-modal">
         <div class="modal-content">
-            <h3 style="margin-top:0; color:var(--accent); letter-spacing: 1px;">IMPORT FILES</h3>
-            <p style="font-size:13px; color:#aaa; margin-bottom: 25px;">Upload <b>.cube</b> LUTs or <b>.txt</b> Lens Profiles. The Smart Router will organize them automatically.</p>
+            <h3 style="margin-top:0; color:var(--accent); letter-spacing: 1px; font-weight: 800;">IMPORT FILES</h3>
+            <p style="font-size:13px; color:var(--text-muted); margin-bottom: 25px; line-height: 1.5;">Upload <b>.cube</b> LUTs or <b>.txt</b> Lens Profiles. The Smart Router will organize them automatically.</p>
             
             <input type="file" id="import-file" accept=".cube,.cub,.txt,.lens" style="display:none" onchange="handleFileSelect(event)">
             <button class="action-btn" style="width:100%; margin-bottom:15px; padding: 12px;" onclick="document.getElementById('import-file').click()">SELECT FILE TO UPLOAD</button>
             
-            <div id="upload-status" style="font-size:12px; font-weight:bold; margin-bottom:15px; color:#fff; height: 15px;"></div>
+            <div id="upload-status" style="font-size:12px; font-weight:bold; margin-bottom:15px; color:#fff; height: 15px; letter-spacing: 0.5px;"></div>
             
             <button class="action-btn secondary-btn" style="width:100%; margin:0; padding: 12px;" onclick="closeImportManager()">CLOSE & RESTART APP</button>
         </div>
     </div>
+
+    <div class="rainbow-stripe"></div>
 
     <script>
         let currentFiles = [];
@@ -118,7 +281,7 @@
         async function loadFiles() {
             if (abortController) abortController.abort();
             abortController = new AbortController();
-            document.getElementById('gallery').innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:100px; color:#444; font-weight:bold;">INITIALIZING SD INTERFACE...</div>';
+            document.getElementById('gallery').innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:100px; color:var(--border-color); font-weight:bold; letter-spacing:1px;">INITIALIZING SD INTERFACE...</div>';
             try {
                 const res = await fetch(`/api/files?folder=${mode}`, { signal: abortController.signal });
                 const data = await res.json();
@@ -224,7 +387,7 @@
             
             img.src = `/full/?folder=${mode}&name=${name}`;
             img.style.transform = `rotate(0deg) scale(1)`;
-            meta.innerHTML = `<span class="exif-tag">READING EXIF...</span>`;
+            meta.innerHTML = `<span class="exif-tag" style="color:var(--text-muted); border-color:var(--border-color);">READING EXIF...</span>`;
             
             parseMetadata(`/full/?folder=${mode}&name=${name}`);
             lb.style.display = 'flex';
@@ -245,12 +408,12 @@
                     
                     let prefix = mode === 'GRADED' ? `filmOS RECIPE • ${viewName}` : viewName;
                     let details = [prefix, focal, fnum, speed, iso].filter(Boolean).join(' • ');
-                    document.getElementById('lb-meta').innerHTML = `<span class="exif-tag" ${mode === 'GRADED' ? 'style="color:cyan; border-color:cyan;"' : ''}>${details}</span>`;
+                    document.getElementById('lb-meta').innerHTML = `<span class="exif-tag" ${mode === 'GRADED' ? 'style="color:#4BA653; border-color:rgba(75, 166, 83, 0.3); background:rgba(75, 166, 83, 0.1);"' : ''}>${details}</span>`;
                 } else {
-                    document.getElementById('lb-meta').innerHTML = `<span class="exif-tag">${viewName} • NO METADATA</span>`;
+                    document.getElementById('lb-meta').innerHTML = `<span class="exif-tag" style="color:var(--text-muted); border-color:var(--border-color); background:transparent;">${viewName} • NO METADATA</span>`;
                 }
             } catch (e) { 
-                document.getElementById('lb-meta').innerHTML = `<span class="exif-tag">METADATA ERROR</span>`; 
+                document.getElementById('lb-meta').innerHTML = `<span class="exif-tag" style="color:#E54D3A; border-color:rgba(229, 77, 58, 0.3); background:rgba(229, 77, 58, 0.1);">METADATA ERROR</span>`; 
             }
         }
 
@@ -348,13 +511,13 @@
             const ext = file.name.toLowerCase();
             if (!ext.endsWith('.cube') && !ext.endsWith('.cub') && !ext.endsWith('.txt') && !ext.endsWith('.lens')) {
                 document.getElementById('upload-status').innerText = 'ERROR: UNSUPPORTED FILE TYPE';
-                document.getElementById('upload-status').style.color = 'red';
+                document.getElementById('upload-status').style.color = '#E54D3A';
                 event.target.value = '';
                 return;
             }
 
             document.getElementById('upload-status').innerText = `UPLOADING: ${file.name.toUpperCase()}...`;
-            document.getElementById('upload-status').style.color = 'yellow';
+            document.getElementById('upload-status').style.color = '#F2CC40';
 
             try {
                 const res = await fetch('/api/upload', {
@@ -367,14 +530,14 @@
                 
                 if (res.ok) {
                     document.getElementById('upload-status').innerText = `SUCCESS: ${file.name.toUpperCase()} INSTALLED!`;
-                    document.getElementById('upload-status').style.color = 'lime';
+                    document.getElementById('upload-status').style.color = '#4BA653';
                 } else {
                     document.getElementById('upload-status').innerText = 'ERROR: UPLOAD FAILED';
-                    document.getElementById('upload-status').style.color = 'red';
+                    document.getElementById('upload-status').style.color = '#E54D3A';
                 }
             } catch (e) {
                 document.getElementById('upload-status').innerText = 'ERROR: NETWORK CONNECTION';
-                document.getElementById('upload-status').style.color = 'red';
+                document.getElementById('upload-status').style.color = '#E54D3A';
             }
             
             event.target.value = ''; 
