@@ -93,7 +93,7 @@ inline void process_pixel_rgb(
     int sat_p = (cb_p < 0 ? -cb_p : cb_p) + (cr_p < 0 ? -cr_p : cr_p);
 
     if (s_chrome > 0 && sat_p > 15) {
-        int drop = ((sat_p - 15) * s_chrome) >> 2;
+        int drop = ((sat_p - 15) * s_chrome) >> 7; // RE-GEARED
         if (targetY > 160) {
             int fade = 255 - ((targetY - 160) * 3); 
             if (fade < 0) fade = 0;
@@ -103,7 +103,7 @@ inline void process_pixel_rgb(
     }
     
     if (s_blue > 0 && cb_p > 5 && cr_p < 25) {
-        int drop = (cb_p * s_blue) >> 1; 
+        int drop = (cb_p * s_blue) >> 6; // RE-GEARED
         if (targetY > 160) {
             int fade = 255 - ((targetY - 160) * 3); 
             if (fade < 0) fade = 0;
@@ -118,7 +118,7 @@ inline void process_pixel_rgb(
     }
     
     if (s_sat > 0 && sat_p > 20) {
-        int density = ((sat_p - 20) * s_sat) >> 5; 
+        int density = ((sat_p - 20) * s_sat) >> 8; // RE-GEARED
         if (targetY > 200) {
             int fade = 255 - ((targetY - 200) * 4);
             if (fade < 0) fade = 0;
@@ -198,7 +198,7 @@ inline void process_pixel_yuv(
     int sat = (cb >= 0 ? cb : -cb) + (cr >= 0 ? cr : -cr);
 
     if (s_chrome > 0 && sat > 15) {
-        int drop = ((sat - 15) * s_chrome) >> 2;
+        int drop = ((sat - 15) * s_chrome) >> 7; // RE-GEARED
         if (outY > 160) {
             int fade = 255 - ((outY - 160) * 3);
             if (fade < 0) fade = 0;
@@ -208,7 +208,7 @@ inline void process_pixel_yuv(
     }
     
     if (s_blue > 0 && cb > 5 && cr < 25) {
-        int drop = (cb * s_blue) >> 1; 
+        int drop = (cb * s_blue) >> 6; // RE-GEARED
         if (outY > 160) {
             int fade = 255 - ((outY - 160) * 3); 
             if (fade < 0) fade = 0;
@@ -224,7 +224,7 @@ inline void process_pixel_yuv(
     }
     
     if (s_sat > 0 && sat > 20) {
-        int density = ((sat - 20) * s_sat) >> 5; 
+        int density = ((sat - 20) * s_sat) >> 8; // RE-GEARED
         if (outY > 200) {
             int fade = 255 - ((outY - 200) * 4);
             if (fade < 0) fade = 0;
