@@ -2635,8 +2635,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             String metaText = (idx + 1) + " / " + playbackFiles.size() + "\n" + file.getName() + "\n" + apStr + " | " + speedStr + " | " + isoStr;
             if (tvPlaybackInfo != null) tvPlaybackInfo.setText(metaText);
 
-            // --- THE 24MB HEAP LIFESAVER: EXIF THUMBNAIL EXTRACTION ---
-            Bitmap raw = null;
             
             // --- HIGH-QUALITY / MEMORY-SAFE DECODE ---
             // 1. Read just the dimensions of the file (uses 0 RAM)
