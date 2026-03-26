@@ -74,23 +74,28 @@ public class SonyFileScanner {
         if (!dcimDir.exists() || !dcimDir.isDirectory()) return;
 
         File newestFile = null;
-        long maxModified = 0;
+        String maxFilePath = ""; // Used for alphanumeric sorting instead of timestamps
 
         File[] subDirs = dcimDir.listFiles();
         if (subDirs != null) {
             for (File dir : subDirs) {
                 String dirName = dir.getName().toUpperCase();
-                // STRICT CHECK: Only look inside valid photo folders (ignores corrupt thumbnails!)
+                
+                // Only look inside valid photo folders
                 if (dir.isDirectory() && (dirName.endsWith("MSDCF") || dirName.contains("ALPHA") || dirName.contains("SONY"))) {
                     File[] files = dir.listFiles();
                     if (files != null) {
                         for (File f : files) {
                             String name = f.getName().toUpperCase();
                             if (name.endsWith(".JPG") && !name.startsWith("FILM_") && !name.startsWith("PRCS") && !name.startsWith("TEMP_")) {
-                                if (f.lastModified() > maxModified) {
-                                    maxModified = f.lastModified();
+                                
+                                // BYPASS TIMESTAMPS: Sony file paths strictly increment (e.g. 100MSDCF/DSC0001 -> 100MSDCF/DSC0002)
+                                String currentFilePath = f.getAbsolutePath();
+                                if (currentFilePath.compareTo(maxFilePath) > 0) {
+                                    maxFilePath = currentFilePath;
                                     newestFile = f;
                                 }
+                                
                             }
                         }
                     }
@@ -99,15 +104,14 @@ public class SonyFileScanner {
         }
 
         if (newestFile != null) {
-            final String currentPath = newestFile.getAbsolutePath();
-            if (!currentPath.equals(lastSeenFilePath)) {
-                Log.d("JPEG.CAM", "NEW FILE DETECTED: " + currentPath);
-                lastSeenFilePath = currentPath;
+            if (!maxFilePath.equals(lastSeenFilePath)) {
+                Log.d("JPEG.CAM", "NEW FILE DETECTED: " + maxFilePath);
+                lastSeenFilePath = maxFilePath;
                 
                 if (triggerCallback && mCallback != null) {
                     if (mCallback.isReadyToProcess()) {
                         mainHandler.post(new Runnable() {
-                            @Override public void run() { mCallback.onNewPhotoDetected(currentPath); }
+                            @Override public void run() { mCallback.onNewPhotoDetected(maxFilePath); }
                         });
                     } else {
                         Log.w("JPEG.CAM", "Engine blocked processing. (LUT is 0/OFF or processor not initialized).");
