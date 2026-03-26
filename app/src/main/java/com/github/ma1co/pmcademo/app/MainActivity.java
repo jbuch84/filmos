@@ -1207,6 +1207,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         RTLProfile prof = recipeManager.getCurrentProfile(); 
         Camera.Parameters p = c.getParameters();
         
+        // --- USER UX LOCKOUTS ---
+        // Force Single-Shot mode (Burst processing will crash the RAM)
+        if (p.get("drive-mode") != null) {
+            p.set("drive-mode", "single");
+        }
+
         if (p.get("picture-profile") != null) p.set("picture-profile", "off");
         
         String safeProMode = prof.proColorMode != null ? prof.proColorMode.toLowerCase() : "off";
@@ -2472,7 +2478,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 float ratioToFeed = (lensManager != null && lensManager.isCurrentProfileManual() && !isCalibrating) ? virtualFocusRatio : cachedFocusRatio;
                 float apToFeed = (lensManager != null && lensManager.isCurrentProfileManual() && !isCalibrating) ? virtualAperture : cachedAperture;
                 
-                focusMeter.update(ratioToFeed, apToFeed, focalToUse, isCalibrating, ptsToUse);
+                // --- NEW: Pass the dynamic CoC to the Focus Meter ---
+                focusMeter.update(ratioToFeed, apToFeed, focalToUse, isCalibrating, ptsToUse, getCircleOfConfusion());
             }
         }
         
