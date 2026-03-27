@@ -97,6 +97,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         return Math.round((hardwareValue / 1024.0f) * 100.0f);
     }
 
+    // Matrix Preset Data
+    private final String[] MATRIX_PRESET_NAMES = {"STANDARD", "GOLDEN HOUR", "PNW GREEN", "CINEMATIC", "BLEACH BYPASS", "AEROCHROME", "CUSTOM"};
+    private final int[][] MATRIX_PRESET_VALUES = {
+        {100, 0, 0, 0, 100, 0, 0, 0, 100},   // Standard
+        {115, 5, 0, 5, 105, 0, 0, 0, 95},    // Golden Hour
+        {95, 0, 0, 0, 110, 5, 0, 15, 105},   // PNW Green
+        {110, -10, 0, -5, 100, 10, 0, 5, 115}, // Cinematic
+        {130, 0, 0, 0, 130, 0, 0, 0, 130},   // Bleach Bypass
+        {0, 140, 0, 100, 0, 0, 0, 0, 100}    // Aerochrome
+    };
+    private final String[] MATRIX_PRESET_NOTES = {
+        "Identity Matrix. Zero color shift.",
+        "Broadens the yellow spectrum. Pro Tip: If skin looks too yellow, drop R-G to 2%.",
+        "Fuji-style vintage teals. Pairs best with an Amber (A2) White Balance shift.",
+        "Professional Teal/Orange separation. Uses negative values to 'clean' the Red channel.",
+        "High color density. WARNING: May clip highlights. Use -0.7 EV on camera.",
+        "False-color Infrared swap. Turns foliage (Green) into candy-apple Red.",
+        "Manual matrix override active. Row-sum balance not guaranteed."
+    };
+        
     // Converts a human percentage (e.g., 100) back to the hardware value (e.g., 1024)
     private int percentToMatrix(int percentValue) {
         return Math.round((percentValue / 100.0f) * 1024.0f);
@@ -666,11 +686,30 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override
     public void onUpPressed() {
         if (isHudActive) {
-            if (currentHudMode == 2) handleWbAdjustment(0, 1); 
-            else handleHudAdjustment(1);
+            if (currentHudMode == 2) {
+                handleWbAdjustment(0, 1); 
+            } else {
+                hudSelection--;
+                
+                // --- NAVIGATION WRAP LOGIC ---
+                // Matrix mode (0) allows selection to go up to -1 (The Preset Bar)
+                int minIdx = (currentHudMode == 0) ? -1 : 0;
+                
+                if (hudSelection < minIdx) {
+                    // Wrap to the bottom based on how many cells are in the current mode
+                    if (currentHudMode == 0) hudSelection = 8;
+                    else if (currentHudMode == 1) hudSelection = 5;
+                    else if (currentHudMode == 3) hudSelection = 2;
+                    else if (currentHudMode == 4 || currentHudMode == 6) hudSelection = 1;
+                    else hudSelection = 0;
+                }
+                updateHudUI();
+            }
             return;
         }
+        
         if (isProcessing || waitingForProfileChoice) return;
+        
         if (isCalibrating) {
             if (calibStep == 2) {
                 tempCalPoints.add(new LensProfileManager.CalPoint(1.0f, 999.0f));
@@ -708,11 +747,30 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override
     public void onDownPressed() {
         if (isHudActive) {
-            if (currentHudMode == 2) handleWbAdjustment(0, -1); 
-            else handleHudAdjustment(-1);
+            if (currentHudMode == 2) {
+                handleWbAdjustment(0, -1); 
+            } else {
+                hudSelection++;
+                
+                // Determine the max index for the current mode
+                int maxIdx = 0;
+                if (currentHudMode == 0) maxIdx = 8;
+                else if (currentHudMode == 1) maxIdx = 5;
+                else if (currentHudMode == 3) maxIdx = 2;
+                else if (currentHudMode == 4 || currentHudMode == 6) maxIdx = 1;
+
+                // --- NAVIGATION WRAP LOGIC ---
+                if (hudSelection > maxIdx) {
+                    // If Matrix mode, wrap back to the Preset Bar (-1). Others wrap to 0.
+                    hudSelection = (currentHudMode == 0) ? -1 : 0;
+                }
+                updateHudUI();
+            }
             return;
         }
+        
         if (isProcessing) return;
+        
         if (waitingForProfileChoice) {
             waitingForProfileChoice = false;
             isCalibrating = true;
@@ -1403,12 +1461,27 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (currentHudMode == 0) { 
             activeCells = 9;
             labels = new String[]{"R-R", "G-R", "B-R", "R-G", "G-G", "B-G", "R-B", "G-B", "B-B"};
+            
+            // 1. Check if current matrix matches a preset
+            int currentPresetIdx = 6; // Default to "CUSTOM"
+            for (int i = 0; i < MATRIX_PRESET_VALUES.length; i++) {
+                if (java.util.Arrays.equals(p.advMatrix, MATRIX_PRESET_VALUES[i])) {
+                    currentPresetIdx = i;
+                    break;
+                }
+            }
+
+            // 2. Update the Top Status text to show the Preset Name and Note
+            if (tvTopStatus != null) {
+                tvTopStatus.setText("MATRIX: " + MATRIX_PRESET_NAMES[currentPresetIdx]);
+                tvTopStatus.setTextColor(hudSelection == -1 ? Color.rgb(227, 69, 20) : Color.WHITE);
+            }
+            
+            // 3. Update the Tooltip area with the Preset Note
+            tooltip = MATRIX_PRESET_NOTES[currentPresetIdx];
+
             for (int i=0; i<9; i++) {
-                int displayVal = p.advMatrix[i];
-                
-                // Show the absolute percentage! 
-                // e.g., "100%", "0%", "-50%", "200%"
-                values[i] = displayVal + "%"; 
+                values[i] = p.advMatrix[i] + "%";
             }
         } else if (currentHudMode == 1) { 
             activeCells = 6;
@@ -1492,9 +1565,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         String tooltip = "";
         if (currentHudMode == 0) { 
             String[] t = {
-                "Red sensitivity to real-world Red light (Primary - baseline is 100)", "Pushes Green light into Red channel (Aerochrome)", "Pushes Blue light into Red channel",
-                "Pushes Red light into Green channel", "Green sensitivity to real-world Green light (Primary - baseline is 100)", "Pushes Blue light into Green channel",
-                "Pushes Red light into Blue channel", "Pushes Green light into Blue channel", "Blue sensitivity to real-world Blue light (Primary - baseline is 100)."
+                "Red sensitivity to real-world Red light (Primary - baseline is 100)", "Pushes Green light into Red channel (baseline is 0)", "Pushes Blue light into Red channel (baseline is 0)",
+                "Pushes Red light into Green channel (baseline is 0)", "Green sensitivity to real-world Green light (Primary - baseline is 100)", "Pushes Blue light into Green channel (baseline is 0)",
+                "Pushes Red light into Blue channel (baseline is 0)", "Pushes Green light into Blue channel (baseline is 0)", "Blue sensitivity to real-world Blue light (Primary - baseline is 100)."
             };
             tooltip = t[hudSelection];
         } else if (currentHudMode == 1) { 
@@ -1530,12 +1603,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         RTLProfile p = recipeManager.getCurrentProfile();
         
         if (currentHudMode == 0) { 
-            int step = 5; // Move by 5% increments
-            int target = p.advMatrix[hudSelection] + (dir * step);
-            
-            // Lock the boundaries to -200% and +200%
-            p.advMatrix[hudSelection] = Math.max(-200, Math.min(200, target)); 
-            
+            if (hudSelection == -1) {
+                // CYCLE PRESETS
+                int currentIdx = 6; // Default CUSTOM
+                for (int i = 0; i < MATRIX_PRESET_VALUES.length; i++) {
+                    if (java.util.Arrays.equals(p.advMatrix, MATRIX_PRESET_VALUES[i])) {
+                        currentIdx = i; break;
+                    }
+                }
+                
+                // Move index (wrap around 0-5, skipping 6/Custom when toggling)
+                int nextIdx = (currentIdx + dir + 6) % 6; 
+                System.arraycopy(MATRIX_PRESET_VALUES[nextIdx], 0, p.advMatrix, 0, 9);
+                
+            } else {
+                // MANUAL ADJUSTMENT (The 9 cells)
+                int step = 5; 
+                int target = p.advMatrix[hudSelection] + (dir * step);
+                p.advMatrix[hudSelection] = Math.max(-200, Math.min(200, target)); 
+            }
         } else if (currentHudMode == 1) { 
             if (hudSelection == 0) p.colorDepthRed = Math.max(-7, Math.min(7, p.colorDepthRed + dir));
             else if (hudSelection == 1) p.colorDepthGreen = Math.max(-7, Math.min(7, p.colorDepthGreen + dir));
