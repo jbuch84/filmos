@@ -1406,10 +1406,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             for (int i=0; i<9; i++) {
                 int displayVal = p.advMatrix[i];
                 
-                // Subtract 100% from the diagonal so the default identity matrix shows as "0"
-                if (i==0 || i==4 || i==8) displayVal -= 100; 
-                
-                values[i] = displayVal == 0 ? "0" : (displayVal > 0 ? "+" + displayVal : String.valueOf(displayVal));
+                // Show the absolute percentage! 
+                // e.g., "100%", "0%", "-50%", "200%"
+                values[i] = displayVal + "%"; 
             }
         } else if (currentHudMode == 1) { 
             activeCells = 6;
@@ -1493,9 +1492,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         String tooltip = "";
         if (currentHudMode == 0) { 
             String[] t = {
-                "Red sensitivity to real-world Red light (Primary)", "Pushes Green light into Red channel (Aerochrome)", "Pushes Blue light into Red channel",
-                "Pushes Red light into Green channel", "Green sensitivity to real-world Green light (Primary)", "Pushes Blue light into Green channel",
-                "Pushes Red light into Blue channel", "Pushes Green light into Blue channel", "Blue sensitivity to real-world Blue light (Primary)"
+                "Red sensitivity to real-world Red light (Primary - baseline is 100)", "Pushes Green light into Red channel (Aerochrome)", "Pushes Blue light into Red channel",
+                "Pushes Red light into Green channel", "Green sensitivity to real-world Green light (Primary - baseline is 100)", "Pushes Blue light into Green channel",
+                "Pushes Red light into Blue channel", "Pushes Green light into Blue channel", "Blue sensitivity to real-world Blue light (Primary - baseline is 100)."
             };
             tooltip = t[hudSelection];
         } else if (currentHudMode == 1) { 
