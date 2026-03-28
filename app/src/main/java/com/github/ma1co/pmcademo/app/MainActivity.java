@@ -291,12 +291,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     // --- FACTORY BURN SYSTEM ---
     private void factoryBurnMatrices() {
         if (matrixManager != null && matrixManager.getCount() == 0) {
-            matrixManager.saveMatrix("01 STANDARD", new int[]{100, 0, 0, 0, 100, 0, 0, 0, 100}, "Identity Matrix. Zero color shift.");
-            matrixManager.saveMatrix("02 GOLDEN HOUR", new int[]{115, 5, 0, 5, 105, 0, 0, 0, 95}, "Broadens yellow spectrum. Drop R-G to 5% if too yellow.");
-            matrixManager.saveMatrix("03 PNW GREEN", new int[]{95, 0, 0, 0, 110, 5, 0, 15, 105}, "Fuji-style vintage teals. Pairs best with Amber (A2) shift.");
-            matrixManager.saveMatrix("04 CINEMATIC", new int[]{110, -10, 0, -5, 100, 10, 0, 5, 115}, "Teal/Orange separation. Uses negative values to clean Reds.");
-            matrixManager.saveMatrix("05 BLEACH BYPASS", new int[]{130, 0, 0, 0, 130, 0, 0, 0, 130}, "High density. WARNING: May clip highlights. Use -0.7 EV.");
-            matrixManager.saveMatrix("06 AEROCHROME", new int[]{0, 140, 0, 100, 0, 0, 0, 0, 100}, "False-color Infrared swap. Turns Green foliage Red.");
+            matrixManager.saveMatrix("STANDARD", new int[]{100, 0, 0, 0, 100, 0, 0, 0, 100}, "Identity Matrix. Zero color shift.");
+            matrixManager.saveMatrix("GOLDEN HOUR", new int[]{115, 5, 0, 5, 105, 0, 0, 0, 95}, "Broadens yellow spectrum. Drop R-G to 5% if too yellow.");
+            matrixManager.saveMatrix("PAC. NW GREEN", new int[]{95, 0, 0, 0, 110, 5, 0, 15, 105}, "Vintage teals. Pairs best with Amber (A2) shift.");
+            matrixManager.saveMatrix("CINEMATIC", new int[]{110, -10, 0, -5, 100, 10, 0, 5, 115}, "Teal/Orange separation. Uses negative values to clean Reds.");
+            matrixManager.saveMatrix("BLEACH BYPASS", new int[]{130, 0, 0, 0, 130, 0, 0, 0, 130}, "High density. WARNING: May clip highlights. Use -0.7 EV.");
+            matrixManager.saveMatrix("AEROCHROME", new int[]{0, 140, 0, 100, 0, 0, 0, 0, 100}, "False-color Infrared swap. Turns Green foliage Red.");
             matrixManager.scanMatrices(); // Reload list after saving
         }
     }
@@ -1818,6 +1818,26 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         updateHudUI(); 
     }
 
+    // --- QUICK MATRIX NAME LOOKUP FOR MENU ---
+    private String getActiveMatrixName() {
+        if (matrixManager == null || matrixManager.getCount() == 0) return "CUSTOM";
+        
+        RTLProfile p = recipeManager.getCurrentProfile();
+        
+        for (int f = 0; f < matrixManager.getCount(); f++) {
+            int[] loaded = matrixManager.getValues(f);
+            boolean matches = true;
+            for (int i = 0; i < 9; i++) { 
+                if (p.advMatrix[i] != loaded[i]) {
+                    matches = false; 
+                    break;
+                }
+            }
+            if (matches) return matrixManager.getNames().get(f);
+        }
+        return "CUSTOM"; // Fallback if it doesn't match any saved file
+    }
+
     private void launchHudMode(int mode, int defaultSelection) {
         isHudActive = true;
         currentHudMode = mode;
@@ -1918,7 +1938,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 String sixStr = sixIsStd ? "[ STANDARD ]" : "[ CUSTOM ]";
                 
                 boolean mtxIsStd = p.advMatrix[0]==100 && p.advMatrix[1]==0 && p.advMatrix[2]==0 && p.advMatrix[3]==0 && p.advMatrix[4]==100 && p.advMatrix[5]==0 && p.advMatrix[6]==0 && p.advMatrix[7]==0 && p.advMatrix[8]==100;
-                String mtxStr = mtxIsStd ? "[ STANDARD ]" : "[ CUSTOM ]";
+                
+                // FIX: Inject the active SD card Matrix name into the UI!
+                String mtxStr = mtxIsStd ? "[ STANDARD ]" : "[ " + getActiveMatrixName() + " ]";
 
                 String[] rLabels = {"White Balance Shift", "Pro Color Base", "6-Axis Color Depths", "BIONZ RGB Matrix"};
                 String[] rValues = { combinedWb, (p.proColorMode != null ? p.proColorMode : "OFF").toUpperCase(), sixStr, mtxStr };

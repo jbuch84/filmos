@@ -27,8 +27,10 @@ public class MatrixManager {
         File[] files = matrixDir.listFiles();
         if (files == null) return;
 
+        // FIX: Sort files so they appear in a predictable, alphabetical order on the HUD
+        java.util.Arrays.sort(files);
+
         for (File f : files) {
-            // Bypass Sony OS whitelist by using standard text files
             if (f.getName().toUpperCase().endsWith(".TXT")) {
                 loadMatrixFile(f);
             }
@@ -74,12 +76,16 @@ public class MatrixManager {
             }
             sb.append("],\n  \"note\": \"").append(note.replace("\"", "\\\"")).append("\"\n}");
 
-            // Create an 8-character strict FAT32 filename (M_ + 6 chars)
-            String cleanName = name.replaceAll("[^a-zA-Z0-9]", "").toUpperCase();
-            if (cleanName.length() > 6) cleanName = cleanName.substring(0, 6);
-            String safeFilename = "M_" + cleanName + ".TXT";
+            // FIX: Prevent FAT32 overwrites by finding the next available M_####.TXT slot
+            String safeFilename;
+            int counter = 1;
+            File file;
+            do {
+                safeFilename = String.format("M_%04d.TXT", counter);
+                file = new File(matrixDir, safeFilename);
+                counter++;
+            } while (file.exists());
 
-            File file = new File(matrixDir, safeFilename);
             FileOutputStream fos = new FileOutputStream(file);
             fos.write(sb.toString().getBytes("UTF-8"));
             fos.close();
