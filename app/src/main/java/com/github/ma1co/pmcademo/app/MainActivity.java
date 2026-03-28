@@ -1517,8 +1517,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             tooltip += "\n" + balText;
 
             for (int i=0; i<9; i++) values[i] = p.advMatrix[i] + "%";
-        }
-
+            
         // --- ALL OTHER MODES (1, 3-9) ---
         } else if (currentHudMode == 1) { 
             activeCells = 6;
