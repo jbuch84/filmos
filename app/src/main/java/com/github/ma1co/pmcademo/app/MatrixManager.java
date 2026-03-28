@@ -28,8 +28,8 @@ public class MatrixManager {
         if (files == null) return;
 
         for (File f : files) {
-            // Changed to look exclusively for our proprietary .mtx files
-            if (f.getName().toLowerCase().endsWith(".mtx")) {
+            // Bypass Sony OS whitelist by using standard text files
+            if (f.getName().toUpperCase().endsWith(".TXT")) {
                 loadMatrixFile(f);
             }
         }
@@ -48,8 +48,14 @@ public class MatrixManager {
             int[] values = new int[9];
             for (int i = 0; i < 9; i++) values[i] = arr.getInt(i);
 
-            // Strip the new .mtx extension for clean UI display
-            matrixNames.add(file.getName().replace(".mtx", "").replace("_", " ").toUpperCase());
+            // LUT TRICK: Read the internal title. Fallback to stripped filename if missing.
+            String uiName = json.optString("title", "");
+            if (uiName.equals("")) {
+                uiName = file.getName().toUpperCase().replace(".TXT", "").replace("_", " ");
+                if (uiName.contains("~")) uiName = uiName.substring(0, uiName.indexOf("~"));
+            }
+
+            matrixNames.add(uiName);
             matrixValues.add(values);
             matrixNotes.add(json.optString("note", "User defined matrix."));
         } catch (Exception e) {
@@ -59,19 +65,21 @@ public class MatrixManager {
 
     public void saveMatrix(String name, int[] values, String note) {
         try {
-            // Bypass Sony's flaky org.json library entirely for writing.
-            // Manually construct the JSON string to guarantee success on API 10.
             StringBuilder sb = new StringBuilder();
-            sb.append("{\n  \"advMatrix\": [");
+            sb.append("{\n  \"title\": \"").append(name.replace("\"", "\\\"")).append("\",\n");
+            sb.append("  \"advMatrix\": [");
             for (int i = 0; i < values.length; i++) {
                 sb.append(values[i]);
                 if (i < values.length - 1) sb.append(", ");
             }
-            // Safely escape quotes in the note string just in case
             sb.append("],\n  \"note\": \"").append(note.replace("\"", "\\\"")).append("\"\n}");
 
-            // Save as our custom format
-            File file = new File(matrixDir, name.replace(" ", "_") + ".mtx");
+            // Create an 8-character strict FAT32 filename (M_ + 6 chars)
+            String cleanName = name.replaceAll("[^a-zA-Z0-9]", "").toUpperCase();
+            if (cleanName.length() > 6) cleanName = cleanName.substring(0, 6);
+            String safeFilename = "M_" + cleanName + ".TXT";
+
+            File file = new File(matrixDir, safeFilename);
             FileOutputStream fos = new FileOutputStream(file);
             fos.write(sb.toString().getBytes("UTF-8"));
             fos.close();
