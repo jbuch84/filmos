@@ -1490,25 +1490,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             int bBal = p.advMatrix[6] + p.advMatrix[7] + p.advMatrix[8];
             String balText = String.format(" [ R:%d%% | G:%d%% | B:%d%% ]", rBal, gBal, bBal);
 
-            // 2. Verify if current math matches an SD Card file
+            // 2. Reverse Lookup: Match current math to SD Card files
             String currentName = "CUSTOM (UNSAVED)";
             String matrixNote = "Use D-Pad to cycle SD Card matrices.";
             
             if (matrixManager != null && matrixManager.getCount() > 0) {
-                int[] loaded = matrixManager.getValues(activeMatrixIndex);
-                boolean matches = true;
-                for (int i=0; i<9; i++) { if (p.advMatrix[i] != loaded[i]) matches = false; }
-                
-                if (matches) {
-                    currentName = matrixManager.getNames().get(activeMatrixIndex);
-                    matrixNote = matrixManager.getNote(activeMatrixIndex);
+                // Loop through all SD card files to see if our current recipe math matches any of them
+                for (int f = 0; f < matrixManager.getCount(); f++) {
+                    int[] loaded = matrixManager.getValues(f);
+                    boolean matches = true;
+                    for (int i=0; i<9; i++) { 
+                        if (p.advMatrix[i] != loaded[i]) matches = false; 
+                    }
+                    
+                    if (matches) {
+                        activeMatrixIndex = f; // Sync the dial's starting position to this file!
+                        currentName = matrixManager.getNames().get(f);
+                        matrixNote = matrixManager.getNote(f);
+                        break; // Stop searching once we find the exact match
+                    }
                 }
             }
 
-            // 3. Update top status header (FIX: Explicitly set VISIBLE to prevent vanishing bug)
+            // 3. Update top status header (Explicitly set VISIBLE to prevent vanishing bug)
             if (tvTopStatus != null) {
                 tvTopStatus.setText("MATRIX: " + currentName);
-                tvTopStatus.setVisibility(View.VISIBLE); // <--- THE BUG FIX
+                tvTopStatus.setVisibility(View.VISIBLE); 
                 tvTopStatus.setTextColor(hudSelection == -1 ? Color.rgb(227, 69, 20) : Color.WHITE);
             }
             
@@ -1531,7 +1538,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             }
             
         // --- ALL OTHER MODES (1, 3-9) ---
-        } else if (currentHudMode == 1) { 
+        } else if (currentHudMode == 1) {
             activeCells = 6;
             labels = new String[]{"RED", "GRN", "BLU", "CYN", "MAG", "YEL"};
             int[] depths = {p.colorDepthRed, p.colorDepthGreen, p.colorDepthBlue, p.colorDepthCyan, p.colorDepthMagenta, p.colorDepthYellow};
