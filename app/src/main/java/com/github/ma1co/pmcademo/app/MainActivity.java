@@ -41,6 +41,7 @@ import java.util.List;
 public class MainActivity extends Activity implements SurfaceHolder.Callback, 
     SonyCameraManager.CameraEventListener, InputManager.InputListener, ConnectivityManager.StatusUpdateListener {
 
+    private boolean isScrollingMatrices = false;
     private SonyCameraManager cameraManager;
     private InputManager inputManager;
     private RecipeManager recipeManager;
@@ -1555,24 +1556,28 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             int bBal = p.advMatrix[6] + p.advMatrix[7] + p.advMatrix[8];
             String balText = String.format(" [ R:%d%% | G:%d%% | B:%d%% ]", rBal, gBal, bBal);
 
-            // 2. Reverse Lookup: Match current math to SD Card files
+            // 2. Smart Lookup: Prevent "Teleportation Trap"
             String currentName = "CUSTOM (UNSAVED)";
             String matrixNote = "Use D-Pad to cycle SD Card matrices.";
             
             if (matrixManager != null && matrixManager.getCount() > 0) {
-                // Loop through all SD card files to see if our current recipe math matches any of them
-                for (int f = 0; f < matrixManager.getCount(); f++) {
-                    int[] loaded = matrixManager.getValues(f);
-                    boolean matches = true;
-                    for (int i=0; i<9; i++) { 
-                        if (p.advMatrix[i] != loaded[i]) matches = false; 
-                    }
-                    
-                    if (matches) {
-                        activeMatrixIndex = f; // Sync the dial's starting position to this file!
-                        currentName = matrixManager.getNames().get(f);
-                        matrixNote = matrixManager.getNote(f);
-                        break; // Stop searching once we find the exact match
+                if (isScrollingMatrices) {
+                    // TRUST THE DIAL: Use the index the user actually scrolled to
+                    currentName = matrixManager.getNames().get(activeMatrixIndex);
+                    matrixNote = matrixManager.getNote(activeMatrixIndex);
+                } else {
+                    // REVERSE LOOKUP: Only search if the user manually tweaked values
+                    for (int f = 0; f < matrixManager.getCount(); f++) {
+                        int[] loaded = matrixManager.getValues(f);
+                        boolean matches = true;
+                        for (int i=0; i<9; i++) { if (p.advMatrix[i] != loaded[i]) matches = false; }
+                        
+                        if (matches) {
+                            activeMatrixIndex = f; 
+                            currentName = matrixManager.getNames().get(f);
+                            matrixNote = matrixManager.getNote(f);
+                            break; 
+                        }
                     }
                 }
             }
@@ -1719,9 +1724,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             if (hudSelection == -1) {
                 // --- CYCLE SD CARD MATRICES ---
                 if (matrixManager != null && matrixManager.getCount() > 0) {
+                    // LOCK: Tells the UI to trust the index while the dial is spinning
+                    isScrollingMatrices = true; 
+                    
                     activeMatrixIndex += dir;
                     
-                    // FIX: Bulletproof wrapping for rapid, multi-click dial spins
+                    // Keep your bulletproof wrapping exactly as it was
                     while (activeMatrixIndex < 0) activeMatrixIndex += matrixManager.getCount();
                     activeMatrixIndex = activeMatrixIndex % matrixManager.getCount();
                     
@@ -1732,6 +1740,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 }
             } else {
                 // --- MANUAL MATH ADJUSTMENT ---
+                // UNLOCK: User is tweaking numbers, so we allow Reverse Lookup again
+                isScrollingMatrices = false; 
+
                 int step = 5; 
                 int target = p.advMatrix[hudSelection] + (dir * step);
                 p.advMatrix[hudSelection] = Math.max(-200, Math.min(200, target)); 
