@@ -2640,25 +2640,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         return super.onKeyDown(k, e);
     }
 
-    @Override
-    public boolean onKeyUp(int k, android.view.KeyEvent e) {
-        // --- CRITICAL: Swallow the release event so the Sony OS does nothing ---
-        if (k == ScalarInput.ISV_KEY_PLAY || k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY) {
-            return true; 
-        }
-        
-        if (inputManager != null) return inputManager.handleKeyUp(k, e) || super.onKeyUp(k, e);
-        return super.onKeyUp(k, e);
-    }
-    
     @Override 
-    public boolean onKeyUp(int k, KeyEvent e) { 
+    public boolean onKeyUp(int k, android.view.KeyEvent e) { 
+        // UNIVERSAL CRASH PROTECTION: Swallow dial events on ALL cameras
         if (k == 624 || k == ScalarInput.ISV_KEY_MODE_DIAL || 
            (k >= ScalarInput.ISV_KEY_MODE_INVALID && k <= ScalarInput.ISV_KEY_MODE_CUSTOM3)) {
             return true; 
         }
         
+        // Protect shutter inputs while processing
         if (isProcessing && (k == ScalarInput.ISV_KEY_S1_1 || k == ScalarInput.ISV_KEY_S1_2 || k == ScalarInput.ISV_KEY_S2)) return true; 
+
+        // --- CRITICAL: Swallow the release event so the Sony OS does nothing ---
+        if (k == ScalarInput.ISV_KEY_PLAY || k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY) {
+            return true; 
+        }
+        
+        // Pass everything else down the chain
         if (inputManager != null) return inputManager.handleKeyUp(k, e) || super.onKeyUp(k, e); 
         return super.onKeyUp(k, e);
     }
