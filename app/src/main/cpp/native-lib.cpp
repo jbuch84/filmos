@@ -76,16 +76,12 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject 
                 int total_bytes = nativeLutSize * nativeLutSize * nativeLutSize * 3;
                 nativeLut.resize(total_bytes);
                 
-                // Smart parser dynamically maps based on the detected layout
+                // --- THE SPATIAL 3D TRANSLATOR ---
                 for (int b = 0; b < nativeLutSize; b++) {
                     int cell_x = b % tiles_per_row;
                     int cell_y = b / tiles_per_row;
                     for (int g = 0; g < nativeLutSize; g++) {
-                        
-                        // --- FIX: Standard PNGs have Y=0 at the top. 
-                        // If your colors still look weird, change 'g' to '(nativeLutSize - 1 - g)' to flip the Y-axis!
-                        int img_y = cell_y * nativeLutSize + g; 
-                        
+                        int img_y = cell_y * nativeLutSize + g;
                         for (int r = 0; r < nativeLutSize; r++) {
                             int img_x = cell_x * nativeLutSize + r;
                             
@@ -98,10 +94,11 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject 
                         }
                     }
                 }
-                LOGD("SUCCESS: Loaded PNG LUT size %d", nativeLutSize);
+                // PROOF OF LIFE LOG: If you don't see this in Logcat, the APK didn't update!
+                LOGD("SUCCESS: JPEGCAM NEW 3D MATH APPLIED! LUT Size: %d", nativeLutSize);
             } else {
                 LOGD("ERROR: Invalid PNG LUT dimensions %dx%d. Safe reject.", w, h);
-                nativeLutSize = 0; // Prevent crash, fail gracefully
+                nativeLutSize = 0; 
             }
             stbi_image_free(img_data);
         }
