@@ -103,7 +103,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject 
         }
     }
     // --- ROUTE B: .CUBE (Text) ---
-    else {
+    else if (ext == ".cube" || ext == ".cub") {
         FILE *file = fopen(file_path, "r");
         if (file) {
             char line[256];
