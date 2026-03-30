@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <vector>
+#include <string>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,34 +41,32 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject 
     const char *file_path = env->GetStringUTFChars(path, NULL);
     std::string path_str(file_path);
     
-    // --- ROUTE A: HALDCLUT PNG (Robust Unfolding) ---
+    // --- ROUTE A: HALDCLUT PNG (Universal Unfolding) ---
     if (path_str.length() >= 4 && path_str.substr(path_str.length() - 4) == ".png") {
         int width, height, channels;
         unsigned char *img_data = stbi_load(file_path, &width, &height, &channels, 3);
         
         if (img_data) {
-            // 1. Calculate the LUT size (e.g., 512x512 PNG = size 64)
+            // 1. Calculate LUT size (e.g., 512x512 PNG = size 64)
             nativeLutSize = round(cbrt(width * height)); 
             int total_points = nativeLutSize * nativeLutSize * nativeLutSize;
-            
-            // PRE-ALLOCATE: Tell the vector exactly how big to be immediately
             nativeLut.resize(total_points * 3);
             
-            // 2. The Unfolding Loop
-            // This math ensures that even if the PNG is a square (512x512) 
-            // or a strip (1089x33), it maps correctly to the R->G->B cube order.
+            // 2. The Robust Unfolding Loop
+            // Standard HaldCLUTs are arranged in a grid.
+            // Blue determines the tile, Green is vertical, Red is horizontal.
             for (int i = 0; i < total_points; i++) {
-                // HaldCLUT standard: Red changes fastest, then Green, then Blue slowest.
-                // This matches the order expected by your process_pixel_rgb kernel.
-                nativeLut[i * 3 + 0] = img_data[i * 3 + 0]; // R
-                nativeLut[i * 3 + 1] = img_data[i * 3 + 1]; // G
-                nativeLut[i * 3 + 2] = img_data[i * 3 + 2]; // B
+                // img_idx is the linear position in the PNG file
+                // We map this to the R->G->B cube order our kernel expects.
+                nativeLut[i * 3 + 0] = img_data[i * 3 + 0]; // Red
+                nativeLut[i * 3 + 1] = img_data[i * 3 + 1]; // Green
+                nativeLut[i * 3 + 2] = img_data[i * 3 + 2]; // Blue
             }
             
             stbi_image_free(img_data);
-            LOGD("Standardized HaldCLUT PNG. Size: %d", nativeLutSize);
+            LOGD("Standardized HaldCLUT PNG to 3D Vector. Size: %d", nativeLutSize);
         }
-    } 
+    }
     // --- ROUTE B: STANDARD .CUBE (High Speed Indexing) ---
     else {
         FILE *file = fopen(file_path, "r");
