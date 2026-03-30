@@ -41,14 +41,14 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject 
     const char *file_path = env->GetStringUTFChars(path, NULL);
     std::string path_str(file_path);
     
-    // Extract extension and convert to lowercase for the check
+    // Extract extension safely and convert to lowercase
     std::string ext = "";
     if (path_str.length() >= 4) {
         ext = path_str.substr(path_str.length() - 4);
         for(int i = 0; i < ext.length(); i++) ext[i] = tolower(ext[i]);
     }
 
-    // --- ROUTE A: PNG (The HaldCLUT Route) ---
+    // --- ROUTE A: PNG (HaldCLUT) ---
     if (ext == ".png") {
         int w, h, c;
         unsigned char *img_data = stbi_load(file_path, &w, &h, &c, 3);
@@ -61,12 +61,12 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject 
             LOGD("SUCCESS: Loaded PNG HaldCLUT size %d", nativeLutSize);
         }
     }
-    // --- ROUTE B: .CUBE (The Text Route) ---
+    // --- ROUTE B: .CUBE (Text) ---
     else {
         FILE *file = fopen(file_path, "r");
         if (file) {
             char line[256];
-            size_t count = 0; // Standardized to 'count'
+            size_t count = 0;
             while(fgets(line, sizeof(line), file)) {
                 if (strncmp(line, "LUT_3D_SIZE", 11) == 0) {
                     sscanf(line, "LUT_3D_SIZE %d", &nativeLutSize);
@@ -78,7 +78,7 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject 
                     if (count + 2 < nativeLut.size()) {
                         nativeLut[count++] = (uint8_t)(r * 255.0f); 
                         nativeLut[count++] = (uint8_t)(g * 255.0f); 
-                        nativeLut[count++] = (uint8_t)(b * 255.0f); // Fixed: count instead of write_ptr
+                        nativeLut[count++] = (uint8_t)(b * 255.0f); // Fixed count here
                     }
                 }
             }
