@@ -483,11 +483,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
     }
 
-    @Override 
+    @Override
     public void onShutterHalfReleased() {
         if (displayState == 0 && !isMenuOpen && !isPlaybackMode) setHUDVisibility(View.VISIBLE);
         if (afOverlay != null && cameraManager != null && cameraManager.getCamera() != null) {
             afOverlay.stopFocus(cameraManager.getCamera());
+        }
+        if (mScanner != null) {
+            mScanner.start();
         }
     }
 
