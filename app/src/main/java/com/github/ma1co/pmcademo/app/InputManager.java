@@ -76,26 +76,28 @@ public class InputManager {
             return true;
         }
 
-        // --- FRONT DIAL (INDEX FINGER) ---
-        if (sc == ScalarInput.ISV_DIAL_1_CLOCKWISE) { listener.onFrontDialRotated(1); return true; }
-        if (sc == ScalarInput.ISV_DIAL_1_COUNTERCW) { listener.onFrontDialRotated(-1); return true; }
-
-        // --- REAR DIAL (THUMB) ---
-        if (sc == ScalarInput.ISV_DIAL_2_CLOCKWISE) { listener.onRearDialRotated(1); return true; }
-        if (sc == ScalarInput.ISV_DIAL_2_COUNTERCW) { listener.onRearDialRotated(-1); return true; }
-
-        // --- REAR CONTROL WHEEL & LENS RINGS (WITH a6500 HACKS) ---
-        if (sc == ScalarInput.ISV_DIAL_3_CLOCKWISE || 
+        // --- UNIFIED DIAL TRANSLATOR (Front, Rear, Control Wheel & a6500 Hacks) ---
+        // The a5100 maps its single wheel to DIAL_1 (027a/027b). 
+        // By unifying all rotational inputs here, they will correctly route to onControlWheelRotated
+        // and safely respect your HUD navigation state (mDialMode).
+        if (sc == ScalarInput.ISV_DIAL_1_CLOCKWISE || 
+            sc == ScalarInput.ISV_DIAL_2_CLOCKWISE || 
+            sc == ScalarInput.ISV_DIAL_3_CLOCKWISE || 
             sc == ScalarInput.ISV_DIAL_KURU_CLOCKWISE || 
             sc == ScalarInput.ISV_RING_CLOCKWISE ||
-            keyCode == 212 /* KEY_WPS_BUTTON (a6500 Hack) */) {
+            keyCode == 212 || sc == 212 /* a6500 Hack */) {
+            
             listener.onControlWheelRotated(1);
             return true;
         }
-        if (sc == ScalarInput.ISV_DIAL_3_COUNTERCW || 
+
+        if (sc == ScalarInput.ISV_DIAL_1_COUNTERCW || 
+            sc == ScalarInput.ISV_DIAL_2_COUNTERCW || 
+            sc == ScalarInput.ISV_DIAL_3_COUNTERCW || 
             sc == ScalarInput.ISV_DIAL_KURU_COUNTERCW || 
             sc == ScalarInput.ISV_RING_COUNTERCW ||
-            keyCode == 80 /* KEY_CAMERA_FOCUS (a6500 Hack) */) {
+            keyCode == 80 || sc == 80 /* a6500 Hack */) {
+            
             listener.onControlWheelRotated(-1);
             return true;
         }
