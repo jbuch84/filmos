@@ -1147,6 +1147,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             navigateHomeSpatial(ScalarInput.ISV_KEY_RIGHT);
         }
     }
+
+    @Override
+    public void onCustomButtonPressed() {
+        // Do nothing if we are in a menu, looking at photos, or processing
+        if (isPlaybackMode || isMenuOpen || isProcessing || isCalibrating) return;
+
+        // Simply jump the HUD cursor directly to the ISO slot
+        mDialMode = DIAL_MODE_ISO;
+        updateMainHUD();
+    }
     
     @Override 
     public void onFrontDialRotated(int direction) { 
