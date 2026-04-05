@@ -294,6 +294,20 @@ public class RecipeManager {
         return vaultItems;
     }
 
+    // --- NEW: DELETE RECIPE FROM VAULT ---
+    public void deleteVaultItem(int index) {
+        if (index >= 0 && index < vaultItems.size()) {
+            VaultItem item = vaultItems.get(index);
+            if (!item.filename.equals("NONE")) {
+                File file = new File(recipeDir, item.filename);
+                if (file.exists()) {
+                    file.delete();
+                }
+                scanVault(); // Refresh the list
+            }
+        }
+    }
+
     // --- NEW: PREVIEW MODE (MEMORY ONLY) ---
     public void previewVaultToSlot(String vaultFilename) {
         if (vaultFilename.equals("NONE") || vaultFilename.equals("NO VAULT RECIPES")) return;
