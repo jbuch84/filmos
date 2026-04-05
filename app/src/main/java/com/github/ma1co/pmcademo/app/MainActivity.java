@@ -601,9 +601,20 @@ public void onEnterPressed() {
                 if (hudSelection == 0) { // CONFIRM
                     recipeManager.deleteVaultItem(vaultIndex); // Delete the item shown in the browser
                     vaultIndex = 0; // Reset browser cursor
-                    recipeManager.resetCurrentSlot(); // Clear the slot so they aren't looking at deleted data
+                    
+                    // Stay in HUD, preview the next item (or default if empty)
+                    vaultItems = recipeManager.getVaultItems();
+                    if (!vaultItems.isEmpty() && !vaultItems.get(0).filename.equals("NONE")) {
+                        recipeManager.previewVaultToSlot(vaultItems.get(0).filename);
+                    } else {
+                        recipeManager.resetCurrentSlot();
+                    }
+                    triggerLutPreload();
+                    
                     isConfirmingDelete = false;
-                    isHudActive = false; // Exit HUD
+                    hudSelection = 1; // Safely put cursor back on BROWSE
+                    updateHudUI();
+                    return;
                 } else if (hudSelection == 1) { // CANCEL
                     isConfirmingDelete = false;
                     hudSelection = 0; // Safely reset cursor to SAVE
@@ -710,7 +721,7 @@ public void onEnterPressed() {
         
         // --- FIXED: Shifted down by +1 to accommodate "Load from Vault" at index 2 ---
         if (isMenuOpen && currentMainTab == 0 && currentPage == 1 && menuSelection == 1) {
-            launchHudMode(10); return; // NEW: Vault Manager HUD
+            launchHudMode(10); return; // NEW: Recipe Manager HUD
         }
         if (isMenuOpen && currentMainTab == 0 && currentPage == 1 && menuSelection == 2) {
             launchHudMode(6); return; // Foundation Base
@@ -1062,16 +1073,7 @@ public void onEnterPressed() {
                 nameCursorPos = Math.max(0, nameCursorPos - 1);
                 renderMenu();
             } else if (isMenuEditing) {
-                // --- VAULT SCROLLING (LEFT) ---
-                if (currentMainTab == 0 && currentPage == 1 && menuSelection == 2) {
-                    if (!vaultItems.isEmpty() && !vaultItems.get(0).filename.equals("NONE")) {
-                        vaultIndex -= 1;
-                        if (vaultIndex < 0) vaultIndex += vaultItems.size();
-                        renderMenu();
-                    }
-                } else {
-                    handleMenuChange(-1); // Normal menu editing
-                }
+                handleMenuChange(-1); // Normal menu editing
             } else { // 2. PAGE LEVEL NAVIGATION
                 currentPage--;
                 if (currentPage < 1) currentPage = 8; // Wrap from Page 1 to Page 8
@@ -1154,15 +1156,7 @@ public void onEnterPressed() {
                 nameCursorPos = Math.min(7, nameCursorPos + 1);
                 renderMenu();
             } else if (isMenuEditing) {
-                // --- VAULT SCROLLING (RIGHT) ---
-                if (currentMainTab == 0 && currentPage == 1 && menuSelection == 2) {
-                    if (!vaultItems.isEmpty() && !vaultItems.get(0).filename.equals("NONE")) {
-                        vaultIndex = (vaultIndex + 1) % vaultItems.size();
-                        renderMenu();
-                    }
-                } else {
-                    handleMenuChange(1); // Normal menu editing
-                }
+                handleMenuChange(1); // Normal menu editing
             } else { // 2. PAGE LEVEL NAVIGATION
                 currentPage++;
                 if (currentPage > 8) currentPage = 1; // Wrap from Page 8 to Page 1
@@ -1251,24 +1245,12 @@ public void onEnterPressed() {
         if (isPlaybackMode) { 
             showPlaybackImage(playbackIndex + direction); 
         } 
-        else if (isMenuOpen) {
+        } else if (isMenuOpen) {
             if (isNamingMode) { 
                 handleNamingChange(direction); 
             } else if (isMenuEditing) { 
-                if (currentMainTab == 0 && currentPage == 1 && menuSelection == 2) {
-                    if (!vaultItems.isEmpty() && !vaultItems.get(0).filename.equals("NONE")) {
-                        if (direction > 0) {
-                            vaultIndex = (vaultIndex + 1) % vaultItems.size();
-                        } else {
-                            vaultIndex -= 1;
-                            if (vaultIndex < 0) vaultIndex += vaultItems.size();
-                        }
-                        renderMenu();
-                    }
-                } else {
-                    handleMenuChange(direction); 
-                }
-            } else { 
+                handleMenuChange(direction); 
+            } else {
                 if (direction > 0) onDownPressed(); 
                 else onUpPressed(); 
             }
@@ -1361,7 +1343,7 @@ public void onEnterPressed() {
                     triggerLutPreload(); // Updates live-view immediately when slot changes
                 }
             }
-            // ROW 1: Recipe Vault Manager (Enter-Action only, no L/R adjustment)
+            // ROW 1: Recipe Recipe Manager (Enter-Action only, no L/R adjustment)
 
             // ROW 2: Foundation Base (Shifted from Row 4)
             else if (sel == 2) {
@@ -1948,22 +1930,25 @@ public void onEnterPressed() {
                 values[1] = "[ GO BACK ]";
                 
                 if (hudSelection == 0) tooltip = "WARNING: This will permanently delete the recipe from the SD card.";
-                else tooltip = "Cancel and return to the Vault Manager.";
+                else tooltip = "Cancel and return to the Recipe Manager.";
                 
             } else {
                 // --- STANDARD VAULT STATE ---
                 activeCells = 4;
-                labels = new String[]{"SAVE / SAVE AS", "BROWSE VAULT", "RESET SLOT", "DELETE RECIPE"};
+                labels = new String[]{"SAVE", "BROWSE", "RESET", "DELETE"};
                 
                 List<RecipeManager.VaultItem> vaultItems = recipeManager.getVaultItems();
                 if (vaultIndex >= vaultItems.size() || vaultIndex < 0) vaultIndex = 0;
                 
                 String vName = (vaultItems.isEmpty() || vaultItems.get(0).filename.equals("NONE")) 
-                               ? "[ EMPTY ]" : vaultItems.get(vaultIndex).profileName;
+                               ? "EMPTY" : vaultItems.get(vaultIndex).profileName;
                 
-                values[0] = "[ NAME & EXPORT ]";
+                // Shorten name if it's too long to fit cleanly in the cell
+                if (vName.length() > 10) vName = vName.substring(0, 8) + "..";
+                
+                values[0] = "[ RENAME ]";
                 values[1] = "< " + vName + " >";
-                values[2] = "[ RESTORE DEFAULTS ]";
+                values[2] = "[ DEFAULT ]";
                 
                 // Only show a valid delete option if we are browsing an actual file, not "NONE"
                 if (!vaultItems.isEmpty() && !vaultItems.get(vaultIndex).filename.equals("NONE")) {
@@ -1989,7 +1974,7 @@ public void onEnterPressed() {
                     tvTopStatus.setText(sb.toString());
                     tvTopStatus.setTextColor(android.graphics.Color.YELLOW);
                 } else {
-                    tvTopStatus.setText("VAULT MANAGER - SLOT " + (recipeManager.getCurrentSlot() + 1));
+                    tvTopStatus.setText("RECIPE MANAGER - SLOT " + (recipeManager.getCurrentSlot() + 1));
                     tvTopStatus.setTextColor(android.graphics.Color.WHITE);
                 }
                 tvTopStatus.setVisibility(View.VISIBLE);
@@ -2263,7 +2248,7 @@ public void onEnterPressed() {
                 String activeName = (p.profileName != null && !p.profileName.isEmpty()) ? p.profileName : "UNNAMED";
                 String vaultValue = "< " + activeName + " >";
 
-                String[] rLabels = {"Recipe Slot (1-10)", "Vault Manager", "Foundation Base", "Tone & Style", "DRO (Dynamic Range)"};
+                String[] rLabels = {"Recipe Slot (1-10)", "Recipe Manager", "Foundation Base", "Tone & Style", "DRO (Dynamic Range)"};
                 String[] rValues = { String.valueOf(recipeManager.getCurrentSlot() + 1), vaultValue, fndStr, tsStr, p.dro != null ? p.dro.toUpperCase() : "OFF" };
                 
                 for (int i = 0; i < 5; i++) {
@@ -2694,7 +2679,7 @@ public void onEnterPressed() {
         
         // --- LOWERED HUD TOOLTIP ---
         FrameLayout.LayoutParams ttParams = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM); 
-        ttParams.setMargins(0, 0, 0, 100); // Lowered from 205 to hover directly above the pinned HUD
+        ttParams.setMargins(0, 0, 0, 130); // Raised slightly so it doesn't overlap 4-cell HUDs
         mainUIContainer.addView(hudTooltipText, ttParams);
         
         wbGridContainer = new FrameLayout(this);
