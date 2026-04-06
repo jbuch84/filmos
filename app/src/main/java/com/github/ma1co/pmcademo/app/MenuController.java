@@ -65,6 +65,7 @@ public class MenuController {
         void        onLutPreloadNeeded();
         void        scheduleHardwareApply();
         void        onHudModeRequested(int mode);
+        void        setAutoPowerOffMode(boolean on);
         void        restoreFocusMode(String savedMode);
     }
 
@@ -359,6 +360,7 @@ public class MenuController {
         if (!isOpen) return false;
         if (currentPage == 7) { handleConnectionAction(); return true; }
         if (selection == -2) return true; // Tab level — enter does nothing
+        if (selection < 0)   return true; // Subtitle row — enter does nothing
         isEditing = !isEditing;
         render();
         return true;
@@ -469,14 +471,14 @@ public class MenuController {
     private void handleConnectionAction() {
         if (selection == 0) {
             hotspotStatus = "Starting...";
-            host.getConnectivityManager().startHotspot();
+            if (host.getConnectivityManager() != null) { host.getConnectivityManager().startHotspot(); host.setAutoPowerOffMode(false); }
         } else if (selection == 1) {
             wifiStatus = "Connecting...";
-            host.getConnectivityManager().startHomeWifi();
+            if (host.getConnectivityManager() != null) { host.getConnectivityManager().startHomeWifi(); host.setAutoPowerOffMode(false); }
         } else if (selection == 2) {
             hotspotStatus = "Press ENTER";
             wifiStatus    = "Press ENTER";
-            host.getConnectivityManager().stopNetworking();
+            if (host.getConnectivityManager() != null) { host.getConnectivityManager().stopNetworking(); host.setAutoPowerOffMode(true); }
         }
         render();
     }

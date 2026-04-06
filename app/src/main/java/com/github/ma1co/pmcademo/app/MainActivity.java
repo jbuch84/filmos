@@ -432,8 +432,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         else menuController.open();
     }
 
+    private Runnable hudUpdateRunnable = new Runnable() {
+        @Override public void run() { updateMainHUD(); }
+    };
+
     private void requestHudUpdate() {
-        hudController.requestUpdate();
+        uiHandler.removeCallbacks(hudUpdateRunnable);
+        uiHandler.postDelayed(hudUpdateRunnable, 100);
     }
 
     @Override 
@@ -1578,9 +1583,10 @@ public void onEnterPressed() {
     @Override public void onLutPreloadNeeded()    { triggerLutPreload(); }
     @Override public void scheduleHardwareApply() {
         uiHandler.removeCallbacks(applySettingsRunnable);
-        uiHandler.postDelayed(applySettingsRunnable, 300);
+        uiHandler.postDelayed(applySettingsRunnable, 150);
     }
     @Override public void onHudModeRequested(int mode) { launchHudMode(mode); }
+    @Override public void setAutoPowerOffMode(boolean on) { MainActivity.this.setAutoPowerOffMode(on); }
 
     @Override public void restoreFocusMode(String savedMode) {
         if (savedMode != null && cameraManager != null && cameraManager.getCamera() != null) {

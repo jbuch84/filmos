@@ -304,7 +304,6 @@ public class HudController {
         p.wbShift   = Math.max(-7, Math.min(7, p.wbShift   + dAb));
         p.wbShiftGM = Math.max(-7, Math.min(7, p.wbShiftGM + dGm));
         refresh();
-        host.getUiHandler().removeCallbacksAndMessages(null);
         host.scheduleHardwareApply();
     }
 
@@ -374,6 +373,7 @@ public class HudController {
     // Private — rendering
     // -----------------------------------------------------------------------
     private void refresh() {
+        if (!active) return; // Never render when HUD is not open
         RTLProfile p   = host.getRecipeManager().getCurrentProfile();
         MatrixManager mm = host.getMatrixManager();
         TextView tvTop = host.getTvTopStatus();
