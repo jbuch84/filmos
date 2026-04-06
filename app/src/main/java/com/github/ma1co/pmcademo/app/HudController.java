@@ -201,6 +201,14 @@ public class HudController {
         host.onHudClosed();
     }
 
+    /** Reset HUD state without triggering onHudClosed — used when menu opens over an active HUD. */
+    public void reset() {
+        active = false;
+        overlay.setVisibility(View.GONE);
+        if (tooltip != null) tooltip.setVisibility(View.GONE);
+        wbGrid.setVisibility(View.GONE);
+    }
+
     /** Hide all HUD overlays without triggering close callback (for updateMainHUD). */
     public void hideOverlays() {
         overlay.setVisibility(View.GONE);

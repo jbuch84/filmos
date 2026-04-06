@@ -242,6 +242,7 @@ public class MenuController {
             } catch (Exception ignored) {}
         }
         host.onMenuOpened();
+        host.closeHud();
         isOpen      = true;
         isEditing   = false;
         isNaming    = false;

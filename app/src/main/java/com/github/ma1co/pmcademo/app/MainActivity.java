@@ -1557,7 +1557,7 @@ public void onEnterPressed() {
     @Override public void    setPrefGridLines(boolean v)    { prefShowGridLines    = v; }
     @Override public void    setPrefJpegQuality(int v)      { prefJpegQuality      = v; }
 
-    @Override public void closeHud() { hudController.hideOverlays(); }
+    @Override public void closeHud() { hudController.reset(); }
 
     @Override public void onMenuOpened()  { refreshRecipes(); }
 
@@ -1599,6 +1599,7 @@ public void onEnterPressed() {
     @Override public MenuController getMenuController() { return menuController; }
     @Override public void applyHardwareRecipeNow() { applyHardwareRecipe(); }
     @Override public void onHudClosed() {
+        mainUIContainer.setVisibility(View.GONE);
         menuController.getContainer().setVisibility(View.VISIBLE);
         menuController.refreshDisplay();
     }
