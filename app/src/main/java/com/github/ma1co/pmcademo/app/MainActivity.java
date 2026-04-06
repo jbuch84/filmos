@@ -126,7 +126,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private float cachedFocusRatio = 0.5f;
     
     // isMenuEditing thin proxy removed — use menuController.isEditingMode()
-    private MenuController menuController;
     
     private GridLinesView gridLines;
     private CinemaMatteView cinemaMattes;
@@ -550,8 +549,7 @@ public void onEnterPressed() {
         if (calibController.handleUp()) return;
 
         if (menuController.isOpen()) { menuController.handleUp(); return; }
-            navigateHomeSpatial(ScalarInput.ISV_KEY_UP);
-        }
+        navigateHomeSpatial(ScalarInput.ISV_KEY_UP);
     }
 
     @Override
@@ -575,8 +573,7 @@ public void onEnterPressed() {
         if (calibController.handleDown()) return;
 
         if (menuController.isOpen()) { menuController.handleDown(); return; }
-            navigateHomeSpatial(ScalarInput.ISV_KEY_DOWN);
-        }
+        navigateHomeSpatial(ScalarInput.ISV_KEY_DOWN);
     }
 
     @Override
@@ -613,7 +610,9 @@ public void onEnterPressed() {
         if (hudController.isActive() && !menuController.isNamingMode()) { hudController.handleRight(); return; }
         if (isProcessing) return;
         if (calibController.handleRight()) return;
-        if (menuController.isOpen()) { menuController.handleRight(); return; } (!playbackController.isActive() && mDialMode == DIAL_MODE_FOCUS && lensManager != null && lensManager.isCurrentProfileManual()) {
+        if (menuController.isOpen()) { menuController.handleRight(); return; } 
+        
+        if (!playbackController.isActive() && mDialMode == DIAL_MODE_FOCUS && lensManager != null && lensManager.isCurrentProfileManual()) {
             virtualFocusRatio = Math.min(1.0f, virtualFocusRatio + 0.02f);
             if (focusMeter != null) focusMeter.update(virtualFocusRatio, virtualAperture, lensManager.getCurrentFocalLength(), false, lensManager.getCurrentPoints(), getCircleOfConfusion());
         } else if (playbackController.isActive()) {
