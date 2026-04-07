@@ -68,56 +68,58 @@ public class ConnectivityManager {
     }
 
     public void startHomeWifi() {
-        stopNetworking(); // Safety Check: Clear out any stuck receivers
-        if (wifiManager == null || connManager == null) return;
-        
+        stopNetworking(); // Always clear old states first
         isHomeWifiRunning = true;
-        updateStatus("WIFI", "Connecting to Router...");
+        updateStatus("WIFI", "Connecting...");
         
         wifiReceiver = new BroadcastReceiver() {
+            int attempts = 0; // Watchdog counter
             @Override
             public void onReceive(Context context, Intent intent) {
+                if (!isHomeWifiRunning) return;
                 String action = intent.getAction();
-                if (WifiManager.WIFI_STATE_CHANGED_ACTION.equals(action)) {
-                    if (intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN) == WifiManager.WIFI_STATE_ENABLED) {
-                        wifiManager.reconnect(); 
-                    }
-                } else if (android.net.ConnectivityManager.CONNECTIVITY_ACTION.equals(action)) {
+                
+                if (android.net.ConnectivityManager.CONNECTIVITY_ACTION.equals(action)) {
                     NetworkInfo info = connManager.getNetworkInfo(android.net.ConnectivityManager.TYPE_WIFI);
                     if (info != null && info.isConnected()) {
                         WifiInfo wifiInfo = wifiManager.getConnectionInfo();
                         int ip = wifiInfo.getIpAddress();
                         if (ip != 0) {
-                            String ipAddress = String.format("%d.%d.%d.%d", (ip & 0xff), (ip >> 8 & 0xff), (ip >> 16 & 0xff), (ip >> 24 & 0xff));
-                            updateStatus("WIFI", "http://" + ipAddress + ":" + HttpServer.PORT);
-                            startServer();
-                            setAutoPowerOffMode(false); 
+                            String ipAddr = String.format("%d.%d.%d.%d", (ip & 0xff), (ip >> 8 & 0xff), (ip >> 16 & 0xff), (ip >> 24 & 0xff));
+                            updateStatus("WIFI", "http://" + ipAddr + ":" + HttpServer.PORT);
+                            startServer(); setAutoPowerOffMode(false); 
                         }
                     } else {
-                        updateStatus("WIFI", "Searching for network...");
+                        attempts++;
+                        if (attempts > 20) { // Approx 20-30 seconds
+                            updateStatus("WIFI", "Error: No Network Found");
+                            stopNetworking();
+                        }
                     }
                 }
             }
         };
         
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(android.net.ConnectivityManager.CONNECTIVITY_ACTION);
-        filter.addAction(WifiManager.WIFI_STATE_CHANGED_ACTION);
-        context.registerReceiver(wifiReceiver, filter);
-        
+        context.registerReceiver(wifiReceiver, new IntentFilter(android.net.ConnectivityManager.CONNECTIVITY_ACTION));
         if (!wifiManager.isWifiEnabled()) wifiManager.setWifiEnabled(true);
-        else wifiManager.reconnect();
+        wifiManager.reconnect();
     }
 
     public void startHotspot() {
-        stopNetworking(); // Safety Check: Clear out any stuck receivers
-        if (wifiManager == null || directManager == null) {
-            updateStatus("HOTSPOT", "Hardware not ready.");
+        stopNetworking();
+        
+        // Lazy Load: Re-check hardware if it failed at boot
+        if (directManager == null) {
+            directManager = (DirectManager) context.getSystemService(DirectManager.WIFI_DIRECT_SERVICE);
+        }
+
+        if (directManager == null) {
+            updateStatus("HOTSPOT", "Hardware Error (Busy)");
             return;
         }
 
         isHotspotRunning = true;
-        updateStatus("HOTSPOT", "Starting Hotspot...");
+        updateStatus("HOTSPOT", "Starting...");
         
         directStateReceiver = new BroadcastReceiver() {
             @Override
@@ -136,9 +138,8 @@ public class ConnectivityManager {
             public void onReceive(Context context, Intent intent) {
                 DirectConfiguration config = intent.getParcelableExtra(DirectManager.EXTRA_DIRECT_CONFIG);
                 if (config != null) {
-                    updateStatus("HOTSPOT", "http://192.168.122.1:8080 (PW: " + config.getPreSharedKey() + ")");
-                    startServer();
-                    setAutoPowerOffMode(false); 
+                    updateStatus("HOTSPOT", "http://192.168.122.1:8080");
+                    startServer(); setAutoPowerOffMode(false); 
                 }
             }
         };
@@ -146,18 +147,8 @@ public class ConnectivityManager {
         context.registerReceiver(directStateReceiver, new IntentFilter(DirectManager.DIRECT_STATE_CHANGED_ACTION));
         context.registerReceiver(groupCreateSuccessReceiver, new IntentFilter(DirectManager.GROUP_CREATE_SUCCESS_ACTION));
 
-        if (wifiManager.isWifiEnabled()) directManager.setDirectEnabled(true);
-        else {
-            wifiReceiver = new BroadcastReceiver() {
-                @Override public void onReceive(Context context, Intent intent) {
-                    if (intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN) == WifiManager.WIFI_STATE_ENABLED) {
-                        directManager.setDirectEnabled(true);
-                    }
-                }
-            };
-            context.registerReceiver(wifiReceiver, new IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION));
-            wifiManager.setWifiEnabled(true);
-        }
+        if (!wifiManager.isWifiEnabled()) wifiManager.setWifiEnabled(true);
+        directManager.setDirectEnabled(true);
     }
 
     public void stopNetworking() {

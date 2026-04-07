@@ -488,7 +488,12 @@ public void onEnterPressed() {
                     recipeManager.savePreferences(); 
                     hudController.close(); 
                     return;
-                } else if (hudController.getSelection() == 2) { recipeManager.resetCurrentSlot(); triggerLutPreload(); applyHardwareRecipe(); hudController.update(); return;
+                } else if (hudController.getSelection() == 2) {
+                    recipeManager.resetCurrentSlot();
+                    triggerLutPreload(); // Ensure the hardware actually clears the current LUT
+                    applyHardwareRecipe();
+                    hudController.close(); // NEW: Exit HUD immediately after reset
+                    return;
                 } else if (hudController.getSelection() == 3) {
                     if (!hudController.getVaultItems().isEmpty() && !hudController.getVaultItems().get(hudController.getVaultIndex()).filename.equals("NONE")) {
                         menuController.setConfirmingDelete(true); hudController.setSelection(1); hudController.update(); return;
