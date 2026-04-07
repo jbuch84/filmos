@@ -486,8 +486,12 @@ public void onEnterPressed() {
                     }
                 }
             }
-            if (!hudController.isActive()) {
-                hudController.close();
+            
+            // Clean up UI if we exited the HUD naturally (like hitting Confirm Load)
+            if (!hudController.isActive()) { 
+                hudController.hideOverlays(); // Safely clear UI without firing redundant close callbacks
+                menuController.getContainer().setVisibility(View.VISIBLE); 
+                menuController.refreshDisplay(); 
             }
             return;
         }

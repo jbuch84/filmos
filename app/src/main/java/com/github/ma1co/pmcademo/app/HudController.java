@@ -455,10 +455,10 @@ public class HudController {
             else{
                 activeCells=4;labels=new String[]{"SAVE","BROWSE","RESET","DELETE"};
                 vaultItems=host.getRecipeManager().getVaultItems(); if(vaultIndex>=vaultItems.size()||vaultIndex<0) vaultIndex=0;
-                String vn=(vaultItems.isEmpty()||vaultItems.get(0).filename.equals("NONE"))?"EMPTY":vaultItems.get(vaultIndex).profileName;
+                String vn=(vaultItems.isEmpty()||vaultItems.get(vaultIndex).filename.equals("NONE"))?"EMPTY":vaultItems.get(vaultIndex).profileName;
                 if(vn.length()>10) vn=vn.substring(0,8)+"..";
                 values[0]="[ RENAME ]"; values[1]="< "+vn+" >"; values[2]="[ DEFAULT ]";
-                values[3]=(!vaultItems.isEmpty()&&!vaultItems.get(0).filename.equals("NONE"))?"[ TRASH ]":"---";
+                values[3]=(!vaultItems.isEmpty()&&!vaultItems.get(vaultIndex).filename.equals("NONE"))?"[ TRASH ]":"---";
                 if(selection==0) tip="Press ENTER to RENAME and SAVE this Slot to the Vault.";
                 else if(selection==1) tip="Scroll wheel to browse. WARNING: LIVE VIEW will overwrite Slot.";
                 else if(selection==2) tip="Press ENTER to wipe this Slot back to default settings.";
