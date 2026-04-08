@@ -14,80 +14,76 @@ import android.util.Log;
 public class RecipeManager {
     // --- VARIABLES ---
     private File recipeDir;
-    private RTLProfile[] loadedProfiles = new RTLProfile[10]; 
-    private int currentSlot = 0; // This is just the default value on boot
-    
-    private int qualityIndex = 1; 
-    private ArrayList<String> recipePaths = new ArrayList<String>(); 
-    private ArrayList<String> recipeNames = new ArrayList<String>(); 
+    private RTLProfile[] loadedProfiles = new RTLProfile[10];
+    private int currentSlot = 0;
+
+    private int qualityIndex = 1;
+    private ArrayList<String> recipePaths = new ArrayList<String>();
+    private ArrayList<String> recipeNames = new ArrayList<String>();
 
     public RecipeManager() {
         recipeDir = new File(Filepaths.getAppDir(), "RECIPES");
         if (!recipeDir.exists()) recipeDir.mkdirs();
-        
-        scanRecipes(); 
-        loadPreferences(); // <--- This overwrites the '0' with your saved slot
-        loadAllWorkspaces(); 
+
+        scanRecipes();
+        loadPreferences();
+        loadAllWorkspaces();
     }
 
     // --- MAINACTIVITY GETTERS & SETTERS ---
     public int getCurrentSlot() { return currentSlot; }
 
-    // FIX 2: Added savePreferences() so it remembers the slot immediately when changed
-    public void setCurrentSlot(int slot) { 
-        this.currentSlot = (slot + 10) % 10; 
-        savePreferences(); 
-    } 
-    
-    public int getQualityIndex() { return qualityIndex; }
-    public void setQualityIndex(int index) { 
-        this.qualityIndex = (index + 3) % 3; 
+    public void setCurrentSlot(int slot) {
+        this.currentSlot = (slot + 10) % 10;
         savePreferences();
-    } 
-    
+    }
+
+    public int getQualityIndex() { return qualityIndex; }
+    public void setQualityIndex(int index) {
+        this.qualityIndex = (index + 3) % 3;
+        savePreferences();
+    }
+
     public RTLProfile getCurrentProfile() { return loadedProfiles[currentSlot]; }
     public RTLProfile getProfile(int index) { return loadedProfiles[index]; }
-    
+
     public ArrayList<String> getRecipePaths() { return recipePaths; }
     public ArrayList<String> getRecipeNames() { return recipeNames; }
 
     // --- SMART LUT SCANNER (Pretty Names + Long Filename Support) ---
-    public void scanRecipes() { 
-        recipePaths.clear(); 
-        recipeNames.clear(); 
-        recipePaths.add("NONE"); 
-        recipeNames.add("OFF"); 
-        
+    public void scanRecipes() {
+        recipePaths.clear();
+        recipeNames.clear();
+        recipePaths.add("NONE");
+        recipeNames.add("OFF");
+
         for (File root : Filepaths.getStorageRoots()) {
             File lutDir = new File(root, "JPEGCAM/LUTS");
             if (lutDir.exists() && lutDir.isDirectory()) {
                 File[] files = lutDir.listFiles();
                 if (files != null) {
-                    java.util.Arrays.sort(files); 
+                    java.util.Arrays.sort(files);
                     for (File f : files) {
-                        String name = f.getName(); // Original: "Kodak_Portra_400.png"
+                        String name = f.getName();
                         String u = name.toUpperCase();
-                        
-                        // Filter out dots and Mac hidden files, but ALLOW tildes (~) for long names
-                        if (!u.startsWith(".") && !u.startsWith("_") && 
+
+                        if (!u.startsWith(".") && !u.startsWith("_") &&
                             (u.endsWith(".CUB") || u.endsWith(".CUBE") || u.endsWith(".PNG"))) {
-                            
+
                             if (!recipePaths.contains(f.getAbsolutePath())) {
                                 recipePaths.add(f.getAbsolutePath());
-                                
-                                // FIX 1: Strip extension case-insensitively but keep original name casing
+
                                 String prettyName = name.replaceAll("(?i)\\.(cube|cub|png)$", "");
-                                
-                                // If it's a cube, check for an internal TITLE override
+
                                 if (u.endsWith(".CUBE") || u.endsWith(".CUB")) {
                                     try {
                                         BufferedReader br = new BufferedReader(new FileReader(f));
                                         String line;
-                                        for(int j=0; j<10; j++) {
+                                        for (int j = 0; j < 10; j++) {
                                             line = br.readLine();
                                             if (line != null && line.toUpperCase().startsWith("TITLE")) {
                                                 String[] pts = line.split("\"");
-                                                if (pts.length > 1) prettyName = pts[1]; 
+                                                if (pts.length > 1) prettyName = pts[1];
                                                 break;
                                             }
                                         }
@@ -106,7 +102,6 @@ public class RecipeManager {
     // --- WORKSPACE MANAGEMENT ---
     private void loadAllWorkspaces() {
         for (int i = 0; i < 10; i++) {
-            // RESTORED: R_ prefix for web server routing (exactly 8 chars!)
             String filename = String.format("R_SLOT%02d.TXT", i + 1);
             loadedProfiles[i] = loadProfileFromFile(filename, i);
         }
@@ -114,9 +109,8 @@ public class RecipeManager {
 
     private RTLProfile loadProfileFromFile(String filename, int arrayIndex) {
         File file = new File(recipeDir, filename);
-        if (file.getParentFile() == null) file = new File(recipeDir, filename);
-        
-        RTLProfile p = new RTLProfile(arrayIndex); 
+
+        RTLProfile p = new RTLProfile(arrayIndex);
         if (!file.exists()) {
             p.profileName = "SLOT " + (arrayIndex + 1);
             p.advMatrix = new int[]{100, 0, 0, 0, 100, 0, 0, 0, 100};
@@ -133,36 +127,37 @@ public class RecipeManager {
             p.profileName = json.optString("profileName", "RECIPE");
             String loadedLutName = json.optString("lutName", "OFF");
             p.lutIndex = recipeNames.indexOf(loadedLutName);
-            if (p.lutIndex == -1) p.lutIndex = 0; 
-            p.opacity = json.optInt("lutOpacity", 100);
-            p.shadowToe = json.optInt("shadowToe", 0);
-            p.rollOff = json.optInt("rollOff", 0);
-            p.colorChrome = json.optInt("colorChrome", 0);
-            p.chromeBlue = json.optInt("chromeBlue", 0);
-            p.subtractiveSat = json.optInt("subtractiveSat", 0);
-            p.halation = json.optInt("halation", 0);
-            p.vignette = json.optInt("vignette", 0);
-            p.grain = json.optInt("grain", 0);
-            p.grainSize = json.optInt("grainSize", 0);
-            p.contrast = json.optInt("contrast", 0);
-            p.saturation = json.optInt("saturation", 0);
-            p.wbShift = json.optInt("wbShift", 0);
-            p.wbShiftGM = json.optInt("wbShiftGM", 0);
-            p.colorMode = json.optString("colorMode", "Standard");
-            p.whiteBalance = json.optString("whiteBalance", "Auto");
-            p.shadingRed = json.optInt("shadingRed", 0);
-            p.shadingBlue = json.optInt("shadingBlue", 0);
-            p.colorDepthRed = json.optInt("colorDepthRed", 0);
+            if (p.lutIndex == -1) p.lutIndex = 0;
+            p.opacity         = json.optInt("lutOpacity", 100);
+            p.shadowToe       = json.optInt("shadowToe", 0);
+            p.rollOff         = json.optInt("rollOff", 0);
+            p.colorChrome     = json.optInt("colorChrome", 0);
+            p.chromeBlue      = json.optInt("chromeBlue", 0);
+            p.subtractiveSat  = json.optInt("subtractiveSat", 0);
+            p.halation        = json.optInt("halation", 0);
+            p.vignette        = json.optInt("vignette", 0);
+            p.grain           = json.optInt("grain", 0);
+            p.grainSize       = json.optInt("grainSize", 0);
+            p.diffusion       = json.optInt("diffusion", 0);
+            p.contrast        = json.optInt("contrast", 0);
+            p.saturation      = json.optInt("saturation", 0);
+            p.wbShift         = json.optInt("wbShift", 0);
+            p.wbShiftGM       = json.optInt("wbShiftGM", 0);
+            p.colorMode       = json.optString("colorMode", "Standard");
+            p.whiteBalance    = json.optString("whiteBalance", "Auto");
+            p.shadingRed      = json.optInt("shadingRed", 0);
+            p.shadingBlue     = json.optInt("shadingBlue", 0);
+            p.colorDepthRed   = json.optInt("colorDepthRed", 0);
             p.colorDepthGreen = json.optInt("colorDepthGreen", 0);
-            p.colorDepthBlue = json.optInt("colorDepthBlue", 0);
-            p.colorDepthCyan = json.optInt("colorDepthCyan", 0);
+            p.colorDepthBlue  = json.optInt("colorDepthBlue", 0);
+            p.colorDepthCyan  = json.optInt("colorDepthCyan", 0);
             p.colorDepthMagenta = json.optInt("colorDepthMagenta", 0);
-            p.colorDepthYellow = json.optInt("colorDepthYellow", 0);
-            p.dro = json.optString("dro", "OFF");
-            p.pictureEffect = json.optString("pictureEffect", "off");
-            p.proColorMode = json.optString("proColorMode", "off");
-            p.sharpness = json.optInt("sharpness", 0);
-            p.sharpnessGain = json.optInt("sharpnessGain", 0);
+            p.colorDepthYellow  = json.optInt("colorDepthYellow", 0);
+            p.dro             = json.optString("dro", "OFF");
+            p.pictureEffect   = json.optString("pictureEffect", "off");
+            p.proColorMode    = json.optString("proColorMode", "off");
+            p.sharpness       = json.optInt("sharpness", 0);
+            p.sharpnessGain   = json.optInt("sharpnessGain", 0);
             p.vignetteHardware = json.optInt("vignetteHardware", 0);
             JSONArray arr = json.optJSONArray("advMatrix");
             if (arr != null && arr.length() == 9) {
@@ -191,6 +186,7 @@ public class RecipeManager {
             sb.append("  \"vignette\": ").append(p.vignette).append(",\n");
             sb.append("  \"grain\": ").append(p.grain).append(",\n");
             sb.append("  \"grainSize\": ").append(p.grainSize).append(",\n");
+            sb.append("  \"diffusion\": ").append(p.diffusion).append(",\n");
             sb.append("  \"contrast\": ").append(p.contrast).append(",\n");
             sb.append("  \"saturation\": ").append(p.saturation).append(",\n");
             sb.append("  \"wbShift\": ").append(p.wbShift).append(",\n");
@@ -222,7 +218,6 @@ public class RecipeManager {
     }
 
     public void loadPreferences() {
-        // FIX: 8.3 Compliance (PREFS is 5 chars)
         File prefsFile = new File(recipeDir, "PREFS.TXT");
         if (prefsFile.exists()) {
             try {
@@ -245,7 +240,6 @@ public class RecipeManager {
             fos.close();
 
             if (loadedProfiles[currentSlot] != null) {
-                // RESTORED: R_ prefix
                 String filename = String.format("R_SLOT%02d.TXT", currentSlot + 1);
                 File file = new File(recipeDir, filename);
                 saveProfileToFile(file, loadedProfiles[currentSlot]);
@@ -267,10 +261,9 @@ public class RecipeManager {
         if (all != null) {
             for (File f : all) {
                 String n = f.getName().toUpperCase();
-                // HIDE all scratchpads (R_SLOT) and system files from the Vault
                 if (!n.endsWith(".TXT") || n.startsWith("R_SLOT") || n.equals("PREFS.TXT")) continue;
 
-                String pName = n.replace(".TXT", ""); 
+                String pName = n.replace(".TXT", "");
                 try {
                     BufferedReader br = new BufferedReader(new FileReader(f));
                     String line;
@@ -294,24 +287,19 @@ public class RecipeManager {
         return vaultItems;
     }
 
-    // --- NEW: DELETE RECIPE FROM VAULT ---
     public void deleteVaultItem(int index) {
         if (index >= 0 && index < vaultItems.size()) {
             VaultItem item = vaultItems.get(index);
             if (!item.filename.equals("NONE")) {
                 File file = new File(recipeDir, item.filename);
-                if (file.exists()) {
-                    file.delete();
-                }
-                scanVault(); // Refresh the list
+                if (file.exists()) file.delete();
+                scanVault();
             }
         }
     }
 
-    // --- NEW: PREVIEW MODE (MEMORY ONLY) ---
     public void previewVaultToSlot(String vaultFilename) {
         if (vaultFilename.equals("NONE") || vaultFilename.equals("NO VAULT RECIPES")) return;
-        // This updates the live view memory but DOES NOT write to disk
         loadedProfiles[currentSlot] = loadProfileFromFile(vaultFilename, currentSlot);
     }
 
@@ -339,11 +327,10 @@ public class RecipeManager {
                 targetFile = base + String.format("%02d", count++) + ".TXT";
             } while (new File(recipeDir, targetFile).exists() && count < 100);
         }
-        
+
         RTLProfile p = loadedProfiles[currentSlot];
         p.profileName = newPrettyName;
-        // FIXED: Build error - File argument must come first
-        saveProfileToFile(new File(recipeDir, targetFile), p); 
+        saveProfileToFile(new File(recipeDir, targetFile), p);
         scanVault();
     }
 }
