@@ -46,79 +46,67 @@ inline uint32_t fast_rand(uint32_t* state) {
 //
 // FIXED: Handled YUV offsets and prevented integer overflow/wrap-around.
 // ==========================================
+// ==========================================
+// OPTICAL BLOOM & TRUE HALATION ENGINE V5 (PHYSICALLY BASED)
+// ==========================================
 inline void apply_bloom_halation(
     unsigned char** rows, uint8_t* out_row, int width, int abs_y, bool is_yuv, int bloom, int halation, uint32_t seed,
     int* work_0, int* work_1, int* work_2, int* work_h, int* h_line, int scaleDenom)
 {
-    // BLOOM RADIUS (IIR Alpha) - Resolution Aware Scaling
-    // Mathematically shrinks the blur spread for PROXY/HALF to match FULL visual radius
+    // 1. Resolution-Aware Alphas
     int alpha;
     if (bloom == 1) alpha = (scaleDenom == 4) ? 214 : ((scaleDenom == 2) ? 232 : 245);
     else            alpha = (scaleDenom == 4) ? 240 : ((scaleDenom == 2) ? 246 : 252);
     int inv_alpha = 256 - alpha;
 
-    if (!work_0 || !work_1 || !work_2 || !work_h) {
-        return;
-    }
+    int h_alpha;
+    if (halation == 1) h_alpha = (scaleDenom == 4) ? 140 : ((scaleDenom == 2) ? 180 : 220);
+    else               h_alpha = (scaleDenom == 4) ? 197 : ((scaleDenom == 2) ? 221 : 240);
+    int inv_h = 256 - h_alpha;
 
-    // 1. Vertical Summation (Weighted Triangle / Gaussian Approximation)
+    if (!work_0 || !work_h) return;
+
+    // 2. Vertical Summation: Extracting Pure Light Maps
     for (int x = 0; x < width; x++) {
-        long long s0 = 0, s1 = 0, s2 = 0, sh = 0;
+        long long s0 = 0, sh = 0;
         for (int y = 0; y <= 20; y++) {
-            int w = (y <= 10) ? (y + 1) : (21 - y); // Weights: 1 to 11 (center) to 1
-            int v0 = rows[y][x*3];
-            int v1 = rows[y][x*3+1];
-            int v2 = rows[y][x*3+2];
+            int w = (y <= 10) ? (y + 1) : (21 - y); // Triangle weight
+            int v0 = rows[y][x*3], v1 = rows[y][x*3+1], v2 = rows[y][x*3+2];
             
-            // Fix: Treat all values as 0-255 positive to avoid negative truncation bugs
-            s0 += v0 * w; 
-            s1 += v1 * w; 
-            s2 += v2 * w;
-            
+            // Calculate true brightness (Luma)
             int lum = is_yuv ? v0 : ((v0*77 + v1*150 + v2*29) / 256);
-            if (lum > 225) sh += (lum - 225) * w;
+
+            s0 += lum * w; // Bloom: Collect all light
+            
+            // Halation: Only collect extreme highlights (Luma > 210) and amplify
+            if (lum > 210) {
+                sh += (lum - 210) * 5 * w; 
+            }
         }
-        work_0[x] = (int)(s0 / 121); 
-        work_1[x] = (int)(s1 / 121); 
-        work_2[x] = (int)(s2 / 121);
-        work_h[x] = (int)sh; // Keep full precision (0-3630) to prevent IIR degradation
+        work_0[x] = (int)(s0 / 121); // work_0 is now a soft Luma Map
+        work_h[x] = (int)(sh / 121); // work_h is now a dense Highlight Map
     }
 
-    // 2. Horizontal IIR Bloom
+    // 3. Horizontal IIR Blur (Spreading the light maps)
     if (bloom > 0) {
-        // Forward
-        int a0 = work_0[0], a1 = work_1[0], a2 = work_2[0];
+        int a0 = work_0[0];
         for (int x = 1; x < width; x++) {
-            // Fix: Add +128 to force round-to-nearest and stop deadbands
             a0 = (a0 * alpha + work_0[x] * inv_alpha + 128) / 256;
-            a1 = (a1 * alpha + work_1[x] * inv_alpha + 128) / 256;
-            a2 = (a2 * alpha + work_2[x] * inv_alpha + 128) / 256;
-            work_0[x] = a0; work_1[x] = a1; work_2[x] = a2;
+            work_0[x] = a0;
         }
-        // Backward
-        a0 = work_0[width-1]; a1 = work_1[width-1]; a2 = work_2[width-1];
+        a0 = work_0[width-1];
         for (int x = width-2; x >= 0; x--) {
             a0 = (a0 * alpha + work_0[x] * inv_alpha + 128) / 256;
-            a1 = (a1 * alpha + work_1[x] * inv_alpha + 128) / 256;
-            a2 = (a2 * alpha + work_2[x] * inv_alpha + 128) / 256;
-            work_0[x] = a0; work_1[x] = a1; work_2[x] = a2;
+            work_0[x] = a0;
         }
     }
 
-    // 3. Horizontal Halation
     if (halation > 0) {
-        int h_alpha;
-        if (halation == 1) h_alpha = (scaleDenom == 4) ? 140 : ((scaleDenom == 2) ? 180 : 220);
-        else               h_alpha = (scaleDenom == 4) ? 197 : ((scaleDenom == 2) ? 221 : 240);
-        int inv_h = 256 - h_alpha;
-        
-        // Forward
         int ah = work_h[0];
         for (int x = 1; x < width; x++) {
             ah = (ah * h_alpha + work_h[x] * inv_h + 128) / 256;
             work_h[x] = ah;
         }
-        // Backward
         ah = work_h[width-1];
         for (int x = width-2; x >= 0; x--) {
             ah = (ah * h_alpha + work_h[x] * inv_h + 128) / 256;
@@ -126,37 +114,41 @@ inline void apply_bloom_halation(
         }
     }
 
-    // 4. Reconstruction
+    // 4. Volumetric Reconstruction
+    int b_mix = (bloom == 1) ? 90 : 160; 
+    int h_mix = (halation == 1) ? 120 : 200; 
+
     for (int x = 0; x < width; x++) {
         int v0_o = rows[10][x*3], v1_o = rows[10][x*3+1], v2_o = rows[10][x*3+2];
-        int mix = (bloom == 1) ? 70 : 140; // Softened mix slightly for organic blend
+        int orig_y = is_yuv ? v0_o : ((v0_o*77 + v1_o*150 + v2_o*29)/256);
+
+        // Bloom Bleed: How much brighter is the glow map than the original pixel?
+        int b_bleed = work_0[x] - orig_y;
+        if (b_bleed < 0) b_bleed = 0;
+
+        // Halation Core Protection: Fade out the red dye if the base pixel is bright white.
+        // This ensures Halation only lives on the edges/shadows, leaving the core pure white.
+        int h_eff = (work_h[x] * h_mix) / 256;
+        h_eff = (h_eff * (255 - orig_y)) / 256; 
 
         if (is_yuv) {
-            // YUV Path: 0=Y, 1=Cb, 2=Cr (Now safely kept in 0-255 domain)
             int y_res = v0_o, cb_res = v1_o, cr_res = v2_o;
 
-            if (bloom > 0) {
-                cb_res = (cb_res * (256 - mix) + work_1[x] * mix) / 256;
-                cr_res = (cr_res * (256 - mix) + work_2[x] * mix) / 256;
-                y_res  = (y_res * (256 - mix) + work_0[x] * mix) / 256;
+            if (bloom > 0 && b_bleed > 0) {
+                int add_y = (b_bleed * b_mix) / 256;
+                y_res += add_y;
                 
-                // KODAK BLOOM: Tint scattered light golden-orange
-                int bleed = work_0[x] - v0_o; // Positive when light bleeds into shadows
-                if (bleed > 0) {
-                    int warm_push = (bleed * mix) / 128;
-                    cr_res += warm_push;        // Push Red
-                    cb_res -= warm_push;        // Pull Blue (Creates Yellow)
-                    y_res  += warm_push / 4;    // Slight luma bump
-                }
+                // Cinematic Diffusion: Pull chroma naturally toward neutral gray (128) as it blooms white
+                cb_res = cb_res + ((128 - cb_res) * add_y) / 256;
+                cr_res = cr_res + ((128 - cr_res) * add_y) / 256;
             }
 
-            if (halation > 0 && work_h[x] > 0) {
-                // Fix: Scale down the high-precision work_h value back to visual ranges
-                int hl = work_h[x] / ((halation == 1) ? 40 : 20);
-                y_res  += hl / 4;      
-                cr_res += hl;          // Strong Red
-                cb_res -= hl / 4;      
+            if (halation > 0 && h_eff > 0) {
+                y_res += h_eff / 3;     // Slight brightness bump
+                cr_res += h_eff;        // Massive push to pure Red
+                cb_res -= h_eff / 2;    // Pull blue away to keep it warm
             }
+
             out_row[x*3]   = (uint8_t)CLAMP(y_res);
             out_row[x*3+1] = (uint8_t)CLAMP(cb_res);
             out_row[x*3+2] = (uint8_t)CLAMP(cr_res);
@@ -164,30 +156,19 @@ inline void apply_bloom_halation(
             // RGB Path
             int r_res = v0_o, g_res = v1_o, b_res = v2_o;
 
-            if (bloom > 0) {
-                r_res = (r_res * (256 - mix) + work_0[x] * mix) / 256;
-                g_res = (g_res * (256 - mix) + work_1[x] * mix) / 256;
-                b_res = (b_res * (256 - mix) + work_2[x] * mix) / 256;
-
-                // Approximate Luma Bleed for RGB path
-                int blur_luma = (work_0[x]*77 + work_1[x]*150 + work_2[x]*29)/256;
-                int orig_luma = (v0_o*77 + v1_o*150 + v2_o*29)/256;
-                int bleed = blur_luma - orig_luma;
-                
-                if (bleed > 0) {
-                    int warm_push = (bleed * mix) / 128;
-                    r_res += warm_push;             // Push Red
-                    g_res += warm_push / 2;         // Push Green (Red+Green = Orange)
-                    b_res -= warm_push / 2;         // Pull Blue
-                }
+            if (bloom > 0 && b_bleed > 0) {
+                int add = (b_bleed * b_mix) / 256;
+                r_res += add;
+                g_res += add;
+                b_res += add;
             }
 
-            if (halation > 0 && work_h[x] > 0) {
-                int hl = work_h[x] / ((halation == 1) ? 40 : 20);
-                r_res += hl;           // Strong Red
-                g_res += hl / 4;       
-                b_res -= hl / 4;
+            if (halation > 0 && h_eff > 0) {
+                r_res += h_eff;         // Pure Red
+                g_res += h_eff / 5;     // Tiny bit of green for orange fade
+                b_res -= h_eff / 5;     
             }
+
             out_row[x*3]   = (uint8_t)CLAMP(r_res);
             out_row[x*3+1] = (uint8_t)CLAMP(g_res);
             out_row[x*3+2] = (uint8_t)CLAMP(b_res);
