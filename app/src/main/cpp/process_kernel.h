@@ -419,6 +419,16 @@ inline int form_grain_luma_core(int centerY, int leftY, int rightY, int x, int a
 
     int grainTerm = grain_profile_sample(x, abs_y, profileIndex, flat, amp, seed);
 
+    // --- ANALOG SHOULDER (EMULSION LIMITER) ---
+    // Protects the original Portra model from hard-clipping when the 
+    // user pushes the in-camera menu to MAX Amount or LARGE Size.
+    int limit = 64; 
+    if (grainTerm > limit) {
+        grainTerm = limit + ((grainTerm - limit) * 3) / 8;
+    } else if (grainTerm < -limit) {
+        grainTerm = -limit - ((-limit - grainTerm) * 3) / 8;
+    }
+
     int darkBase = std::max(0, 156 - densityY);
     int sceneExposure = std::max(0, blurY - 48);
     int lateDarkSurfaceBoost = ((darkBase * sceneExposure + 128) >> 8) + (std::max(0, flat - 168) >> 2) - (edge << 1);
