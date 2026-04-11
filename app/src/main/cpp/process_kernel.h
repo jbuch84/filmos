@@ -81,9 +81,9 @@ inline int signed_hash8_xy(int x, int y, uint32_t seed) {
 inline int grain_amount_mask(int y);
 
 struct BakedGrainAtlas {
-    int size = 128;
-    int mask = 127;
-    bool ready = false;
+    int size;
+    int mask;
+    bool ready;
     std::vector<int8_t> fine;
     std::vector<int8_t> medium;
     std::vector<int8_t> coarse;
@@ -95,6 +95,8 @@ struct BakedGrainAtlas {
     std::vector<int8_t> midOpen;
     std::vector<int8_t> brightOpen;
     std::vector<int8_t> highDense;
+
+    BakedGrainAtlas() : size(128), mask(127), ready(false) {}
 };
 
 inline void blur_field(std::vector<float>& field, int size, int passes) {
@@ -165,7 +167,7 @@ inline void generate_correlated_template(std::vector<int8_t>& out, int size, uin
 
     out.resize(count);
     for (int i = 0; i < count; ++i) {
-        int v = (int)std::lround((double(a[i]) - mean) * scale);
+        int v = (int)lround((double(a[i]) - mean) * scale);
         if (v < -127) v = -127;
         if (v > 127) v = 127;
         out[i] = (int8_t)v;
@@ -231,7 +233,7 @@ inline void generate_point_template(std::vector<int8_t>& out, int size, uint32_t
 
     out.resize(count);
     for (int i = 0; i < count; ++i) {
-        int v = (int)std::lround((double(field[i]) - mean) * scale);
+        int v = (int)lround((double(field[i]) - mean) * scale);
         if (v < -127) v = -127;
         if (v > 127) v = 127;
         out[i] = (int8_t)v;
@@ -265,7 +267,7 @@ inline void build_carrier_template(std::vector<int8_t>& out, int size, const std
 
     out.resize(count);
     for (int i = 0; i < count; ++i) {
-        int v = (int)std::lround((double(field[i]) - mean) * scale);
+        int v = (int)lround((double(field[i]) - mean) * scale);
         if (v < -127) v = -127;
         if (v > 127) v = 127;
         out[i] = (int8_t)v;
