@@ -86,11 +86,12 @@ public class ConnectivityManager {
         } catch (Exception e) {}
     }
 
-    private void waitForHardwareAndExecute(final Runnable action) {
+    private void waitForHardwareAndExecute(final boolean requireWifiOn, final Runnable action) {
         wakeUpSonyWifiHardware();
 
-        if (wifiManager.isWifiEnabled()) {
-            action.run();
+        if (wifiManager.isWifiEnabled() == requireWifiOn) {
+            // Already in desired state, wait a tiny bit for stability and run
+            new Handler().postDelayed(action, 500);
             return;
         }
 
@@ -102,23 +103,25 @@ public class ConnectivityManager {
             public void onReceive(Context ctx, Intent intent) {
                 if (WifiManager.WIFI_STATE_CHANGED_ACTION.equals(intent.getAction())) {
                     int state = intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN);
-                    if (state == WifiManager.WIFI_STATE_ENABLED) {
+                    int targetState = requireWifiOn ? WifiManager.WIFI_STATE_ENABLED : WifiManager.WIFI_STATE_DISABLED;
+                    
+                    if (state == targetState) {
                         unregisterReceiverSafe(hardwareBootReceiver);
                         hardwareBootReceiver = null;
-                        new Handler().postDelayed(action, 1000);
+                        new Handler().postDelayed(action, 1000); // Wait 1 second for hardware to settle
                     }
                 }
             }
         };
         context.registerReceiver(hardwareBootReceiver, new IntentFilter(WifiManager.WIFI_STATE_CHANGED_ACTION));
-        wifiManager.setWifiEnabled(true);
+        wifiManager.setWifiEnabled(requireWifiOn);
     }
 
     public void startHomeWifi() {
         stopNetworking(); 
         isHomeWifiRunning = true;
 
-        waitForHardwareAndExecute(new Runnable() {
+        waitForHardwareAndExecute(true, new Runnable() {
             @Override
             public void run() {
                 if (!isHomeWifiRunning) return;
@@ -163,117 +166,134 @@ public class ConnectivityManager {
         stopNetworking(); 
         isHotspotRunning = true;
 
-        waitForHardwareAndExecute(new Runnable() {
-            @Override
-            public void run() {
-                if (!isHotspotRunning) return;
-                updateStatus("HOTSPOT", "Starting Hotspot...");
+        // Safely determine generation (Gen 2 uses Direct, Gen 3 uses standard AP)
+        boolean useDirectManager = false;
+        try {
+            if (context.getSystemService(DirectManager.WIFI_DIRECT_SERVICE) != null) {
+                useDirectManager = true;
+            }
+        } catch (Throwable t) {}
 
-                if (directManager == null) {
-                    directManager = (DirectManager) context.getSystemService(DirectManager.WIFI_DIRECT_SERVICE);
+        if (useDirectManager) {
+            // GEN 2 (e.g. A5100) - Requires standard Wifi to be ON first
+            waitForHardwareAndExecute(true, new Runnable() {
+                @Override
+                public void run() {
+                    startHotspotGen2();
                 }
+            });
+        } else {
+            // GEN 3 (e.g. A6500) - Requires standard Wifi to be OFF for AP mode to work
+            waitForHardwareAndExecute(false, new Runnable() {
+                @Override
+                public void run() {
+                    startHotspotGen3();
+                }
+            });
+        }
+    }
 
-                if (directManager != null) {
-                    directStateReceiver = new BroadcastReceiver() {
-                        @Override
-                        public void onReceive(Context context, Intent intent) {
-                            if (intent.getIntExtra(DirectManager.EXTRA_DIRECT_STATE, DirectManager.DIRECT_STATE_UNKNOWN) == DirectManager.DIRECT_STATE_ENABLED) {
-                                List<DirectConfiguration> configs = directManager.getConfigurations();
-                                if (configs != null && !configs.isEmpty()) {
-                                    directManager.startGo(configs.get(configs.size() - 1).getNetworkId());
-                                } else {
-                                    updateStatus("HOTSPOT", "Error: No Configs");
-                                    stopNetworking();
-                                }
-                            }
-                        }
-                    };
-                    
-                    groupCreateSuccessReceiver = new BroadcastReceiver() {
-                        @Override
-                        public void onReceive(Context context, Intent intent) {
-                            DirectConfiguration config = intent.getParcelableExtra(DirectManager.EXTRA_DIRECT_CONFIG);
-                            if (config != null) {
-                                
-                                // --- THE ULTIMATE PASSWORD EXTRACTOR ---
-                                String password = "N/A";
-                                String[] methodNames = {"getPassphrase", "getPassword", "getNetworkKey", "getPreSharedKey"};
-                                
-                                // 1. Try standard known Sony names
-                                for (String methodName : methodNames) {
-                                    try {
-                                        Method m = config.getClass().getMethod(methodName);
-                                        m.setAccessible(true);
-                                        String val = (String) m.invoke(config);
-                                        if (val != null && val.length() >= 8) {
-                                            password = val;
-                                            break;
-                                        }
-                                    } catch (Exception e) {}
-                                }
-                                
-                                // 2. Fallback: Search all methods for anything returning an 8+ char string
-                                if ("N/A".equals(password)) {
-                                    try {
-                                        for (Method m : config.getClass().getMethods()) {
-                                            if (m.getReturnType() == String.class && m.getParameterTypes().length == 0) {
-                                                m.setAccessible(true);
-                                                String val = (String) m.invoke(config);
-                                                if (val != null && val.length() >= 8 && !val.contains("DIRECT-")) {
-                                                    password = val;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    } catch (Exception e) {}
-                                }
-                                
-                                updateStatus("HOTSPOT", "PW: " + password + " (192.168.122.1)");
-                                setAutoPowerOffMode(false); 
-                            }
-                        }
-                    };
+    private void startHotspotGen2() {
+        if (!isHotspotRunning) return;
+        updateStatus("HOTSPOT", "Starting Hotspot...");
 
-                    groupCreateFailureReceiver = new BroadcastReceiver() {
-                        @Override
-                        public void onReceive(Context context, Intent intent) {
-                            updateStatus("HOTSPOT", "Hardware Error: Retry");
-                            stopNetworking();
-                        }
-                    };
-                    
-                    context.registerReceiver(directStateReceiver, new IntentFilter(DirectManager.DIRECT_STATE_CHANGED_ACTION));
-                    context.registerReceiver(groupCreateSuccessReceiver, new IntentFilter(DirectManager.GROUP_CREATE_SUCCESS_ACTION));
-                    context.registerReceiver(groupCreateFailureReceiver, new IntentFilter(DirectManager.GROUP_CREATE_FAILURE_ACTION));
+        if (directManager == null) {
+            directManager = (DirectManager) context.getSystemService(DirectManager.WIFI_DIRECT_SERVICE);
+        }
 
-                    directManager.setDirectEnabled(true);
-                } else {
-                    // --- GEN 3 FALLBACK (A7II / A6500) ---
-                    try {
-                        if (wifiManager.isWifiEnabled()) wifiManager.setWifiEnabled(false);
-                        Method setWifiApEnabled = wifiManager.getClass().getMethod("setWifiApEnabled", WifiConfiguration.class, boolean.class);
-                        boolean success = (Boolean) setWifiApEnabled.invoke(wifiManager, null, true);
-                        
-                        if (success) {
-                            Method getWifiApConfiguration = wifiManager.getClass().getMethod("getWifiApConfiguration");
-                            WifiConfiguration apConfig = (WifiConfiguration) getWifiApConfiguration.invoke(wifiManager);
-                            if (apConfig != null) {
-                                updateStatus("HOTSPOT", "PW: " + apConfig.preSharedKey + " (192.168.43.1)");
-                            } else {
-                                updateStatus("HOTSPOT", "Connect Phone (192.168.43.1)");
-                            }
-                            setAutoPowerOffMode(false);
-                        } else {
-                            updateStatus("HOTSPOT", "Hardware Unsupported");
-                            isHotspotRunning = false;
-                        }
-                    } catch (Exception e) {
-                        updateStatus("HOTSPOT", "Error: " + e.getMessage());
-                        isHotspotRunning = false;
+        directStateReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (intent.getIntExtra(DirectManager.EXTRA_DIRECT_STATE, DirectManager.DIRECT_STATE_UNKNOWN) == DirectManager.DIRECT_STATE_ENABLED) {
+                    List<DirectConfiguration> configs = directManager.getConfigurations();
+                    if (configs != null && !configs.isEmpty()) {
+                        directManager.startGo(configs.get(configs.size() - 1).getNetworkId());
+                    } else {
+                        updateStatus("HOTSPOT", "Error: No Configs");
+                        stopNetworking();
                     }
                 }
             }
-        });
+        };
+        
+        groupCreateSuccessReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                DirectConfiguration config = intent.getParcelableExtra(DirectManager.EXTRA_DIRECT_CONFIG);
+                if (config != null) {
+                    String password = "N/A";
+                    String[] methodNames = {"getPassphrase", "getPassword", "getNetworkKey", "getPreSharedKey"};
+                    for (String methodName : methodNames) {
+                        try {
+                            Method m = config.getClass().getMethod(methodName);
+                            m.setAccessible(true);
+                            String val = (String) m.invoke(config);
+                            if (val != null && val.length() >= 8) {
+                                password = val;
+                                break;
+                            }
+                        } catch (Exception e) {}
+                    }
+                    if ("N/A".equals(password)) {
+                        try {
+                            for (Method m : config.getClass().getMethods()) {
+                                if (m.getReturnType() == String.class && m.getParameterTypes().length == 0) {
+                                    m.setAccessible(true);
+                                    String val = (String) m.invoke(config);
+                                    if (val != null && val.length() >= 8 && !val.contains("DIRECT-")) {
+                                        password = val;
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {}
+                    }
+                    updateStatus("HOTSPOT", "PW: " + password + " (192.168.122.1)");
+                    setAutoPowerOffMode(false); 
+                }
+            }
+        };
+
+        groupCreateFailureReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                updateStatus("HOTSPOT", "Hardware Error: Retry");
+                stopNetworking();
+            }
+        };
+        
+        context.registerReceiver(directStateReceiver, new IntentFilter(DirectManager.DIRECT_STATE_CHANGED_ACTION));
+        context.registerReceiver(groupCreateSuccessReceiver, new IntentFilter(DirectManager.GROUP_CREATE_SUCCESS_ACTION));
+        context.registerReceiver(groupCreateFailureReceiver, new IntentFilter(DirectManager.GROUP_CREATE_FAILURE_ACTION));
+
+        directManager.setDirectEnabled(true);
+    }
+
+    private void startHotspotGen3() {
+        if (!isHotspotRunning) return;
+        updateStatus("HOTSPOT", "Starting Hotspot...");
+
+        try {
+            Method setWifiApEnabled = wifiManager.getClass().getMethod("setWifiApEnabled", WifiConfiguration.class, boolean.class);
+            boolean success = (Boolean) setWifiApEnabled.invoke(wifiManager, null, true);
+            
+            if (success) {
+                Method getWifiApConfiguration = wifiManager.getClass().getMethod("getWifiApConfiguration");
+                WifiConfiguration apConfig = (WifiConfiguration) getWifiApConfiguration.invoke(wifiManager);
+                if (apConfig != null) {
+                    updateStatus("HOTSPOT", "PW: " + apConfig.preSharedKey + " (192.168.43.1)");
+                } else {
+                    updateStatus("HOTSPOT", "Connect Phone (192.168.43.1)");
+                }
+                setAutoPowerOffMode(false);
+            } else {
+                updateStatus("HOTSPOT", "Hardware Unsupported");
+                isHotspotRunning = false;
+            }
+        } catch (Exception e) {
+            updateStatus("HOTSPOT", "Error: " + e.getMessage());
+            isHotspotRunning = false;
+        }
     }
 
     private void unregisterReceiverSafe(BroadcastReceiver receiver) {

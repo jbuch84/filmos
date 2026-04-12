@@ -1272,7 +1272,14 @@ public void onEnterPressed() {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        System.exit(0); // Restored to clear memory leaks on shutdown
+        
+        // CRITICAL: Shut down the networking and hardware antenna FIRST
+        // to prevent battery drain after the app closes.
+        if (connectivityManager != null) {
+            connectivityManager.shutdown();
+        }
+
+        System.exit(0); // THEN exit to clear memory leaks
     }
     
     private void setHUDVisibility(int v) { 
