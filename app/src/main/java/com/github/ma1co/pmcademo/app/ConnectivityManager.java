@@ -179,7 +179,9 @@ public class ConnectivityManager {
 
                 if (directManager == null) {
                     // Safe to fetch now, hardware is awake.
-                    directManager = (DirectManager) context.getSystemService(DirectManager.WIFI_DIRECT_SERVICE);
+                    // CRITICAL FIX: Android 4.1+ (A7II/A6500) strictly requires the Application Context
+                    // to retrieve Sony system services. Android 2.3 (A5100) was more lenient.
+                    directManager = (DirectManager) context.getApplicationContext().getSystemService(DirectManager.WIFI_DIRECT_SERVICE);
                 }
 
                 if (directManager == null) {
