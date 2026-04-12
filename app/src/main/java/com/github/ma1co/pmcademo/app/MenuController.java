@@ -588,7 +588,7 @@ public class MenuController {
                 setRow(5, "Halation (Red Glow)",    p.halation==0?"OFF":(p.halation==1?"WEAK":"STRONG"));
                 
                 // NEW ROW ADDED HERE
-                setRow(6, "Diffusion",              p.bloom==0?"OFF":(p.bloom==1?"1/4":"1/2"));
+                setRow(6, "Diffusion", p.bloom == 0 ? "OFF" : (p.bloom == 1 ? "Local 1/4" : (p.bloom == 2 ? "Full 1/4" : (p.bloom == 3 ? "Local 1/2" : "Full 1/2"))));
             }
         }
         if (currentPage == 6) {

@@ -23,7 +23,7 @@
 // vignette, 0, 5
 // grain, 0, 5
 // grainSize, 0, 2
-// bloom, 0, 2
+// bloom, 0, 4
 // === END_METADATA ===
 
 // --- SHARED HELPERS ---
@@ -508,13 +508,27 @@ inline void apply_bloom_halation(
     unsigned char** rows, uint8_t* out_row, int width, int abs_y, bool is_yuv, int bloom, int halation, uint32_t seed,
     int* work_0, int* work_1, int* work_2, int* work_h, int* h_line, int scaleDenom)
 {
-    // 1. Resolution-Aware Alphas
-    int alpha;
-    if (bloom == 1) alpha = (scaleDenom == 4) ? 214 : ((scaleDenom == 2) ? 232 : 245);
-    else            alpha = (scaleDenom == 4) ? 240 : ((scaleDenom == 2) ? 246 : 252);
+    // 1. Resolution-Aware Alphas & Intensities
+    int alpha, b_mix;
+    
+    if (bloom == 1) {        // Local 1/4 (Tight radius, subtle mix)
+        alpha = (scaleDenom == 4) ? 180 : ((scaleDenom == 2) ? 210 : 230);
+        b_mix = 90;
+    } else if (bloom == 2) { // Full 1/4 (Wide radius, subtle mix)
+        alpha = (scaleDenom == 4) ? 230 : ((scaleDenom == 2) ? 245 : 252);
+        b_mix = 90;
+    } else if (bloom == 3) { // Local 1/2 (Tight radius, heavy mix)
+        alpha = (scaleDenom == 4) ? 180 : ((scaleDenom == 2) ? 210 : 230);
+        b_mix = 160;
+    } else if (bloom == 4) { // Full 1/2 (Wide radius, heavy mix)
+        alpha = (scaleDenom == 4) ? 230 : ((scaleDenom == 2) ? 245 : 252);
+        b_mix = 160;
+    } else {
+        alpha = 0; b_mix = 0;
+    }
     int inv_alpha = 256 - alpha;
 
-    int h_alpha;
+    // Halation alpha remains independent
     if (halation == 1) h_alpha = (scaleDenom == 4) ? 140 : ((scaleDenom == 2) ? 180 : 220);
     else               h_alpha = (scaleDenom == 4) ? 197 : ((scaleDenom == 2) ? 221 : 240);
     int inv_h = 256 - h_alpha;
@@ -572,7 +586,6 @@ inline void apply_bloom_halation(
     }
 
     // 4. Volumetric Reconstruction
-    int b_mix = (bloom == 1) ? 90 : 160; 
     int h_mix = (halation == 1) ? 120 : 200; 
 
     for (int x = 0; x < width; x++) {
