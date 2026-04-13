@@ -384,25 +384,42 @@ inline const std::vector<int8_t>& atlas_profile_for_index(const BakedGrainAtlas&
     }
 }
 
-// Bypasses the fine-heavy pre-baked composites to manually 
-// mix spatial frequencies based on the chosen Film Stock.
-// --- V11 ANTI-TILING COMPOSITOR ---
-// --- THE TRUE BILINEAR SAMPLER ---
-inline int grain_profile_sample(int sx_fp8, int sy_fp8, int profileIndex, int flatness, int amp, uint32_t seed) {
+
+// --- THE TRUE ISO EMULSION MIXER ---
+inline int grain_profile_sample(int sx, int sy, int flatness, int amp, uint32_t seed, int grainSize) {
     if (amp <= 0) return 0;
     const BakedGrainAtlas& atlas = baked_grain_atlas();
     
-    // Engine's built in organic warping
-    int warp = sample_atlas_template(atlas.coarse, atlas.mask, (sy_fp8 >> 17), (sx_fp8 >> 17)) >> 3;
+    // Organic emulsion warp
+    int warp = sample_atlas_template(atlas.coarse, atlas.mask, (sy >> 9), (sx >> 9)) >> 3;
 
-    int phase0x = int(seed & (uint32_t)atlas.mask) + warp;
-    int phase0y = int((seed >> 8) & (uint32_t)atlas.mask) - warp;
+    int p0x = int(seed & (uint32_t)atlas.mask) + warp;
+    int p0y = int((seed >> 8) & (uint32_t)atlas.mask) - warp;
 
-    int p0x = phase0x << 8;
-    int p0y = phase0y << 8;
-
-    int sample = sample_atlas_bilinear(atlas_profile_for_index(atlas, profileIndex), atlas.mask, sx_fp8 + p0x, sy_fp8 + p0y);
+    // Pull the raw spatial frequency maps
+    int s_fine = sample_atlas_template(atlas.fine, atlas.mask, sx + p0x, sy + p0y);
+    int s_med = sample_atlas_template(atlas.medium, atlas.mask, sx + p0x, sy + p0y);
+    int s_coarse = sample_atlas_template(atlas.coarse, atlas.mask, sx + p0x, sy + p0y);
     
+    int sample = 0;
+    
+    // ==========================================
+    // THE KODAK PORTRA ISO PROFILES
+    // ==========================================
+    if (grainSize == 0) {
+        // PORTRA 160: Extremely fine, tight. Almost entirely high-frequency.
+        sample = (s_fine * 230 + s_med * 26) >> 8; 
+        
+    } else if (grainSize == 1) {
+        // PORTRA 400: Balanced thickness. The medium clumps become present.
+        sample = (s_fine * 80 + s_med * 140 + s_coarse * 36) >> 8;
+        
+    } else {
+        // PORTRA 800: Heavy, thick, aggressive. Dominated by coarse, low-frequency 
+        // energy, but filled in with fine grain so there are NO empty spaces.
+        sample = (s_fine * 30 + s_med * 90 + s_coarse * 136) >> 8;
+    }
+
     int gate = 126 + ((flatness * 3) >> 3);
     return (sample * gate * amp + (1 << 15)) >> 16;
 }
@@ -410,8 +427,9 @@ inline int grain_profile_sample(int sx_fp8, int sy_fp8, int profileIndex, int fl
 inline int form_grain_luma_core(int centerY, int leftY, int rightY, int x, int abs_y, int s_grain, int grainSize, int scaleDenom, uint32_t seed) {
     if (s_grain <= 0) return centerY;
 
-    int sx_fp8 = (x * scaleDenom) << 8;
-    int sy_fp8 = (abs_y * scaleDenom) << 8;
+    // 1:1 Mapping. No scaling, no cheetah print, no spaced-out dots.
+    int sx = x * scaleDenom;
+    int sy = abs_y * scaleDenom;
 
     int blurY = (leftY + (centerY << 1) + rightY + 2) >> 2;
     int edge = leftY > rightY ? leftY - rightY : rightY - leftY;
@@ -425,53 +443,24 @@ inline int form_grain_luma_core(int centerY, int leftY, int rightY, int x, int a
     int env = grain_amount_mask(amountY);
     if (env <= 0) return centerY;
     
-    // UNLEASHED: The Amount slider provides 100% of requested power for all sizes
+    // Amount slider dictates user's push
     int rawAmp = (s_grain * env + 128) >> 8;
     
+    // --- ISO BASE DENSITY ---
+    // ISO 800 is inherently heavier across the entire image than ISO 160.
+    if (grainSize == 0) rawAmp = (rawAmp * 100) >> 8;      // Subtle (Portra 160)
+    else if (grainSize == 1) rawAmp = (rawAmp * 180) >> 8; // Present (Portra 400)
+    else rawAmp = (rawAmp * 280) >> 8;                     // Heavy (Portra 800)
+
     int edgeAtten = 256 - std::min(176, edge * 4);
     if (edgeAtten < 84) edgeAtten = 84;
     int amp = (rawAmp * edgeAtten + 128) >> 8;
 
-    const BakedGrainAtlas& atlas = baked_grain_atlas();
-    int profileIndex = (scaleDenom == 1)
-        ? select_profile_full_res(densityY, sx_fp8 >> 8, sy_fp8 >> 8, seed, atlas)
-        : grain_profile_index(densityY);
+    // Build the texture
+    int grainTerm = grain_profile_sample(sx, sy, flat, amp, seed, grainSize);
 
-    int grainTerm = 0;
-
-    // =========================================================
-    // TRUE PHYSICAL FILM EMULSION
-    // =========================================================
-    if (grainSize == 0) {
-        // PORTRA 160: 1:1 scale. Tight, dense, and continuous.
-        grainTerm = grain_profile_sample(sx_fp8, sy_fp8, profileIndex, flat, amp, seed);
-        
-    } else if (grainSize == 1) {
-        // PORTRA 400: 1.5x chunks suspended in fine filler
-        int sx_15 = (sx_fp8 * 170) >> 8; 
-        int sy_15 = (sy_fp8 * 170) >> 8;
-        int chunky = grain_profile_sample(sx_15, sy_15, profileIndex, flat, amp, seed);
-        int filler = grain_profile_sample(sx_fp8, sy_fp8, profileIndex, flat, amp, seed ^ 0x55555555);
-        
-        // Restore chunk contrast and fill the sparse gaps
-        chunky = (chunky * 5) >> 2; 
-        grainTerm = (chunky * 180 + filler * 76) >> 8;
-        
-    } else {
-        // PORTRA 800: Massive 2.0x chunks suspended in heavy filler
-        int sx_20 = sx_fp8 >> 1;
-        int sy_20 = sy_fp8 >> 1;
-        int chunky = grain_profile_sample(sx_20, sy_20, profileIndex, flat, amp, seed);
-        int filler = grain_profile_sample(sx_fp8, sy_fp8, profileIndex, flat, amp, seed ^ 0xAAAAAAAA);
-        
-        // Restore chunk contrast and aggressively fill gaps
-        chunky = (chunky * 3) >> 1;
-        grainTerm = (chunky * 200 + filler * 56) >> 8;
-    }
-
-    // --- DYNAMIC SOFT LIMITER ---
-    // Allows 400 and 800 to bloom and hit harder without punching black holes
-    int limit = (grainSize == 0) ? 50 : ((grainSize == 1) ? 75 : 100); 
+    // Organic Limiter: Prevent digital clipping but allow heavy ISO 800 hits
+    int limit = (grainSize == 0) ? 40 : ((grainSize == 1) ? 65 : 100); 
     if (grainTerm > limit) {
         grainTerm = limit + ((grainTerm - limit) * 3) / 8;
     } else if (grainTerm < -limit) {
@@ -485,11 +474,15 @@ inline int form_grain_luma_core(int centerY, int leftY, int rightY, int x, int a
     if (lateDarkSurfaceBoost > 72) lateDarkSurfaceBoost = 72;
     
     if (lateDarkSurfaceBoost > 0) {
+        // ISO 800 bites into the shadows aggressively
         if (grainSize == 2) lateDarkSurfaceBoost = (lateDarkSurfaceBoost * 3) >> 1; 
         if (grainSize == 0) lateDarkSurfaceBoost = (lateDarkSurfaceBoost * 100) >> 8; 
         grainTerm += (grainTerm * lateDarkSurfaceBoost + 128) >> 8;
     }
 
+    // --- INTEGRATION ---
+    // apply_density_style_grain_y ensures the grain acts as subtractive density, 
+    // embedding it organically rather than sitting "on top" of the image.
     int formedY = apply_density_style_grain_y(centerY, grainTerm);
     
     int softBlend = 8 + (amp >> 4) + std::max(0, flat - 160) / 32;
