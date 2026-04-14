@@ -252,6 +252,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         
         // Force creation of our JPEGCAM folder skeleton immediately on boot
         Filepaths.buildAppStructure();
+
+        // --- NEW: Extract our starter pack ---
+        Filepaths.extractDefaultAssets(this);
         
         File thumbsDir = new File(Filepaths.getDcimDir(), ".thumbnails");
         if (!thumbsDir.exists()) thumbsDir.mkdirs();

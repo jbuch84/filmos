@@ -77,6 +77,35 @@ public class Filepaths {
     public static File getGradedDir() { File d = new File(getAppDir(), "GRADED"); if (!d.exists()) d.mkdirs(); return d; }
 
     public static void buildAppStructure() {
-        getAppDir(); getLutDir(); getRecipeDir(); getLensesDir(); getGradedDir();
+        getAppDir(); getLutDir(); getRecipeDir(); getLensesDir(); getGradedDir(); getGrainDir();
+    }
+
+    // NEW: Extracts bundled starter files from the APK to the SD card
+    public static void extractDefaultAssets(android.content.Context context) {
+        File grainDir = getGrainDir();
+        try {
+            // Look for files in the APK's "assets/grain" folder
+            String[] assets = context.getAssets().list("grain");
+            if (assets != null) {
+                for (String assetName : assets) {
+                    File outFile = new File(grainDir, assetName);
+                    // Only copy if the file doesn't already exist on the SD card
+                    if (!outFile.exists()) {
+                        java.io.InputStream in = context.getAssets().open("grain/" + assetName);
+                        java.io.FileOutputStream out = new java.io.FileOutputStream(outFile);
+                        byte[] buffer = new byte[1024];
+                        int read;
+                        while ((read = in.read(buffer)) != -1) {
+                            out.write(buffer, 0, read);
+                        }
+                        in.close();
+                        out.flush();
+                        out.close();
+                    }
+                }
+            }
+        } catch (Exception e) {
+            android.util.Log.e("JPEG.CAM", "Failed to extract grain assets: " + e.getMessage());
+        }
     }
 }
