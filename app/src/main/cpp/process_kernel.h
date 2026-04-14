@@ -10,6 +10,18 @@
 #include <vector>
 
 #define CLAMP(x) ((x) < 0 ? 0 : ((x) > 255 ? 255 : (x)))
+
+// Fast Integer Approximation of CSS 'Overlay' Blend Mode
+inline int blend_overlay(int base, int blend) {
+    base = CLAMP(base);
+    blend = CLAMP(blend);
+    if (base < 128) {
+        return (base * blend) >> 7;
+    } else {
+        return 255 - (((255 - base) * (255 - blend)) >> 7);
+    }
+}
+
 #define LOG_TAG "COOKBOOK_NATIVE"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 
@@ -825,7 +837,8 @@ inline void process_row_rgb(
     int subtractiveSat, int halation, int vignette,
     int grain, int grainSize, int scaleDenom, int advancedGrainExperimental, uint32_t& seed,
     int opac_mapped, const int* map,
-    const uint8_t* nativeLut, int nativeLutSize, int lutMax, int lutSize2)
+    const uint8_t* nativeLut, int nativeLutSize, int lutMax, int lutSize2,
+    const uint8_t* externalGrainTexture = nullptr) // <-- ADDED ARGUMENT
 {
     int s_roll   = rollOff * 20;
     int s_chrome = colorChrome * 40;
@@ -846,7 +859,8 @@ inline void process_row_rgb(
         int i = x * 3;
         int r = row[i], g = row[i+1], b = row[i+2];
 
-        if (advancedGrainExperimental != 0 && s_grain > 0) {
+        // CHANGE: Isolate Engine 1 (True Crystal Engine)
+        if (advancedGrainExperimental == 1 && s_grain > 0) {
             int formedY = form_grain_luma_core(currRawY, prevRawY, nextRawY, x, abs_y, s_grain, grainSize, scaleDenom, seed);
             if (formedY != currRawY) {
                 // --- PORTRA T-GRAIN DYE COUPLING (V7) ---
@@ -950,7 +964,28 @@ inline void process_row_rgb(
             d_sq_step += 2;
         }
 
-        if (advancedGrainExperimental == 0 && s_grain > 0) {
+        // NEW: Engine 2 (Texture Overlay)
+        if (advancedGrainExperimental == 2 && externalGrainTexture != nullptr && grain > 0) {
+            // Fast 512x512 tiling
+            int tx = (x * scaleDenom) & 511;
+            int ty = (abs_y * scaleDenom) & 511;
+            int tex_idx = (ty * 512 + tx) * 3; 
+            
+            uint8_t tr = externalGrainTexture[tex_idx];
+            uint8_t tg = externalGrainTexture[tex_idx + 1];
+            uint8_t tb = externalGrainTexture[tex_idx + 2];
+
+            int blendedR = blend_overlay(outR, tr);
+            int blendedG = blend_overlay(outG, tg);
+            int blendedB = blend_overlay(outB, tb);
+
+            // Map the camera's 1-5 grain slider to opacity (5 = 100% texture strength)
+            int mix = (grain >= 5) ? 256 : (grain * 51);
+            outR = outR + (((blendedR - outR) * mix) >> 8);
+            outG = outG + (((blendedG - outG) * mix) >> 8);
+            outB = outB + (((blendedB - outB) * mix) >> 8);
+            
+        } else if (advancedGrainExperimental == 0 && s_grain > 0) {
             int noise = legacy_grain_noise(x, abs_y, grainSize, seed);
             
             // --- THE CLASSIC BELL CURVE (Clean Shadows & Highlights) ---
@@ -985,7 +1020,8 @@ inline void process_row_yuv(
     int shadowToe, int rollOff, int colorChrome, int chromeBlue,
     int subtractiveSat, int halation, int vignette,
     int grain, int grainSize, int scaleDenom, int advancedGrainExperimental, uint32_t& seed,
-    const uint8_t* rolloff_lut)
+    const uint8_t* rolloff_lut,
+    const uint8_t* externalGrainTexture = nullptr) // <-- ADDED ARGUMENT
 {
     int s_chrome = colorChrome * 40;
     int s_blue   = chromeBlue * 40;
@@ -1006,7 +1042,9 @@ inline void process_row_yuv(
     for(int x = 0; x < width; x++) {
         int i = x * 3;
         int oldY = currInputY;
-        int outY = (advancedGrainExperimental != 0 && s_grain > 0)
+        
+        // CHANGE: Isolate Engine 1 (True Crystal Engine)
+        int outY = (advancedGrainExperimental == 1 && s_grain > 0)
                 ? form_grain_luma_core(oldY, prevInputY, nextInputY, x, abs_y, s_grain, grainSize, scaleDenom, seed)
                 : oldY;
 
@@ -1062,7 +1100,32 @@ inline void process_row_yuv(
             cb = (cb * r256) >> 8; cr = (cr * r256) >> 8;
         }
 
-        if (advancedGrainExperimental == 0 && s_grain > 0) {
+        // NEW: Engine 2 (Texture Overlay)
+        if (advancedGrainExperimental == 2 && externalGrainTexture != nullptr && grain > 0) {
+            int tx = (x * scaleDenom) & 511;
+            int ty = (abs_y * scaleDenom) & 511;
+            int tex_idx = (ty * 512 + tx) * 3;
+            
+            // Fast YUV to RGB for blending
+            int r = outY + ((cr * 359) >> 8);
+            int g = outY - ((cb * 88 + cr * 183) >> 8);
+            int b = outY + ((cb * 454) >> 8);
+
+            int blendedR = blend_overlay(r, externalGrainTexture[tex_idx]);
+            int blendedG = blend_overlay(g, externalGrainTexture[tex_idx + 1]);
+            int blendedB = blend_overlay(b, externalGrainTexture[tex_idx + 2]);
+
+            int mix = (grain >= 5) ? 256 : (grain * 51);
+            r = r + (((blendedR - r) * mix) >> 8);
+            g = g + (((blendedG - g) * mix) >> 8);
+            b = b + (((blendedB - b) * mix) >> 8);
+
+            // Fast RGB back to YUV
+            outY = (r * 77 + g * 150 + b * 29) >> 8;
+            cb = ((-38 * r - 74 * g + 112 * b) >> 8);
+            cr = ((112 * r - 94 * g - 18 * b) >> 8);
+            
+        } else if (advancedGrainExperimental == 0 && s_grain > 0) {
             int noise = legacy_grain_noise(x, abs_y, grainSize, seed);
             
             // --- THE CLASSIC BELL CURVE ---
