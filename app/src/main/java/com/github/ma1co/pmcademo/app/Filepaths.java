@@ -91,8 +91,8 @@ public class Filepaths {
         
         // STRICT 8.3 FILENAME COMPLIANCE FOR SONY FAT32 SD CARDS
         String[] starterFiles = {
-            "port400.png",
-            "neo400.png"
+            "port400.txt",
+            "neo400.txt"
         };
 
         for (String assetName : starterFiles) {
