@@ -30,8 +30,8 @@ public class ImageProcessor {
         new PreloadLutTask().execute(lutPath, lutName);
     }
 
-    public void processJpeg(String originalPath, String outDirPath, int qualityIndex, int jpegQuality, RTLProfile p) {
-        new ProcessTask(qualityIndex, jpegQuality, p, outDirPath).execute(originalPath);
+    public void processJpeg(String originalPath, String outDirPath, int qualityIndex, int jpegQuality, RTLProfile p, boolean applyCrop) {
+        new ProcessTask(qualityIndex, jpegQuality, p, outDirPath, applyCrop).execute(originalPath);
     }
 
     private class PreloadLutTask extends AsyncTask<String, Void, Boolean> {
@@ -47,12 +47,14 @@ public class ImageProcessor {
         private int jpegQuality;
         private RTLProfile p;
         private String outDir;
+        private boolean applyCrop; // <-- NEW
 
-        public ProcessTask(int q, int jpegQuality, RTLProfile p, String out) {
+        public ProcessTask(int q, int jpegQuality, RTLProfile p, String out, boolean crop) {
             this.qualityIdx  = q;
             this.jpegQuality = jpegQuality;
             this.p           = p;
             this.outDir      = out;
+            this.applyCrop   = crop; // <-- NEW
         }
 
         @Override protected void onPreExecute() { mCallback.onProcessStarted(); }
@@ -105,14 +107,15 @@ public class ImageProcessor {
                 // --- END NEW ---
 
                 if (mEngine.applyLutToJpeg(
-                        original.getAbsolutePath(), outFile.getAbsolutePath(),
-                        scale, p.opacity, p.grain, p.grainSize, p.vignette, p.rollOff,
-                        p.colorChrome, p.chromeBlue, p.shadowToe, p.subtractiveSat,
-                        p.halation, p.bloom, 
-                        cxxGrainEngine, // <-- CHANGED from p.advancedGrainExperimental
-                        finalJpegQuality)) {
-                    return "SAVED";
-                }
+                    original.getAbsolutePath(), outFile.getAbsolutePath(),
+                    scale, p.opacity, p.grain, p.grainSize, p.vignette, p.rollOff,
+                    p.colorChrome, p.chromeBlue, p.shadowToe, p.subtractiveSat,
+                    p.halation, p.bloom, 
+                    cxxGrainEngine, 
+                    finalJpegQuality, 
+                    applyCrop)) {  // <--- ADDED HERE
+                return "SAVED";
+            }
             } catch (Exception e) { Log.e("COOKBOOK", "Java error: " + e.getMessage()); }
             return "FAILED";
         }

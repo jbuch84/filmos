@@ -358,7 +358,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 long currentSize = f.length();
                 if (currentSize > 0 && currentSize == lastSize[0]) {
                     File outDir = Filepaths.getGradedDir();
-                    mProcessor.processJpeg(path, outDir.getAbsolutePath(), recipeManager.getQualityIndex(), prefJpegQuality, recipeManager.getCurrentProfile());
+                    // --- CHANGED: Added prefShowCinemaMattes to the end ---
+                    mProcessor.processJpeg(path, outDir.getAbsolutePath(), recipeManager.getQualityIndex(), prefJpegQuality, recipeManager.getCurrentProfile(), prefShowCinemaMattes);
                 } else if (retries[0] < 30) {
                     lastSize[0] = currentSize;
                     retries[0]++;

@@ -636,7 +636,7 @@ public class MenuController {
             setRow(0, "SW Global Resolution", qLbls[rm.getQualityIndex()]);
             setRow(1, "Base Scene",            scn);
             setRow(2, "Manual Focus Meter",    host.isPrefFocusMeter()   ? "ON" : "OFF");
-            setRow(3, "Anamorphic Crop",       host.isPrefCinemaMattes() ? "ON" : "OFF");
+            setRow(3, "XPan Crop",       host.isPrefCinemaMattes() ? "ON" : "OFF");
             setRow(4, "Rule of Thirds Grid",   host.isPrefGridLines()    ? "ON" : "OFF");
             setRow(5, "SW JPEG Quality",       String.valueOf(host.getPrefJpegQuality()));
         } else if (currentPage == 7) {

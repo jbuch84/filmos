@@ -181,7 +181,8 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     jint scaleDenom, jint opacity, jint grain, jint grainSize,
     jint vignette, jint rollOff, jint colorChrome, jint chromeBlue,
     jint shadowToe, jint subtractiveSat, jint halation,
-    jint bloom, jint advancedGrainExperimental, jint jpegQuality) {
+    jint bloom, jint advancedGrainExperimental, jint jpegQuality,
+    jboolean applyCrop) { // <-- ADDED XPAN CROP FLAG
 
     long long start_time = get_time_ms();
 
@@ -275,14 +276,21 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
 
     jpeg_create_compress(&cinfo_c);
     jpeg_stdio_dest(&cinfo_c, outfile);
+    
+    // --- NEW: XPAN CROP MATH ---
+    int final_height = cinfo_d.output_height;
+    int skip_top = 0;
+    if (applyCrop) {
+        final_height = (int)(cinfo_d.output_width / 2.71f);
+        skip_top = (cinfo_d.output_height - final_height) / 2;
+    }
+
     cinfo_c.image_width      = cinfo_d.output_width;
-    cinfo_c.image_height     = cinfo_d.output_height;
+    cinfo_c.image_height     = final_height; // <-- CROP APPLIED HERE
     cinfo_c.input_components = 3;
     cinfo_c.in_color_space   = use_rgb_path ? JCS_RGB : JCS_YCbCr;
     jpeg_set_defaults(&cinfo_c);
     jpeg_set_quality(&cinfo_c, jpegQuality, TRUE);
-    
-    // DELTED: cinfo_c.write_JFIF_header = FALSE;
     
     jpeg_start_compress(&cinfo_c, TRUE);
 
@@ -290,13 +298,12 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
 
     int row_stride    = cinfo_d.output_width * 3;
     long long cx      = cinfo_d.output_width  / 2;
-    long long cy_center = cinfo_d.output_height / 2;
+    long long cy_center = cinfo_d.output_height / 2; // Original center maintained!
     long long max_dist_sq = cx * cx + cy_center * cy_center;
     long long vig_coef    = get_vig_coef(vignette, max_dist_sq);
     int opac_mapped   = (opacity * 256) / 100;
 
     // --- MEMORY-SAFE 21-ROW SYMMETRIC BUFFER (~400KB overhead) ---
-    // 21 source rows (rows[0]..rows[20]) and 1 output row (rows[21])
     unsigned char* row_block = (unsigned char*)malloc(22 * row_stride);
     unsigned char* rows[22];
     for (int i = 0; i < 22; i++) rows[i] = row_block + (i * row_stride);
@@ -331,25 +338,19 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     if (seed == 0) seed = 98765;
 
     // --- PRE-LOAD BUFFER (Initialize the 21-row window) ---
-    // We want rows[10] to be the "current" row being processed.
-    
-    // NEW: Get pointer to texture if it's loaded
     const uint8_t* externalTex = nativeGrainTexture.empty() ? NULL : nativeGrainTexture.data();
 
     if (cinfo_d.output_height > 0) {
         row_pointer[0] = rows[10]; 
         jpeg_read_scanlines(&cinfo_d, row_pointer, 1);
-        // Mirror row 0 upwards to handle top edge
         for (int i = 0; i < 10; i++) memcpy(rows[i], rows[10], row_stride);
     }
     
-    // Read ahead rows (11 through 20)
     for (int i = 11; i <= 20; i++) {
         if (cinfo_d.output_scanline < cinfo_d.output_height) {
             row_pointer[0] = rows[i];
             jpeg_read_scanlines(&cinfo_d, row_pointer, 1);
         } else {
-            // Mirror the last available row if image is very short
             memcpy(rows[i], rows[i-1], row_stride);
         }
     }
@@ -359,55 +360,52 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     while (processed_rows < cinfo_d.output_height) {
         int abs_y = processed_rows;
         
-        // rows[10] is the current target row.
-        // Copy original curr data into out buffer (rows[21]) to safely modify it
-        memcpy(rows[21], rows[10], row_stride);
+        // --- NEW: SKIP PROCESSING INVISIBLE ROWS ---
+        // If we are applying the matte, only process and save the middle rows!
+        bool is_visible = !applyCrop || (abs_y >= skip_top && abs_y < skip_top + final_height);
 
-        // Optical Bloom & Halation pre-pass
-        if (bloom > 0 || halation > 0) {
-            // Fix: Added scaleDenom to dynamically scale the IIR blur radius
-            apply_bloom_halation(rows, rows[21], cinfo_d.output_width, abs_y, !use_rgb_path, bloom, halation, seed, 
-                                 work_0, work_1, work_2, work_h, h_line, scaleDenom);
+        if (is_visible) {
+            // Copy original curr data into out buffer (rows[21]) to safely modify it
+            memcpy(rows[21], rows[10], row_stride);
+
+            // Optical Bloom & Halation pre-pass
+            if (bloom > 0 || halation > 0) {
+                apply_bloom_halation(rows, rows[21], cinfo_d.output_width, abs_y, !use_rgb_path, bloom, halation, seed, 
+                                     work_0, work_1, work_2, work_h, h_line, scaleDenom);
+            }
+
+            if (use_rgb_path) {
+                process_row_rgb(
+                    rows[21], cinfo_d.output_width, abs_y, cx, cy_center, vig_coef,
+                    shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, 0, vignette,
+                    grain, grainSize, scaleDenom, advancedGrainExperimental, seed,
+                    opac_mapped, map, nativeLut.data(), nativeLutSize, lutMax, lutSize2,
+                    externalTex 
+                );
+            } else {
+                process_row_yuv(
+                    rows[21], cinfo_d.output_width, abs_y, cx, cy_center, vig_coef,
+                    shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, 0, vignette,
+                    grain, grainSize, scaleDenom, advancedGrainExperimental, seed,
+                    rolloff_lut,
+                    externalTex 
+                );
+            }
+
+            row_pointer[0] = rows[21];
+            jpeg_write_scanlines(&cinfo_c, row_pointer, 1);
         }
 
-        if (use_rgb_path) {
-            // ==========================================
-            // PATH A: RGB + LUT + ANALOG PHYSICS
-            // ==========================================
-            process_row_rgb(
-                rows[21], cinfo_d.output_width, abs_y, cx, cy_center, vig_coef,
-                shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, 0, vignette,
-                grain, grainSize, scaleDenom, advancedGrainExperimental, seed,
-                opac_mapped, map, nativeLut.data(), nativeLutSize, lutMax, lutSize2,
-                externalTex // <-- ADDED
-            );
-        } else {
-            // ==========================================
-            // PATH B: YUV EXPRESSWAY
-            // ==========================================
-            process_row_yuv(
-                rows[21], cinfo_d.output_width, abs_y, cx, cy_center, vig_coef,
-                shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, 0, vignette,
-                grain, grainSize, scaleDenom, advancedGrainExperimental, seed,
-                rolloff_lut,
-                externalTex // <-- ADDED
-            );
-        }
-
-        row_pointer[0] = rows[21];
-        jpeg_write_scanlines(&cinfo_c, row_pointer, 1);
-
-        // Slide the window: move rows up
+        // Slide the window: move rows up (We MUST do this even for invisible rows!)
         unsigned char* oldest = rows[0];
         for (int i = 0; i < 20; i++) rows[i] = rows[i+1];
-        rows[20] = oldest; // Re-use the buffer that just fell off the top
+        rows[20] = oldest; 
 
         // Read the next scanline into the bottom of the window
         if (cinfo_d.output_scanline < cinfo_d.output_height) {
             row_pointer[0] = rows[20];
             jpeg_read_scanlines(&cinfo_d, row_pointer, 1);
         } else {
-            // Edge Clamp: duplicate last row downwards
             memcpy(rows[20], rows[19], row_stride);
         }
         

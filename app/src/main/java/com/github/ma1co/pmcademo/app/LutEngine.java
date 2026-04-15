@@ -11,12 +11,13 @@ public class LutEngine {
     // NEW: Native hook for loading the 512x512 texture into C++
     private native boolean loadGrainTextureNative(String filePath);
 
-    // Signature matches C++ exactly: 15 total parameters after env/obj
+    // Signature matches C++ exactly: 16 total parameters after env/obj
     private native boolean processImageNative(
         String inPath, String outPath, int scaleDenom, int opacity,
         int grain, int grainSize, int vignette, int rollOff,
         int colorChrome, int chromeBlue, int shadowToe,
-        int subtractiveSat, int halation, int bloom, int advancedGrainExperimental, int jpegQuality
+        int subtractiveSat, int halation, int bloom, int advancedGrainExperimental, int jpegQuality,
+        boolean applyCrop // <-- ADDED: Anamorphic Crop Flag
     );
 
     /**
@@ -35,10 +36,12 @@ public class LutEngine {
                                   int grain, int grainSize, int vignette, int rollOff,
                                   int colorChrome, int chromeBlue, int shadowToe,
                                   int subtractiveSat, int halation, int bloom,
-                                  int advancedGrainExperimental, int quality) {
+                                  int advancedGrainExperimental, int quality,
+                                  boolean applyCrop) { // <-- ADDED: XPAN Crop Flag
         return processImageNative(in, out, scale, opacity, grain, grainSize, vignette,
                                  rollOff, colorChrome, chromeBlue, shadowToe,
-                                 subtractiveSat, halation, bloom, advancedGrainExperimental, quality);
+                                 subtractiveSat, halation, bloom, advancedGrainExperimental, quality,
+                                 applyCrop); // <-- ADDED: XPAN Crop Flag
     }
 
     // NEW: Public wrapper to load the grain texture safely

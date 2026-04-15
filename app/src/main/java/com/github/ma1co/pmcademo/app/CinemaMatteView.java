@@ -7,8 +7,8 @@ import android.graphics.Paint;
 import android.view.View;
 
 /**
- * JPEG.CAM UI: 2.35:1 Anamorphic Cinema Matte
- * Handles the black bars for cinematic framing.
+ * JPEG.CAM UI: 2.71:1 XPan Matte
+ * Handles the black bars for xpan framing.
  */
 public class CinemaMatteView extends View {
     private Paint mattePaint;
@@ -26,7 +26,7 @@ public class CinemaMatteView extends View {
         int w = getWidth();
         int h = getHeight();
         
-        // Calculate the height of the active 2.35:1 area
+        // Calculate the height of the active 2.71:1 area
         int imgW = w;
         int imgH = (int) (w * (2.0f / 3.0f));
         if (imgH > h) {
@@ -34,7 +34,7 @@ public class CinemaMatteView extends View {
             imgW = (int) (h * (3.0f / 2.0f));
         }
         
-        int targetHeight = (int) (imgW / 2.35f);
+        int targetHeight = (int) (imgW / 2.71f);
         int topBarBottom = (h - targetHeight) / 2;
         int bottomBarTop = (h + targetHeight) / 2;
 
