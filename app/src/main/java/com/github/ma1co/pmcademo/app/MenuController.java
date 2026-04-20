@@ -356,7 +356,7 @@ public class MenuController {
             handleMenuChange(-1);
         } else {
             currentPage--;
-            if (currentPage < 1) currentPage = 8;
+            if (currentPage < 1) currentPage = 9;
             currentMainTab = pageToTab(currentPage);
             selection = 0;
             render();
@@ -378,7 +378,7 @@ public class MenuController {
             handleMenuChange(1);
         } else {
             currentPage++;
-            if (currentPage > 8) currentPage = 1;
+            if (currentPage > 9) currentPage = 1;
             currentMainTab = pageToTab(currentPage);
             selection = 0;
             render();
@@ -405,7 +405,7 @@ public class MenuController {
     /** ENTER while menu is open: toggle editing, launch HUDs, or handle connection page. */
     public boolean handleEnter() {
         if (!isOpen) return false;
-        if (currentPage == 7) { handleConnectionAction(); return true; }
+        if (currentPage == 8) { handleConnectionAction(); return true; }
         if (selection == -2) return true; // Tab level — enter does nothing
         if (selection < 0)   return true; // Subtitle row — enter does nothing
         isEditing = !isEditing;
@@ -441,7 +441,7 @@ public class MenuController {
     public void updateConnectionStatus(String target, String status) {
         if ("HOTSPOT".equals(target)) hotspotStatus = status;
         else wifiStatus = status;
-        if (isOpen && currentPage == 7) render();
+        if (isOpen && currentPage == 8) render();
     }
 
     // -----------------------------------------------------------------------
@@ -551,6 +551,11 @@ public class MenuController {
             else if (sel == 3) host.setPrefCinemaMattes(!host.isPrefCinemaMattes());
             else if (sel == 4) host.setPrefGridLines(!host.isPrefGridLines());
             else if (sel == 5) host.setPrefJpegQuality(Math.max(60, Math.min(100, host.getPrefJpegQuality() + dir * 5)));
+        } else if (currentPage == 7) {
+            if      (sel == 0) rm.setPrefC1(Math.max(0, Math.min(5, rm.getPrefC1() + dir)));
+            else if (sel == 1) rm.setPrefC2(Math.max(0, Math.min(5, rm.getPrefC2() + dir)));
+            else if (sel == 2) rm.setPrefAel(Math.max(0, Math.min(5, rm.getPrefAel() + dir)));
+            else if (sel == 3) rm.setPrefFn(Math.max(0, Math.min(5, rm.getPrefFn() + dir)));
         }
 
         render();
@@ -594,15 +599,15 @@ public class MenuController {
 
         // Subtitle
         tvSubtitle.setBackgroundColor(selection == -1 ? orange : Color.TRANSPARENT);
-        String[] subtitles = {"","1. Recipe Identity & Base [HW]","2. Advanced Color Engine [HW]","3. Effects & Shading [HW]","4. LUTs & Textures [SW] - ADDS PROCESSING TIME","5. Analog Physics [SW] - ADDS PROCESSING TIME","Global Settings","Web Dashboard Server","Resources & Community"};
-        if (currentPage >= 1 && currentPage <= 8) {
-            tvSubtitle.setText(subtitles[currentPage]); // <--- REVERTED: Removed the [MENU = BACK] text
+        String[] subtitles = {"","1. Recipe Identity & Base [HW]","2. Advanced Color Engine [HW]","3. Effects & Shading [HW]","4. LUTs & Textures [SW] - ADDS PROCESSING TIME","5. Analog Physics [SW] - ADDS PROCESSING TIME","6. App Preferences","7. Custom Buttons","8. Web Dashboard Server","9. Resources & Community"};
+        if (currentPage >= 1 && currentPage <= 9) {
+            tvSubtitle.setText(subtitles[currentPage]); 
         }
 
         for (int i = 0; i < 8; i++) rows[i].setVisibility(View.GONE);
         supportContainer.setVisibility(View.GONE);
 
-        if (currentPage == 8) { supportContainer.setVisibility(View.VISIBLE); itemCount = 0; return; }
+        if (currentPage == 9) { supportContainer.setVisibility(View.VISIBLE); itemCount = 0; return; }
 
         String scn = "UNKNOWN";
         Camera cam = host.getCamera();
@@ -691,6 +696,13 @@ public class MenuController {
             setRow(4, "Rule of Thirds Grid",   host.isPrefGridLines()    ? "ON" : "OFF");
             setRow(5, "SW JPEG Quality",       String.valueOf(host.getPrefJpegQuality()));
         } else if (currentPage == 7) {
+            ic = 4;
+            String[] btnLbls = {"OFF", "ISO MENU", "FOCUS MAGNIFIER", "TOGGLE FOCUS METER", "TOGGLE CINEMA MATTES", "TOGGLE GRID LINES"};
+            setRow(0, "Custom 1 (C1)", btnLbls[Math.max(0, Math.min(5, rm.getPrefC1()))]);
+            setRow(1, "Custom 2 (C2)", btnLbls[Math.max(0, Math.min(5, rm.getPrefC2()))]);
+            setRow(2, "AEL Button",    btnLbls[Math.max(0, Math.min(5, rm.getPrefAel()))]);
+            setRow(3, "FN Button",     btnLbls[Math.max(0, Math.min(5, rm.getPrefFn()))]);
+        } else if (currentPage == 8) {
             ic = 3;
             setRow(0, "Camera Hotspot", hotspotStatus);
             setRow(1, "Home Wi-Fi",     wifiStatus);
@@ -774,14 +786,14 @@ public class MenuController {
     private int tabToFirstPage(int tab) {
         if (tab == 0) return 1;
         if (tab == 1) return 6;
-        if (tab == 2) return 7;
-        return 8;
+        if (tab == 2) return 8;
+        return 9;
     }
 
     private int pageToTab(int page) {
         if (page <= 5) return 0;
-        if (page == 6) return 1;
-        if (page == 7) return 2;
+        if (page <= 7) return 1;
+        if (page == 8) return 2;
         return 3;
     }
 
