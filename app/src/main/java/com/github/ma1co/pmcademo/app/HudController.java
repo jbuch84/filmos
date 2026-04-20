@@ -377,12 +377,13 @@ public class HudController {
                 }
             } else if (selection == 1 && "toy-camera".equals(eff)) { p.vignetteHardware = Math.max(-16,Math.min(16,p.vignetteHardware+dir)); }
         } else if (mode == 6) {
-            if (selection == 0) { 
-                String[] styles={"standard","vivid","neutral","clear","deep","light","portrait","landscape","sunset","night scene","autumn leaves""mono","sepia"}; 
-                int idx=0; for(int i=0;i<styles.length;i++) if(styles[i].equalsIgnoreCase(p.colorMode)) idx=i; 
-                p.colorMode=styles[(idx+dir+styles.length)%styles.length];
+            // Use the dynamic hardware list from the MenuController instead of a hardcoded array!
+            String[] styles = host.getMenuController().getSupportedColorModes(); 
+            int idx = 0; 
+            for (int i = 0; i < styles.length; i++) {
+                if (styles[i].equalsIgnoreCase(p.colorMode)) idx = i;
             }
-            else if (selection == 1) p.sharpnessGain = Math.max(-50,Math.min(50,p.sharpnessGain + dir*5));
+            p.colorMode = styles[(idx + dir + styles.length) % styles.length].toLowerCase();
         } else if (mode == 7) { p.whiteBalance = MenuController.cycleKelvin(p.whiteBalance, dir);
         } else if (mode == 8) {
             if (selection == 0) { String[] eff={"off","toy-camera","pop-color","posterization","retro-photo","soft-high-key","part-color","rough-mono","soft-focus","hdr-art","richtone-mono","miniature","watercolor","illust"}; int idx=0; for(int i=0;i<eff.length;i++) if(eff[i].equals(p.pictureEffect)) idx=i; p.pictureEffect=eff[(idx+dir+eff.length)%eff.length]; }

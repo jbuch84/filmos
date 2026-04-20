@@ -448,7 +448,7 @@ public class MenuController {
     // Private — menu data change
     // -----------------------------------------------------------------------
 
-    private String[] getSupportedColorModes() {
+    public String[] getSupportedColorModes() {
         if (cachedColorModes != null) return cachedColorModes;
         
         // This is the hardcoded list you were seeing!
