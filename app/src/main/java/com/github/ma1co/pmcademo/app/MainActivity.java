@@ -734,9 +734,15 @@ public void onEnterPressed() {
             mDialMode = DIAL_MODE_ISO;
             updateMainHUD();
             return true;
-        } else if (action == 2) { // FOCUS MAGNIFIER (API Trigger & D-Pad Unlocker)
+        } else if (action == 2) { // FOCUS MAGNIFIER
             if (cameraManager != null && cameraManager.getCameraEx() != null) {
-                cameraManager.getCameraEx().setAutoPreviewMagnification();
+                // We must explicitly set the magnification level and the center X/Y coordinates
+                // using a Pair<Integer, Integer> as required by the CameraEx API.
+                android.util.Pair<Integer, Integer> centerPos = new android.util.Pair<Integer, Integer>(0, 0);
+                
+                // 100 usually denotes the first step of magnification.
+                cameraManager.getCameraEx().setPreviewMagnification(100, centerPos);
+                
                 isMagnifierActive = true; 
             }
             return true; // Swallow the hardware click since we fired the API!
