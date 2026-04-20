@@ -414,14 +414,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         }
     }
 
-    private boolean isMagnifierActive = false;
     private boolean prefShowFocusMeter = false; // CHANGED: Off by default
-    private int magnifierX = 0; // NEW: Track zoom box X
-    private int magnifierY = 0; // NEW: Track zoom box Y
 
     @Override
     public void onShutterHalfPressed() {
-        isMagnifierActive = false; // Always lock the D-Pad back to the app on half-press
+        if (cameraManager != null) {
+            cameraManager.clearPreviewMagnification();
+        }
         if (playbackController.isActive()) { playbackController.exit(); return; }
         if (menuController.isOpen()) { menuController.close(); return; }
         if (isProcessing) return; 
@@ -452,6 +451,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     @Override 
     public void onMenuPressed() {
+        if (cameraManager != null) {
+            cameraManager.clearPreviewMagnification();
+        }
         if (playbackController.isActive()) { playbackController.exit(); return; }
         if (isProcessing) return;
         
@@ -600,9 +602,9 @@ public void onEnterPressed() {
 
     @Override
     public boolean onUpPressed() {
-        if (isMagnifierActive && cameraManager != null && cameraManager.getCameraEx() != null) {
-            magnifierY = Math.max(-500, magnifierY - 50);
-            cameraManager.getCameraEx().setPreviewMagnification(100, new Pair<Integer, Integer>(magnifierX, magnifierY));
+        if (cameraManager != null && cameraManager.isPreviewMagnificationActive()
+                && !playbackController.isActive() && !menuController.isOpen() && !hudController.isActive()) {
+            cameraManager.movePreviewMagnification(0, -1);
             return true;
         }
         
@@ -631,9 +633,9 @@ public void onEnterPressed() {
 
     @Override
     public boolean onDownPressed() {
-        if (isMagnifierActive && cameraManager != null && cameraManager.getCameraEx() != null) {
-            magnifierY = Math.min(500, magnifierY + 50); // FIXED: Use Math.min to cap at 500
-            cameraManager.getCameraEx().setPreviewMagnification(100, new Pair<Integer, Integer>(magnifierX, magnifierY));
+        if (cameraManager != null && cameraManager.isPreviewMagnificationActive()
+                && !playbackController.isActive() && !menuController.isOpen() && !hudController.isActive()) {
+            cameraManager.movePreviewMagnification(0, 1);
             return true;
         }
         
@@ -662,9 +664,9 @@ public void onEnterPressed() {
 
     @Override
     public boolean onLeftPressed() {
-        if (isMagnifierActive && cameraManager != null && cameraManager.getCameraEx() != null) {
-            magnifierX = Math.max(-500, magnifierX - 50);
-            cameraManager.getCameraEx().setPreviewMagnification(100, new Pair<Integer, Integer>(magnifierX, magnifierY));
+        if (cameraManager != null && cameraManager.isPreviewMagnificationActive()
+                && !playbackController.isActive() && !menuController.isOpen() && !hudController.isActive()) {
+            cameraManager.movePreviewMagnification(-1, 0);
             return true;
         }
         
@@ -692,9 +694,9 @@ public void onEnterPressed() {
 
     @Override
     public boolean onRightPressed() {
-        if (isMagnifierActive && cameraManager != null && cameraManager.getCameraEx() != null) {
-            magnifierX = Math.min(500, magnifierX + 50); // FIXED: Use Math.min to cap at 500
-            cameraManager.getCameraEx().setPreviewMagnification(100, new Pair<Integer, Integer>(magnifierX, magnifierY));
+        if (cameraManager != null && cameraManager.isPreviewMagnificationActive()
+                && !playbackController.isActive() && !menuController.isOpen() && !hudController.isActive()) {
+            cameraManager.movePreviewMagnification(1, 0);
             return true;
         }
         
@@ -758,22 +760,9 @@ public void onEnterPressed() {
             updateMainHUD();
             return true;
         } else if (action == 2) { // FOCUS MAGNIFIER
-            if (cameraManager != null && cameraManager.getCameraEx() != null) {
-                com.sony.scalar.hardware.CameraEx cx = cameraManager.getCameraEx();
-                if (isMagnifierActive) {
-                    cx.stopPreviewMagnification();
-                    isMagnifierActive = false;
-                } else {
-                    // 1. Mandatory Listener for BIONZ X hardware
-                    cx.setPreviewMagnificationListener(new com.sony.scalar.hardware.CameraEx.PreviewMagnificationListener() {
-                        public void onChanged(boolean e, int mf, int ml, Pair c, com.sony.scalar.hardware.CameraEx ex) {}
-                        public void onInfoUpdated(boolean b, Pair c, com.sony.scalar.hardware.CameraEx ex) {}
-                    });
-                    // 2. Trigger at center (0,0) at 100% zoom level
-                    magnifierX = 0; magnifierY = 0;
-                    cx.setPreviewMagnification(100, new Pair<Integer, Integer>(magnifierX, magnifierY));
-                    isMagnifierActive = true; 
-                }
+            if (cameraManager != null) {
+                cameraManager.togglePreviewMagnification();
+                requestHudUpdate();
             }
             return true; 
         } else if (action == 3) { // TOGGLE FOCUS METER
@@ -825,6 +814,12 @@ public void onEnterPressed() {
 
     @Override 
     public void onControlWheelRotated(int direction) { 
+        if (cameraManager != null && cameraManager.isPreviewMagnificationActive()
+                && !playbackController.isActive() && !menuController.isOpen() && !hudController.isActive()) {
+            cameraManager.movePreviewMagnification(direction > 0 ? 1 : -1, 0);
+            return;
+        }
+        
         // --- NEW: INTERCEPT WHEEL TURNS FOR MATRIX NAMING ---
         if (hudController.isActive() && (hudController.getMode() == 0 || hudController.getMode() == 10) && menuController.isNamingMode()) {
             char[] buf = menuController.getNameBuffer();

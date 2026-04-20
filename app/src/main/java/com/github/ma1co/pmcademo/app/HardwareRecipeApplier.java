@@ -43,17 +43,36 @@ public class HardwareRecipeApplier {
         if (p.get("drive-mode") != null) p.set("drive-mode", "single");
         if (p.get("picture-profile") != null) p.set("picture-profile", "off");
 
-        String safeProMode   = prof.proColorMode != null ? prof.proColorMode.toLowerCase() : "off";
-        String safeColorMode = prof.colorMode    != null ? prof.colorMode.toLowerCase()    : "standard";
+        String safeProMode = prof.proColorMode != null
+                ? prof.proColorMode.toLowerCase()
+                : "off";
+        String requestedStyle = prof.colorMode != null
+                ? prof.colorMode
+                : "Standard";
 
         if (!"off".equals(safeProMode)) {
-            if (p.get("creative-style") != null) p.set("creative-style", "standard");
-            if (p.get("color-mode")     != null) p.set("color-mode",     "standard");
-            if (p.get("pro-color-mode") != null) p.set("pro-color-mode", safeProMode);
+            if (p.get("pro-color-mode") != null) {
+                p.set("pro-color-mode", safeProMode);
+            }
+            SonyCreativeStyleHelper.applyNativeStyle(p, "standard");
+
+            SonyCreativeStyleHelper.logDebug("Applying pro-color-mode=" + safeProMode + " base style=standard");
         } else {
-            if (p.get("creative-style") != null) p.set("creative-style", safeColorMode);
-            if (p.get("color-mode")     != null) p.set("color-mode",     safeColorMode);
-            if (p.get("pro-color-mode") != null) p.set("pro-color-mode", "off");
+            if (p.get("pro-color-mode") != null) {
+                p.set("pro-color-mode", "off");
+            }
+
+            String resolvedToken = SonyCreativeStyleHelper.resolveTokenFromLabel(p, requestedStyle);
+            if (resolvedToken == null) {
+                resolvedToken = "standard";
+                SonyCreativeStyleHelper.logWarn("Could not resolve native token for requested style: "
+                        + requestedStyle + " -> falling back to standard");
+            }
+
+            SonyCreativeStyleHelper.applyNativeStyle(p, resolvedToken);
+
+            SonyCreativeStyleHelper.logDebug("Applying native creative style requested=" + requestedStyle
+                    + " resolvedToken=" + resolvedToken);
         }
 
         if (p.get("picture-effect") != null) {
@@ -91,7 +110,15 @@ public class HardwareRecipeApplier {
         if (p.get("vignetting") != null) p.set("vignetting", String.valueOf(prof.vignetteHardware));
         if (p.get("vignette")   != null) p.set("vignette",   String.valueOf(prof.vignetteHardware));
 
-        try { c.setParameters(p); } catch (Exception e) { Log.e(TAG, "Stage 1 Reject: " + e.getMessage()); }
+        try {
+            c.setParameters(p);
+            Camera.Parameters verify = c.getParameters();
+            SonyCreativeStyleHelper.logDebug("Stage 1 verify creative-style=" + verify.get("creative-style"));
+            SonyCreativeStyleHelper.logDebug("Stage 1 verify color-mode=" + verify.get("color-mode"));
+            SonyCreativeStyleHelper.logDebug("Stage 1 verify pro-color-mode=" + verify.get("pro-color-mode"));
+        } catch (Exception e) {
+            SonyCreativeStyleHelper.logError("Stage 1 Reject: " + e.getMessage(), e);
+        }
 
         // ----------------------------------------------------------------
         // STAGE 2: WHITE BALANCE, COLOR, DRO, TONE, MATRIX, LENS

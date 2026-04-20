@@ -1,6 +1,7 @@
 package com.github.ma1co.pmcademo.app;
 
 import android.hardware.Camera;
+import android.util.Pair;
 import android.util.Log;
 import android.view.SurfaceHolder;
 
@@ -9,8 +10,15 @@ import com.sony.scalar.hardware.CameraEx;
 import java.util.List;
 
 public class SonyCameraManager {
+    private static final int PREVIEW_MAGNIFICATION_FOCUS_LEVEL = 100;
+    private static final int PREVIEW_MAGNIFICATION_MOVE_STEP = 100;
+    private static final int PREVIEW_MAGNIFICATION_MAX_COORDINATE = 1000;
+
     private CameraEx cameraEx;
     private Camera camera;
+    private boolean previewMagnificationActive;
+    private int previewMagnificationLevel = PREVIEW_MAGNIFICATION_FOCUS_LEVEL;
+    private Pair<Integer, Integer> previewMagnificationCoordinates = null;
     
     private String origSceneMode;
     private String origFocusMode;
@@ -24,6 +32,10 @@ public class SonyCameraManager {
     private String origWbShiftMode;
     private String origWbShiftLb;
     private String origWbShiftCc;
+    private String origCreativeStyle;
+    private String origColorMode;
+    private String origProColorMode;
+    private String origPictureEffect;
 
     public interface CameraEventListener {
         void onCameraReady();
@@ -47,6 +59,10 @@ public class SonyCameraManager {
     
     public CameraEx getCameraEx() { 
         return cameraEx; 
+    }
+
+    public boolean isPreviewMagnificationActive() {
+        return previewMagnificationActive;
     }
 
     // --- NEW: Safe one-time check for Prime Lenses on boot ---
@@ -87,6 +103,10 @@ public class SonyCameraManager {
                         origWbShiftMode = p.get("white-balance-shift-mode");
                         origWbShiftLb = p.get("white-balance-shift-lb");
                         origWbShiftCc = p.get("white-balance-shift-cc");
+                        origCreativeStyle = p.get("creative-style");
+                        origColorMode = p.get("color-mode");
+                        origProColorMode = p.get("pro-color-mode");
+                        origPictureEffect = p.get("picture-effect");
                     } catch (Exception e) {
                         Log.e("JPEG.CAM", "Failed to backup parameters: " + e.getMessage());
                     }
@@ -106,6 +126,21 @@ public class SonyCameraManager {
                     Log.e("JPEG.CAM", "Failed to set drive mode: " + e.getMessage());
                 }
 
+                try {
+                    Camera.Parameters p = camera.getParameters();
+                    SonyCreativeStyleHelper.logDebug("creative-style=" + p.get("creative-style"));
+                    SonyCreativeStyleHelper.logDebug("creative-style-values=" + p.get("creative-style-values"));
+                    SonyCreativeStyleHelper.logDebug("creative-style-supported=" + p.get("creative-style-supported"));
+                    SonyCreativeStyleHelper.logDebug("color-mode=" + p.get("color-mode"));
+                    SonyCreativeStyleHelper.logDebug("color-mode-values=" + p.get("color-mode-values"));
+                    SonyCreativeStyleHelper.logDebug("color-mode-supported=" + p.get("color-mode-supported"));
+                    SonyCreativeStyleHelper.logDebug("pro-color-mode=" + p.get("pro-color-mode"));
+                    SonyCreativeStyleHelper.logDebug("picture-effect=" + p.get("picture-effect"));
+                    SonyCreativeStyleHelper.logDebug("flattened=" + p.flatten());
+                } catch (Exception e) {
+                    SonyCreativeStyleHelper.logError("Parameter dump failed: " + e.getMessage(), e);
+                }
+
                 if (listener != null) {
                     listener.onCameraReady();
                 }
@@ -116,6 +151,8 @@ public class SonyCameraManager {
     }
 
     public void close() {
+        clearPreviewMagnification();
+
         // 1. First, gently stop any active hardware operations
         if (camera != null) {
             try {
@@ -146,6 +183,10 @@ public class SonyCameraManager {
                 if (origWbShiftMode != null) p.set("white-balance-shift-mode", origWbShiftMode);
                 if (origWbShiftLb != null) p.set("white-balance-shift-lb", origWbShiftLb);
                 if (origWbShiftCc != null) p.set("white-balance-shift-cc", origWbShiftCc);
+                if (origCreativeStyle != null) p.set("creative-style", origCreativeStyle);
+                if (origColorMode != null) p.set("color-mode", origColorMode);
+                if (origProColorMode != null) p.set("pro-color-mode", origProColorMode);
+                if (origPictureEffect != null) p.set("picture-effect", origPictureEffect);
                 
                 camera.setParameters(p);
                 Log.d("JPEG.CAM", "Successfully restored standard Sony parameters.");
@@ -167,6 +208,105 @@ public class SonyCameraManager {
             cameraEx = null;
             camera = null;
         }
+    }
+
+    public boolean togglePreviewMagnification() {
+        if (cameraEx == null) {
+            return false;
+        }
+
+        try {
+            if (previewMagnificationActive) {
+                stopPreviewMagnificationInternal();
+                previewMagnificationActive = false;
+                previewMagnificationCoordinates = null;
+                SonyCreativeStyleHelper.logDebug("Preview magnification OFF");
+                return false;
+            }
+
+            Pair<Integer, Integer> target = previewMagnificationCoordinates;
+            if (target == null) {
+                target = Pair.create(0, 0);
+            }
+            setPreviewMagnificationInternal(PREVIEW_MAGNIFICATION_FOCUS_LEVEL, target);
+            previewMagnificationActive = true;
+            previewMagnificationLevel = PREVIEW_MAGNIFICATION_FOCUS_LEVEL;
+            previewMagnificationCoordinates = target;
+            SonyCreativeStyleHelper.logDebug("Preview magnification ON level="
+                    + PREVIEW_MAGNIFICATION_FOCUS_LEVEL
+                    + " x=" + target.first
+                    + " y=" + target.second);
+            return true;
+        } catch (Exception e) {
+            previewMagnificationActive = false;
+            SonyCreativeStyleHelper.logError("Preview magnification toggle failed: " + e.getMessage(), e);
+            return false;
+        }
+    }
+
+    public boolean movePreviewMagnification(int dx, int dy) {
+        if (cameraEx == null || !previewMagnificationActive) {
+            return false;
+        }
+
+        Pair<Integer, Integer> current = previewMagnificationCoordinates;
+        if (current == null) {
+            current = Pair.create(0, 0);
+        }
+
+        Pair<Integer, Integer> next = Pair.create(
+                clampPreviewMagnificationCoordinate(current.first + (dx * PREVIEW_MAGNIFICATION_MOVE_STEP)),
+                clampPreviewMagnificationCoordinate(current.second + (dy * PREVIEW_MAGNIFICATION_MOVE_STEP)));
+
+        try {
+            setPreviewMagnificationInternal(previewMagnificationLevel, next);
+            previewMagnificationCoordinates = next;
+            SonyCreativeStyleHelper.logDebug("Preview magnification move level="
+                    + previewMagnificationLevel
+                    + " x=" + next.first
+                    + " y=" + next.second);
+            return true;
+        } catch (Exception e) {
+            SonyCreativeStyleHelper.logError("Preview magnification move failed: " + e.getMessage(), e);
+            return false;
+        }
+    }
+
+    public void clearPreviewMagnification() {
+        if (cameraEx == null || !previewMagnificationActive) {
+            return;
+        }
+
+        try {
+            stopPreviewMagnificationInternal();
+        } catch (Exception e) {
+            SonyCreativeStyleHelper.logError("Preview magnification stop failed: " + e.getMessage(), e);
+        } finally {
+            previewMagnificationActive = false;
+            previewMagnificationCoordinates = null;
+        }
+    }
+
+    private int clampPreviewMagnificationCoordinate(int value) {
+        if (value > PREVIEW_MAGNIFICATION_MAX_COORDINATE) {
+            return PREVIEW_MAGNIFICATION_MAX_COORDINATE;
+        }
+        if (value < -PREVIEW_MAGNIFICATION_MAX_COORDINATE) {
+            return -PREVIEW_MAGNIFICATION_MAX_COORDINATE;
+        }
+        return value;
+    }
+
+    private void setPreviewMagnificationInternal(int level, Pair<Integer, Integer> coordinates) throws Exception {
+        cameraEx.getClass()
+                .getMethod("setPreviewMagnification", Integer.TYPE, Pair.class)
+                .invoke(cameraEx, level, coordinates);
+    }
+
+    private void stopPreviewMagnificationInternal() throws Exception {
+        cameraEx.getClass()
+                .getMethod("stopPreviewMagnification")
+                .invoke(cameraEx);
     }
 
     private void setupNativeListeners() {
@@ -269,6 +409,36 @@ public class SonyCameraManager {
                 }
             );
             cameraEx.getClass().getMethod("setSettingChangedListener", lClass).invoke(cameraEx, proxy);
+        } catch (Exception e) { }
+
+        try {
+            Class<?> lClass = Class.forName("com.sony.scalar.hardware.CameraEx$PreviewMagnificationListener");
+            Object proxy = java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(), new Class[]{lClass},
+                new java.lang.reflect.InvocationHandler() {
+                    @Override
+                    public Object invoke(Object p, java.lang.reflect.Method m, Object[] a) {
+                        if ("onChanged".equals(m.getName()) && a != null && a.length >= 4) {
+                            if (a.length >= 3 && a[2] instanceof Integer) {
+                                previewMagnificationLevel = ((Integer) a[2]).intValue();
+                            }
+                            if (a[3] instanceof Pair) {
+                                @SuppressWarnings("unchecked")
+                                Pair<Integer, Integer> coords = (Pair<Integer, Integer>) a[3];
+                                previewMagnificationCoordinates = coords;
+                            }
+                        } else if ("onInfoUpdated".equals(m.getName()) && a != null && a.length >= 2) {
+                            if (a[1] instanceof Pair) {
+                                @SuppressWarnings("unchecked")
+                                Pair<Integer, Integer> coords = (Pair<Integer, Integer>) a[1];
+                                previewMagnificationCoordinates = coords;
+                            }
+                        }
+                        return null;
+                    }
+                }
+            );
+            cameraEx.getClass().getMethod("setPreviewMagnificationListener", lClass).invoke(cameraEx, proxy);
         } catch (Exception e) { }
     }
 }
