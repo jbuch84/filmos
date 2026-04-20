@@ -137,7 +137,20 @@ public class RecipeManager {
             p.halation        = json.optInt("halation", 0);
             p.vignette        = json.optInt("vignette", 0);
             p.grain           = json.optInt("grain", 0);
-            p.grainSize       = json.optInt("grainSize", 0);
+            
+            String loadedGrainName = json.optString("grainName", "NONE");
+            List<String> grainOptions = java.util.Arrays.asList(MenuController.getGrainEngineOptions());
+
+            if (!loadedGrainName.equals("NONE")) {
+                p.grainSize = grainOptions.indexOf(loadedGrainName.toUpperCase());
+                if (p.grainSize == -1) p.grainSize = 0;
+            } else {
+                // Legacy Recipe Fallback
+                int legacySize = json.optInt("grainSize", 0);
+                String legacyName = (legacySize == 0) ? "SMALL" : (legacySize == 1) ? "MED" : "LARGE";
+                p.grainSize = grainOptions.indexOf(legacyName);
+                if (p.grainSize == -1) p.grainSize = 0; // If not found, use first available
+            }
 
             p.bloom           = json.optInt("bloom", 0);
             p.contrast        = json.optInt("contrast", 0);
@@ -187,6 +200,15 @@ public class RecipeManager {
             sb.append("  \"vignette\": ").append(p.vignette).append(",\n");
             sb.append("  \"grain\": ").append(p.grain).append(",\n");
             sb.append("  \"grainSize\": ").append(p.grainSize).append(",\n");
+
+            String grainNameToSave = "NONE";
+            if (p.grain > 0) {
+                List<String> grainOptions = java.util.Arrays.asList(MenuController.getGrainEngineOptions());
+                if (p.grainSize >= 0 && p.grainSize < grainOptions.size()) {
+                    grainNameToSave = grainOptions.get(p.grainSize);
+                }
+            }
+            sb.append("  \"grainName\": \"").append(grainNameToSave.replace("\"", "\\\"")).append("\",\n");
 
             sb.append("  \"bloom\": ").append(p.bloom).append(",\n");
             sb.append("  \"contrast\": ").append(p.contrast).append(",\n");
