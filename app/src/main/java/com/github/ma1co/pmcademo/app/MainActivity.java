@@ -434,54 +434,59 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     try {
                         BitmapFactory.Options opts = new BitmapFactory.Options();
                         
-                        // 1. Get exact bounds of the raw image without loading it
-                        opts.inJustDecodeBounds = true;
-                        BitmapFactory.decodeFile(leftPath, opts);
-                        int fullW = opts.outWidth;
-                        int fullH = opts.outHeight;
-                        int midW = fullW / 2;
+                        // 1. Force hardware downscaling during the read!
+                        // inSampleSize skips pixels during decode, so the massive 24MP image never hits RAM.
+                        opts.inPreferredConfig = Bitmap.Config.RGB_565; // 50% memory savings
                         
-                        // 2. Set strict memory-saving rules
-                        opts.inJustDecodeBounds = false;
-                        opts.inPreferredConfig = Bitmap.Config.RGB_565; // <--- CRITICAL: Cuts memory by 50%
-                        opts.inSampleSize = 4; // <--- CRITICAL: Forces 1/4 resolution (approx 1500x1000)
+                        // Force a safe proxy size (4 = 1/4th resolution, approx 1500x1000)
+                        opts.inSampleSize = 4; 
                         
-                        // Calculate final proxy dimensions
-                        int compW = fullW / opts.inSampleSize;
-                        int compH = fullH / opts.inSampleSize;
+                        // 2. Decode the ALREADY SCALED Left Image
+                        Bitmap leftBmp = BitmapFactory.decodeFile(leftPath, opts);
+                        if (leftBmp == null) throw new Exception("Failed to decode left image");
                         
-                        // 3. Create the tiny 3MB workspace
-                        Bitmap composite = Bitmap.createBitmap(compW, compH, Bitmap.Config.RGB_565);
+                        int w = leftBmp.getWidth();
+                        int h = leftBmp.getHeight();
+                        int midW = w / 2;
+                        
+                        // 3. Create the tiny 3MB proxy workspace
+                        Bitmap composite = Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565);
                         android.graphics.Canvas canvas = new android.graphics.Canvas(composite);
                         
-                        // 4. Decode ONLY the Left half of the Left Image
-                        android.graphics.BitmapRegionDecoder decoderLeft = android.graphics.BitmapRegionDecoder.newInstance(leftPath, false);
-                        android.graphics.Rect rectLeft = new android.graphics.Rect(0, 0, midW, fullH);
-                        Bitmap leftBmp = decoderLeft.decodeRegion(rectLeft, opts);
-                        if (leftBmp != null) {
-                            canvas.drawBitmap(leftBmp, 0, 0, null);
-                            leftBmp.recycle(); 
-                        }
-                        decoderLeft.recycle();
+                        // 4. Crop and paint the Left Half, then NUKE it from RAM
+                        android.graphics.Rect srcLeft = new android.graphics.Rect(0, 0, midW, h);
+                        android.graphics.Rect dstLeft = new android.graphics.Rect(0, 0, midW, h);
+                        canvas.drawBitmap(leftBmp, srcLeft, dstLeft, null);
                         
-                        // 5. Decode ONLY the Right half of the Right Image
-                        android.graphics.BitmapRegionDecoder decoderRight = android.graphics.BitmapRegionDecoder.newInstance(rightPath, false);
-                        android.graphics.Rect rectRight = new android.graphics.Rect(midW, 0, fullW, fullH);
-                        Bitmap rightBmp = decoderRight.decodeRegion(rectRight, opts);
+                        leftBmp.recycle();
+                        leftBmp = null;
+                        System.gc(); // Explicitly command the camera to take out the trash NOW
+                        
+                        // 5. Decode the ALREADY SCALED Right Image
+                        Bitmap rightBmp = BitmapFactory.decodeFile(rightPath, opts);
                         if (rightBmp != null) {
-                            canvas.drawBitmap(rightBmp, compW / 2, 0, null);
+                            // Crop and paint the Right Half, then NUKE it
+                            android.graphics.Rect srcRight = new android.graphics.Rect(midW, 0, w, h);
+                            android.graphics.Rect dstRight = new android.graphics.Rect(midW, 0, w, h);
+                            canvas.drawBitmap(rightBmp, srcRight, dstRight, null);
+                            
                             rightBmp.recycle();
+                            rightBmp = null;
+                            System.gc(); 
                         }
-                        decoderRight.recycle();
                         
-                        // 6. Save the optimized composite to SD card
+                        // 6. Save the perfectly stitched proxy to the SD card
                         File tempFile = new File(Environment.getExternalStorageDirectory(), "DCIM/DIPTYCH_TEMP.JPG");
                         java.io.FileOutputStream out = new java.io.FileOutputStream(tempFile);
                         composite.compress(Bitmap.CompressFormat.JPEG, 95, out);
                         out.close();
-                        composite.recycle(); // Free the workspace!
                         
-                        // 7. Send the tiny stitched file through your standard Recipe pipeline
+                        // Destroy the workspace before calling the C++ processor
+                        composite.recycle(); 
+                        composite = null;
+                        System.gc();
+                        
+                        // 7. Send the tiny stitched file through your Recipe pipeline
                         File outDir = Filepaths.getGradedDir();
                         mProcessor.processJpeg(tempFile.getAbsolutePath(), outDir.getAbsolutePath(), 
                                                0, prefJpegQuality,   // Force QualityIndex 0 (Proxy)
