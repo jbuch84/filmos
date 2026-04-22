@@ -481,22 +481,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                         final String pathRightHalf = firstShotLeft ? rightPath : leftPath;
 
                         // 2. Use C++ to safely downscale the massive 24MP images to 6MP proxies 
-                        // with Opacity=0 to bypass grading. This yields beautiful, sharp ~2MB JPEGs!
-                        
-                        // FIX: Environment.getExternalStorageDirectory() is often read-only or invalid 
-                        // on Sony cameras. We must use our Filepaths utility to target the actual SD card.
-                        File tempDir = new File(Filepaths.getAppDir(), "DIPTYCH_WORKSPACE");
-                        if (!tempDir.exists()) tempDir.mkdirs();
-                        
-                        File proxyL = new File(tempDir, "left.jpg");
-                        File proxyR = new File(tempDir, "right.jpg");
+                        // We use the known-good GRADED directory to guarantee write permissions.
+                        File safeDir = Filepaths.getGradedDir();
+                        File proxyL = new File(safeDir, ".proxyL.jpg");
+                        File proxyR = new File(safeDir, ".proxyR.jpg");
+
+                        // Pre-flight checks to provide clear errors if something is locked
+                        if (!new File(pathLeftHalf).exists()) throw new Exception("Missing L input: " + pathLeftHalf);
+                        if (!new File(pathRightHalf).exists()) throw new Exception("Missing R input: " + pathRightHalf);
+                        try { new java.io.FileOutputStream(proxyL).close(); } catch (Exception e) { throw new Exception("Cannot write proxyL"); }
+                        try { new java.io.FileOutputStream(proxyR).close(); } catch (Exception e) { throw new Exception("Exception on write proxyR"); }
 
                         LutEngine engine = new LutEngine();
                         boolean lOk = engine.applyLutToJpeg(pathLeftHalf, proxyL.getAbsolutePath(), 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, false);
-                        if (!lOk) throw new Exception("C++ failed to generate left proxy.");
+                        if (!lOk) throw new Exception("C++ returned false for left proxy.");
                         
                         boolean rOk = engine.applyLutToJpeg(pathRightHalf, proxyR.getAbsolutePath(), 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, false);
-                        if (!rOk) throw new Exception("C++ failed to generate right proxy.");
+                        if (!rOk) throw new Exception("C++ returned false for right proxy.");
 
                         // 3. STITCH THE HALVES IN JAVA
                         BitmapFactory.Options opts = new BitmapFactory.Options();
@@ -543,7 +544,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                         composite.recycle(); composite = null;
 
                         // Cleanup workspace
-                        proxyL.delete(); proxyR.delete(); tempDir.delete();
+                        proxyL.delete(); proxyR.delete();
                         new File(leftPath).delete();
                         
                         // 3. Send the stitched proxy through the standard Recipe pipeline
