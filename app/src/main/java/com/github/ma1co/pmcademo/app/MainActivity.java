@@ -112,6 +112,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     // By hunting for the secondary SOI (0xFFD8) and SOF0 (0xFFC0) markers, we can 
     // extract it instantly into RAM, completely bypassing the massive 24MP image!
     private Bitmap extractSonyLargeThumbnail(String path) {
+    private Bitmap getDiptychThumbnail(String path) {
         try {
             java.io.RandomAccessFile raf = new java.io.RandomAccessFile(path, "r");
             byte[] header = new byte[1048576]; // Read first 1MB
@@ -144,8 +145,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 return BitmapFactory.decodeByteArray(thumbData, 0, tLen, opts);
             }
             raf.close();
+            BitmapFactory.Options opts = new BitmapFactory.Options();
+            // Safely downscale 24MP by 8x (approx 750px wide) for the UI Overlay
+            opts.inSampleSize = 8; 
+            opts.inPreferredConfig = Bitmap.Config.RGB_565;
+            return BitmapFactory.decodeFile(path, opts);
         } catch (Exception e) {
             android.util.Log.e("JPEG.CAM", "MPF Extractor failed: " + e.getMessage());
+            return null;
         }
         return null;
     }
@@ -367,6 +374,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 RTLProfile p = recipeManager.getCurrentProfile();
                 return isReady && !isProcessing && !calibController.isCalibrating() &&
                        (p.lutIndex != 0 || p.grain != 0 || p.vignette != 0 ||
+                       (prefShowDiptych || p.lutIndex != 0 || p.grain != 0 || p.vignette != 0 ||
                         p.rollOff != 0 || p.colorChrome != 0 || p.chromeBlue != 0 ||
                         p.shadowToe != 0 || p.subtractiveSat != 0 || p.halation != 0 ||
                         p.bloom != 0);
@@ -438,8 +446,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private void handleDiptychCapture(final String newPath) {
         if (diptychState == 0) {
             // SHOT 1: Save the path and update the UI to frame the right side
+            // SHOT 1: Save the path and extract the thumbnail for the UI overlay
             diptychLeftPath = newPath;
             diptychState = 1;
+            
+            final Bitmap thumb = getDiptychThumbnail(newPath);
+            
             isProcessing = false; // Free the scanner for the next shot
             
             runOnUiThread(new Runnable() {
@@ -447,6 +459,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                     if (tvTopStatus != null) {
                         tvTopStatus.setText("LEFT SAVED. SHOOT RIGHT.");
                         tvTopStatus.setTextColor(Color.GREEN);
+                    if (diptychOverlay != null) {
+                        diptychOverlay.setThumbnail(thumb);
+                        diptychOverlay.setState(1);
                     }
                     updateMainHUD();
                 }
@@ -463,8 +478,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             
             runOnUiThread(new Runnable() {
                 public void run() {
+                    if (diptychOverlay != null) diptychOverlay.setState(0);
                     if (tvTopStatus != null) {
                         tvTopStatus.setText("STITCHING DIPTYCH...");
+                        tvTopStatus.setText("STITCHING HIGH-RES DIPTYCH...");
                         tvTopStatus.setTextColor(Color.YELLOW);
                     }
                     updateMainHUD();
@@ -479,12 +496,19 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                         // 1. Assign which file goes on which side based on the user's overlay placement
                         final String pathLeftHalf = firstShotLeft ? leftPath : rightPath;
                         final String pathRightHalf = firstShotLeft ? rightPath : leftPath;
+                        String pathLeftHalf = firstShotLeft ? leftPath : rightPath;
+                        String pathRightHalf = firstShotLeft ? rightPath : leftPath;
 
                         // 2. Use C++ to safely downscale the massive 24MP images to 6MP proxies 
                         // We use the known-good GRADED directory to guarantee write permissions.
                         File safeDir = Filepaths.getGradedDir();
                         File proxyL = new File(safeDir, "PROXY_L.JPG");
                         File proxyR = new File(safeDir, "PROXY_R.JPG");
+                        // We use the app's internal cache to guarantee write permissions for C++.
+                        File tempDir = getCacheDir();
+                        
+                        File proxyL = new File(tempDir, "PROXY_L.JPG");
+                        File proxyR = new File(tempDir, "PROXY_R.JPG");
 
                         // Pre-flight checks to provide clear errors if something is locked
                         if (!new File(pathLeftHalf).exists()) throw new Exception("Missing L input: " + pathLeftHalf);
@@ -495,9 +519,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                         LutEngine engine = new LutEngine();
                         boolean lOk = engine.applyLutToJpeg(pathLeftHalf, proxyL.getAbsolutePath(), 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, false);
                         if (!lOk) throw new Exception("C++ returned false for left proxy.");
+                        if (!lOk) throw new Exception("C++ failed to generate left proxy.");
                         
                         boolean rOk = engine.applyLutToJpeg(pathRightHalf, proxyR.getAbsolutePath(), 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, false);
                         if (!rOk) throw new Exception("C++ returned false for right proxy.");
+                        if (!rOk) throw new Exception("C++ failed to generate right proxy.");
 
                         // 3. STITCH THE HALVES IN JAVA
                         BitmapFactory.Options opts = new BitmapFactory.Options();
@@ -548,6 +574,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                         new File(leftPath).delete();
                         
                         // 3. Send the stitched proxy through the standard Recipe pipeline
+                        // 4. Send the stitched proxy through the standard Recipe pipeline
                         final File outDir = Filepaths.getGradedDir();
                         runOnUiThread(new Runnable() {
                             @Override
@@ -1683,16 +1710,20 @@ public void onEnterPressed() {
         
         // --- 3. UPDATE TEXT FIELDS ---
         if (!isProcessing && tvTopStatus != null) {
-            // --- FIXED: Clearer Identity ---
-            int slotNum = recipeManager.getCurrentSlot() + 1;
-            tvTopStatus.setText("SLOT " + slotNum + ": " + customName + "\n" + (isReady ? "READY" : "LOADING.."));
-            
-            if (mDialMode == DIAL_MODE_RTL) {
-                tvTopStatus.setTextColor(selectedColor); // <--- UPDATED
-            } else if (isReady) {
-                tvTopStatus.setTextColor(Color.rgb(0, 230, 118)); 
+            if (prefShowDiptych && diptychState == 1) {
+                tvTopStatus.setText("SHOT 1 SAVED. [L/R] TO SWAP SIDE.");
+                tvTopStatus.setTextColor(Color.GREEN);
             } else {
-                tvTopStatus.setTextColor(Color.rgb(227, 69, 20)); 
+                int slotNum = recipeManager.getCurrentSlot() + 1;
+                tvTopStatus.setText("SLOT " + slotNum + ": " + customName + "\n" + (isReady ? "READY" : "LOADING.."));
+                
+                if (mDialMode == DIAL_MODE_RTL) {
+                    tvTopStatus.setTextColor(selectedColor);
+                } else if (isReady) {
+                    tvTopStatus.setTextColor(Color.rgb(0, 230, 118)); 
+                } else {
+                    tvTopStatus.setTextColor(Color.rgb(227, 69, 20)); 
+                }
             }
         }
         
