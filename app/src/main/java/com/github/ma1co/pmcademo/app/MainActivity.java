@@ -107,54 +107,16 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private int diptychState = 0;            
     private String diptychLeftPath = null;   // <--- ADDED
 
-    // --- NEW: SONY MPF (Multi-Picture Format) EXTRACTOR ---
-    // Sony natively embeds a beautiful 1616x1080 preview deep inside the main JPEG.
-    // By hunting for the secondary SOI (0xFFD8) and SOF0 (0xFFC0) markers, we can 
-    // extract it instantly into RAM, completely bypassing the massive 24MP image!
-    private Bitmap extractSonyLargeThumbnail(String path) {
     private Bitmap getDiptychThumbnail(String path) {
         try {
-            java.io.RandomAccessFile raf = new java.io.RandomAccessFile(path, "r");
-            byte[] header = new byte[1048576]; // Read first 1MB
-            int readLen = raf.read(header);
-            
-            int targetOffset = -1;
-            for (int i = 1000; i < readLen - 10; i++) {
-                if ((header[i] & 0xFF) == 0xFF && (header[i+1] & 0xFF) == 0xD8) {
-                    for (int j = i + 2; j < i + 65536 && j < readLen - 10; j++) {
-                        if ((header[j] & 0xFF) == 0xFF && (header[j+1] & 0xFF) == 0xC0) {
-                            int width = ((header[j+7] & 0xFF) << 8) | (header[j+8] & 0xFF);
-                            if (width >= 1000 && width <= 2500) {
-                                targetOffset = i;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (targetOffset != -1) break;
-            }
-            
-            if (targetOffset != -1) {
-                raf.seek(targetOffset);
-                byte[] thumbData = new byte[1048576]; // Read up to 1MB
-                int tLen = raf.read(thumbData);
-                raf.close();
-                
-                BitmapFactory.Options opts = new BitmapFactory.Options();
-                opts.inPreferredConfig = Bitmap.Config.RGB_565; // Massive RAM savings
-                return BitmapFactory.decodeByteArray(thumbData, 0, tLen, opts);
-            }
-            raf.close();
             BitmapFactory.Options opts = new BitmapFactory.Options();
             // Safely downscale 24MP by 8x (approx 750px wide) for the UI Overlay
             opts.inSampleSize = 8; 
             opts.inPreferredConfig = Bitmap.Config.RGB_565;
             return BitmapFactory.decodeFile(path, opts);
         } catch (Exception e) {
-            android.util.Log.e("JPEG.CAM", "MPF Extractor failed: " + e.getMessage());
             return null;
         }
-        return null;
     }
 
     private LensProfileManager lensManager;
@@ -373,7 +335,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             public boolean isReadyToProcess() { 
                 RTLProfile p = recipeManager.getCurrentProfile();
                 return isReady && !isProcessing && !calibController.isCalibrating() &&
-                       (p.lutIndex != 0 || p.grain != 0 || p.vignette != 0 ||
                        (prefShowDiptych || p.lutIndex != 0 || p.grain != 0 || p.vignette != 0 ||
                         p.rollOff != 0 || p.colorChrome != 0 || p.chromeBlue != 0 ||
                         p.shadowToe != 0 || p.subtractiveSat != 0 || p.halation != 0 ||
@@ -457,8 +418,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             runOnUiThread(new Runnable() {
                 public void run() {
                     if (tvTopStatus != null) {
-                        tvTopStatus.setText("LEFT SAVED. SHOOT RIGHT.");
+                        tvTopStatus.setText("SHOT 1 SAVED. [L/R] TO SWAP SIDE.");
                         tvTopStatus.setTextColor(Color.GREEN);
+                    }
                     if (diptychOverlay != null) {
                         diptychOverlay.setThumbnail(thumb);
                         diptychOverlay.setState(1);
@@ -480,7 +442,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 public void run() {
                     if (diptychOverlay != null) diptychOverlay.setState(0);
                     if (tvTopStatus != null) {
-                        tvTopStatus.setText("STITCHING DIPTYCH...");
                         tvTopStatus.setText("STITCHING HIGH-RES DIPTYCH...");
                         tvTopStatus.setTextColor(Color.YELLOW);
                     }
@@ -496,19 +457,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                         // 1. Assign which file goes on which side based on the user's overlay placement
                         final String pathLeftHalf = firstShotLeft ? leftPath : rightPath;
                         final String pathRightHalf = firstShotLeft ? rightPath : leftPath;
-                        String pathLeftHalf = firstShotLeft ? leftPath : rightPath;
-                        String pathRightHalf = firstShotLeft ? rightPath : leftPath;
 
                         // 2. Use C++ to safely downscale the massive 24MP images to 6MP proxies 
                         // We use the known-good GRADED directory to guarantee write permissions.
                         File safeDir = Filepaths.getGradedDir();
                         File proxyL = new File(safeDir, "PROXY_L.JPG");
                         File proxyR = new File(safeDir, "PROXY_R.JPG");
-                        // We use the app's internal cache to guarantee write permissions for C++.
-                        File tempDir = getCacheDir();
-                        
-                        File proxyL = new File(tempDir, "PROXY_L.JPG");
-                        File proxyR = new File(tempDir, "PROXY_R.JPG");
 
                         // Pre-flight checks to provide clear errors if something is locked
                         if (!new File(pathLeftHalf).exists()) throw new Exception("Missing L input: " + pathLeftHalf);
@@ -518,11 +472,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
                         LutEngine engine = new LutEngine();
                         boolean lOk = engine.applyLutToJpeg(pathLeftHalf, proxyL.getAbsolutePath(), 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, false);
-                        if (!lOk) throw new Exception("C++ returned false for left proxy.");
                         if (!lOk) throw new Exception("C++ failed to generate left proxy.");
                         
                         boolean rOk = engine.applyLutToJpeg(pathRightHalf, proxyR.getAbsolutePath(), 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100, false);
-                        if (!rOk) throw new Exception("C++ returned false for right proxy.");
                         if (!rOk) throw new Exception("C++ failed to generate right proxy.");
 
                         // 3. STITCH THE HALVES IN JAVA
@@ -573,7 +525,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                         proxyL.delete(); proxyR.delete();
                         new File(leftPath).delete();
                         
-                        // 3. Send the stitched proxy through the standard Recipe pipeline
                         // 4. Send the stitched proxy through the standard Recipe pipeline
                         final File outDir = Filepaths.getGradedDir();
                         runOnUiThread(new Runnable() {
