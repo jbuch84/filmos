@@ -471,20 +471,38 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                         try { new java.io.FileOutputStream(proxyR).close(); } catch (Exception e) { throw new Exception("Exception on write proxyR"); }
 
                         LutEngine engine = new LutEngine();
-                        // Apply the current recipe to both halves during downscaling
                         RTLProfile currentProfile = recipeManager.getCurrentProfile();
-                        boolean lOk = engine.applyLutToJpeg(pathLeftHalf, proxyL.getAbsolutePath(), 2, 
-                            currentProfile.opacity, currentProfile.grain, currentProfile.grainSize,
+
+                        // Texture Intercept
+                        if (MenuController.grainTextureFiles.size() > 0 && currentProfile.grainSize >= 0 && currentProfile.grainSize < MenuController.grainTextureFiles.size()) {
+                            engine.loadGrainTexture(MenuController.grainTextureFiles.get(currentProfile.grainSize));
+                        }
+
+                        // Safely step down physical effects for the smaller canvas
+                        int finalGrainSize = Math.max(0, currentProfile.grainSize - 1);
+                        int[] bloomMap = {0, 5, 6, 1, 2, 3, 4};
+                        int currentBloomIdx = 0;
+                        for (int i = 0; i < bloomMap.length; i++) {
+                            if (bloomMap[i] == currentProfile.bloom) currentBloomIdx = i;
+                        }
+                        int finalBloom = bloomMap[Math.max(0, currentBloomIdx - 1)];
+                        int scale = (recipeManager.getQualityIndex() == 0) ? 4 : (recipeManager.getQualityIndex() == 2 ? 1 : 2);
+                        int safeJpegQuality = prefJpegQuality;
+                        if (scale == 4) safeJpegQuality = Math.min(85, prefJpegQuality);
+                        else if (scale == 2) safeJpegQuality = Math.min(90, prefJpegQuality);
+
+                        boolean lOk = engine.applyLutToJpeg(pathLeftHalf, proxyL.getAbsolutePath(), scale, 
+                            currentProfile.opacity, currentProfile.grain, finalGrainSize,
                             currentProfile.vignette, currentProfile.rollOff, currentProfile.colorChrome, 
                             currentProfile.chromeBlue, currentProfile.shadowToe, currentProfile.subtractiveSat, 
-                            currentProfile.halation, currentProfile.bloom, 100, false);
+                            currentProfile.halation, finalBloom, safeJpegQuality, false);
                         if (!lOk) throw new Exception("C++ failed to generate left proxy.");
                         
-                        boolean rOk = engine.applyLutToJpeg(pathRightHalf, proxyR.getAbsolutePath(), 2, 
-                            currentProfile.opacity, currentProfile.grain, currentProfile.grainSize,
+                        boolean rOk = engine.applyLutToJpeg(pathRightHalf, proxyR.getAbsolutePath(), scale, 
+                            currentProfile.opacity, currentProfile.grain, finalGrainSize,
                             currentProfile.vignette, currentProfile.rollOff, currentProfile.colorChrome, 
                             currentProfile.chromeBlue, currentProfile.shadowToe, currentProfile.subtractiveSat, 
-                            currentProfile.halation, currentProfile.bloom, 100, false);
+                            currentProfile.halation, finalBloom, safeJpegQuality, false);
                         if (!rOk) throw new Exception("C++ failed to generate right proxy.");
 
                         // 3. STITCH THE HALVES IN JAVA - MINIMAL PROCESSING
@@ -526,26 +544,25 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                         dividerPaint.setStrokeWidth(Math.max(4, finalW / 400));
                         canvas.drawLine(lMid, 0, lMid, finalH, dividerPaint);
 
-                        java.io.FileOutputStream out = new java.io.FileOutputStream(rightPath);
-                        composite.compress(Bitmap.CompressFormat.JPEG, 95, out);
+                        // 4. Save directly to GRADED folder
+                        File finalOut = new File(safeDir, "DIPTYCH_" + new File(rightPath).getName());
+                        java.io.FileOutputStream out = new java.io.FileOutputStream(finalOut);
+                        composite.compress(Bitmap.CompressFormat.JPEG, safeJpegQuality, out);
                         out.close();
                         composite.recycle(); composite = null;
 
-                        // Cleanup workspace
+                        // Cleanup workspace (Do NOT delete original DCIM files)
                         proxyL.delete(); proxyR.delete();
-                        new File(leftPath).delete();
                         
-                        // 4. Send the stitched proxy through the standard Recipe pipeline
-                        final File outDir = Filepaths.getGradedDir();
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
-                                // PASS 2 (FULL RES) so the C++ engine doesn't shrink it any further!
-                                // The ImageProcessor's isDiptych=true flag will automatically 
-                                // step down the bloom and grain sizes to perfectly match this canvas!
-                                mProcessor.processJpeg(rightPath, outDir.getAbsolutePath(), 
-                                                       recipeManager.getQualityIndex(), prefJpegQuality,   
-                                                       recipeManager.getCurrentProfile(), prefShowCinemaMattes, true);
+                                isProcessing = false;
+                                if (tvTopStatus != null) {
+                                    tvTopStatus.setText("DIPTYCH SAVED");
+                                    tvTopStatus.setTextColor(Color.WHITE);
+                                }
+                                updateMainHUD();
                             }
                         });
                                                

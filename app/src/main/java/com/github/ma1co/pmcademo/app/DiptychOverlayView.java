@@ -24,11 +24,11 @@ public class DiptychOverlayView extends View {
         linePaint.setStrokeWidth(2);
         
         thumbPaint = new Paint();
-        thumbPaint.setAlpha(140); // ~55% opacity so you can still see through it
+        thumbPaint.setAlpha(200); // ~78% opacity to make the preview much more visible
         
         darkPaint = new Paint();
         darkPaint.setColor(Color.BLACK);
-        darkPaint.setAlpha(70); // ~27% opacity for darkening
+        darkPaint.setAlpha(180); // ~70% opacity for a much darker mask
     }
 
     public void setState(int state) {
