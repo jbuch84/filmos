@@ -146,14 +146,27 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
         mark = mark->next;
     }
 
-    int rs = cd.output_width*3; const int CHK = 128, BUF = CHK+20; // Increased chunk for speed
+    int rs = cd.output_width*3;
+    // Scale-aware chunk size and thread cap.
+    // Larger chunks = fewer wake/sleep cycles per image = real-world speedup.
+    // Full-res (scale=1) is memory-bandwidth limited on single-channel LPDDR ARM.
+    // Capping at 2 threads for full-res actually outperforms 4 threads by halving
+    // bus contention. Proxy/half-res are more cache-friendly so more threads help.
+    // numCores comes from Java's Runtime.availableProcessors() — correct per camera.
+    int CHK = (scaleDenom >= 2) ? 200 : 120;
+    int BUF = CHK + 20; // r[256] and orw[256] safe: BUF max=220, CHK max=200 < 256
+    int maxTs = (scaleDenom >= 4) ? numCores :
+                (scaleDenom >= 2) ? std::min(numCores, 3) :
+                                    std::min(numCores, 2);
+    int ts = std::min(maxTs, 4); // Hard cap of 4
+
     unsigned char* rb = (unsigned char*)malloc(BUF*rs); unsigned char* r[256]; for(int i=0; i<BUF; i++) r[i]=rb+(i*rs);
     unsigned char* ob = (unsigned char*)malloc(CHK*rs); unsigned char* orw[256]; for(int i=0; i<CHK; i++) orw[i]=ob+(i*rs);
 
     int map[256]; for(int i=0; i<256; i++) map[i]=(i*(nativeLutSize-1)*128)/255;
     uint8_t roll[256]; generate_rolloff_lut(roll, rollOff);
 
-    int ts = std::min(numCores, 4), ws_s = cd.output_width*sizeof(int); std::vector<WorkerData> wks(ts);
+    int ws_s = cd.output_width*sizeof(int); std::vector<WorkerData> wks(ts);
     for(int i=0; i<ts; i++){ 
         WorkerData& w=wks[i]; pthread_mutex_init(&w.mutex,NULL); pthread_cond_init(&w.cond_start,NULL); pthread_cond_init(&w.cond_done,NULL); 
         w.start=w.done=w.terminate=false; 
@@ -196,8 +209,13 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     jpeg_create_decompress(&c1); jpeg_stdio_src(&c1, f1); jpeg_read_header(&c1, TRUE);
     jpeg_create_decompress(&c2); jpeg_stdio_src(&c2, f2); jpeg_read_header(&c2, TRUE);
     
-    c1.scale_denom = 1; c1.out_color_space = JCS_RGB; jpeg_start_decompress(&c1);
-    c2.scale_denom = 1; c2.out_color_space = JCS_RGB; jpeg_start_decompress(&c2);
+    // Smart scale: if images are large (full/half-res processed files), decode at 1/2
+    // to prevent OOM. Effects are already baked in by processImageNative before stitching.
+    // Small proxy files (width <= 3000) decode at full scale to preserve quality.
+    c1.scale_denom = (c1.image_width > 3000) ? 2 : 1;
+    c2.scale_denom = (c2.image_width > 3000) ? 2 : 1;
+    c1.out_color_space = JCS_RGB; jpeg_start_decompress(&c1);
+    c2.out_color_space = JCS_RGB; jpeg_start_decompress(&c2);
     
     struct jpeg_compress_struct co; struct my_error_mgr jo; co.err = jpeg_std_error(&jo.pub); jo.pub.error_exit = my_error_exit;
     if(setjmp(jo.setjmp_buffer)) { return JNI_FALSE; }

@@ -12,6 +12,7 @@ public class DiptychOverlayView extends View {
     private Paint linePaint;
     private Paint thumbPaint;
     private Paint darkPaint;
+    private Paint framePaint;
     private Bitmap thumbnail;
     private boolean thumbOnLeft = true;
     private int state = 0; // 0: Need Shot 1, 1: Need Shot 2
@@ -29,6 +30,12 @@ public class DiptychOverlayView extends View {
         darkPaint = new Paint();
         darkPaint.setColor(Color.BLACK);
         darkPaint.setAlpha(180); // ~70% opacity for a much darker mask
+
+        framePaint = new Paint();
+        framePaint.setColor(Color.WHITE);
+        framePaint.setStyle(Paint.Style.STROKE);
+        framePaint.setStrokeWidth(3);
+        framePaint.setAntiAlias(false); // crisp lines on small camera screens
     }
 
     public void setState(int state) {
@@ -64,10 +71,30 @@ public class DiptychOverlayView extends View {
         int h = getHeight();
         int mid = w / 2;
 
-        // Darken the side where the user should NOT take the photo
         if (state == 0) {
-            // On start (waiting for first shot), darken the right half
+            // HALF FRAME STYLE for shot 1:
+            // Light mask on the inactive right half so the user focuses on the left.
+            // Corner brackets on the active left half evoke a half-frame camera viewfinder.
+            darkPaint.setAlpha(100); // ~40% dark — subtle hint, not a heavy block
             canvas.drawRect(mid, 0, w, h, darkPaint);
+            darkPaint.setAlpha(180); // restore for state-1 use
+
+            // Corner bracket marks on the active (left) half
+            int mg = Math.max(8, w / 32);  // margin from screen edge
+            int bl = h / 10;               // bracket arm length
+            // Top-left corner
+            canvas.drawLine(mg,       mg,            mg + bl,       mg,            framePaint);
+            canvas.drawLine(mg,       mg,            mg,            mg + bl,       framePaint);
+            // Top-right corner of active half (near center line)
+            canvas.drawLine(mid - mg, mg,            mid - mg - bl, mg,            framePaint);
+            canvas.drawLine(mid - mg, mg,            mid - mg,      mg + bl,       framePaint);
+            // Bottom-left corner
+            canvas.drawLine(mg,       h - mg,        mg + bl,       h - mg,        framePaint);
+            canvas.drawLine(mg,       h - mg,        mg,            h - mg - bl,   framePaint);
+            // Bottom-right corner of active half
+            canvas.drawLine(mid - mg, h - mg,        mid - mg - bl, h - mg,        framePaint);
+            canvas.drawLine(mid - mg, h - mg,        mid - mg,      h - mg - bl,   framePaint);
+
         } else if (state == 1) {
             if (thumbOnLeft) {
                 canvas.drawRect(0, 0, mid, h, darkPaint);

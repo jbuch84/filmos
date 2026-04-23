@@ -65,16 +65,17 @@ public class DiptychManager {
         if (state == 0) {
             leftFilename = filename;
             state = 1;
-            // INSTANT PREVIEW: Decode from original un-graded photo immediately
+            // INSTANT PREVIEW: Decode a tiny thumbnail from the original un-graded photo.
+            // inSampleSize=16 gives ~375x250 — fast decode on slow ARM, plenty for a guide.
+            // Wait loop shortened to 4x50ms (200ms max) instead of 10x100ms (1s max).
             new Thread(new Runnable() {
                 public void run() {
-                    // Wait up to 1s for file to be ready
                     File f = new File(originalPath);
                     long last = -1;
-                    for(int i=0; i<10; i++) {
-                        if(f.exists() && f.length() > 0 && f.length() == last) break;
+                    for (int i = 0; i < 4; i++) {
+                        if (f.exists() && f.length() > 0 && f.length() == last) break;
                         last = f.length();
-                        try { Thread.sleep(100); } catch(Exception e) {}
+                        try { Thread.sleep(50); } catch (Exception e) {}
                     }
                     final Bitmap thumb = getDiptychThumbnail(originalPath);
                     activity.runOnUiThread(new Runnable() {
@@ -134,7 +135,7 @@ public class DiptychManager {
     private Bitmap getDiptychThumbnail(String path) {
         try {
             BitmapFactory.Options opts = new BitmapFactory.Options();
-            opts.inSampleSize = 8;
+            opts.inSampleSize = 16; // ~375x250 — fast decode, plenty for a composition guide
             opts.inPreferredConfig = Bitmap.Config.RGB_565;
             return BitmapFactory.decodeFile(path, opts);
         } catch (Throwable t) { return null; }
