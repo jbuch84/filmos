@@ -10,12 +10,23 @@
 #include "jpeglib.h"
 #include <android/log.h>
 #include "process_kernel.h"
-#include "thread_pool.h"
+#include <pthread.h>
+#include <functional>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #define LOG_TAG "COOKBOOK_NATIVE"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+
+struct ThreadTask {
+    std::function<void()> func;
+};
+
+static void* thread_runner(void* arg) {
+    ThreadTask* t = static_cast<ThreadTask*>(arg);
+    t->func();
+    return NULL;
+}
 
 std::vector<uint8_t> nativeLut;
 int nativeLutSize = 0;
@@ -330,8 +341,6 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
         generate_rolloff_lut(rolloff_lut, rollOff);
     }
 
-    ThreadPool pool(numCores);
-
     // --- PRE-LOAD BUFFER (Initialize the 140-row window) ---
     const uint8_t* externalTex = nativeGrainTexture.empty() ? NULL : nativeGrainTexture.data();
     bool is_1024_grain = nativeGrainTexture.size() > 1000000;
@@ -356,14 +365,16 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     while (processed_rows < cinfo_d.output_height) {
         int rows_to_process = std::min(CHUNK_SIZE, (int)cinfo_d.output_height - processed_rows);
 
-        std::vector<std::future<void>> futures;
+        std::vector<pthread_t> threads(numCores);
+        std::vector<ThreadTask> tasks(numCores);
+        int active_threads = 0;
         
         for (int core = 0; core < numCores; core++) {
             int start_i = core * rows_to_process / numCores;
             int end_i = (core + 1) * rows_to_process / numCores;
             if (start_i >= end_i) continue;
 
-            futures.push_back(pool.enqueue([&, start_i, end_i]() {
+            tasks[active_threads].func = [&, start_i, end_i]() {
                 int w_size = cinfo_d.output_width * sizeof(int);
                 int* work_0 = NULL; int* work_1 = NULL; int* work_2 = NULL; 
                 int* work_h = NULL; int* h_line = NULL;
@@ -426,12 +437,15 @@ Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
                 if (work_2) free(work_2);
                 if (work_h) free(work_h);
                 if (h_line) free(h_line);
-            }));
+            };
+
+            pthread_create(&threads[active_threads], NULL, thread_runner, &tasks[active_threads]);
+            active_threads++;
         }
 
         // Wait for all threads to finish their part of the chunk
-        for (auto& f : futures) {
-            f.wait();
+        for (int i = 0; i < active_threads; i++) {
+            pthread_join(threads[i], NULL);
         }
 
         // Write the processed chunk sequentially
