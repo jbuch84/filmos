@@ -394,6 +394,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
                 if (currentSize > 0 && currentSize == lastSize[0]) {
                     // --- DIPTYCH INTERCEPT ---
                     if (diptychManager != null && diptychManager.interceptNewFile(f.getName(), path)) {
+                        isProcessing = false; // <-- CRITICAL: Unlock so second shot can be taken!
                         File outDir = Filepaths.getGradedDir();
                         mProcessor.processJpeg(path, outDir.getAbsolutePath(), recipeManager.getQualityIndex(), prefJpegQuality, recipeManager.getCurrentProfile(), false, true);
                     } else {
