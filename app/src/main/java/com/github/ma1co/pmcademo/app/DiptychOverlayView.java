@@ -1,10 +1,10 @@
 package com.github.ma1co.pmcademo.app;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.view.View;
 
@@ -19,23 +19,23 @@ public class DiptychOverlayView extends View {
 
     public DiptychOverlayView(Context context) {
         super(context);
-        
+
         linePaint = new Paint();
         linePaint.setColor(Color.WHITE);
         linePaint.setStrokeWidth(2);
-        
+
         thumbPaint = new Paint();
-        thumbPaint.setAlpha(200); // ~78% opacity to make the preview much more visible
-        
+        thumbPaint.setAlpha(255);
+
         darkPaint = new Paint();
         darkPaint.setColor(Color.BLACK);
-        darkPaint.setAlpha(180); // ~70% opacity for a much darker mask
+        darkPaint.setAlpha(180);
 
         framePaint = new Paint();
         framePaint.setColor(Color.WHITE);
         framePaint.setStyle(Paint.Style.STROKE);
         framePaint.setStrokeWidth(3);
-        framePaint.setAntiAlias(false); // crisp lines on small camera screens
+        framePaint.setAntiAlias(false);
     }
 
     public void setState(int state) {
@@ -72,37 +72,28 @@ public class DiptychOverlayView extends View {
         int mid = w / 2;
 
         if (state == DiptychManager.STATE_NEED_FIRST) {
-            // HALF FRAME STYLE for shot 1:
-            // Light mask on the inactive right half so the user focuses on the left.
-            // Corner brackets on the active left half evoke a half-frame camera viewfinder.
-            darkPaint.setAlpha(100); // ~40% dark — subtle hint, not a heavy block
-            canvas.drawRect(mid, 0, w, h, darkPaint);
-            darkPaint.setAlpha(180); // restore for state-1 use
-
-            // Corner bracket marks on the active (left) half
-            int mg = Math.max(8, w / 32);  // margin from screen edge
-            int bl = h / 10;               // bracket arm length
-            // Top-left corner
-            canvas.drawLine(mg,       mg,            mg + bl,       mg,            framePaint);
-            canvas.drawLine(mg,       mg,            mg,            mg + bl,       framePaint);
-            // Top-right corner of active half (near center line)
-            canvas.drawLine(mid - mg, mg,            mid - mg - bl, mg,            framePaint);
-            canvas.drawLine(mid - mg, mg,            mid - mg,      mg + bl,       framePaint);
-            // Bottom-left corner
-            canvas.drawLine(mg,       h - mg,        mg + bl,       h - mg,        framePaint);
-            canvas.drawLine(mg,       h - mg,        mg,            h - mg - bl,   framePaint);
-            // Bottom-right corner of active half
-            canvas.drawLine(mid - mg, h - mg,        mid - mg - bl, h - mg,        framePaint);
-            canvas.drawLine(mid - mg, h - mg,        mid - mg,      h - mg - bl,   framePaint);
-
-            // Center reference crosshair — shows exact center of the active left half
-            // so the user knows where to place their subject for the half-frame shot.
-            int cx0 = mid / 2;
-            int cy0 = h / 2;
+            int quarter = w / 4;
+            int mg = Math.max(8, w / 32);
+            int bl = h / 10;
+            int cy = h / 2;
             int crossLen = 14;
-            canvas.drawLine(cx0 - crossLen, cy0, cx0 + crossLen, cy0, framePaint);
-            canvas.drawLine(cx0, cy0 - crossLen, cx0, cy0 + crossLen, framePaint);
 
+            darkPaint.setAlpha(220);
+            canvas.drawRect(0, 0, quarter, h, darkPaint);
+            canvas.drawRect(w - quarter, 0, w, h, darkPaint);
+            darkPaint.setAlpha(180);
+
+            canvas.drawLine(quarter + mg, mg, quarter + mg + bl, mg, framePaint);
+            canvas.drawLine(quarter + mg, mg, quarter + mg, mg + bl, framePaint);
+            canvas.drawLine(w - quarter - mg, mg, w - quarter - mg - bl, mg, framePaint);
+            canvas.drawLine(w - quarter - mg, mg, w - quarter - mg, mg + bl, framePaint);
+            canvas.drawLine(quarter + mg, h - mg, quarter + mg + bl, h - mg, framePaint);
+            canvas.drawLine(quarter + mg, h - mg, quarter + mg, h - mg - bl, framePaint);
+            canvas.drawLine(w - quarter - mg, h - mg, w - quarter - mg - bl, h - mg, framePaint);
+            canvas.drawLine(w - quarter - mg, h - mg, w - quarter - mg, h - mg - bl, framePaint);
+
+            canvas.drawLine(mid - crossLen, cy, mid + crossLen, cy, framePaint);
+            canvas.drawLine(mid, cy - crossLen, mid, cy + crossLen, framePaint);
         } else if (state == DiptychManager.STATE_NEED_SECOND || state == DiptychManager.STATE_STITCHING) {
             if (thumbOnLeft) {
                 canvas.drawRect(0, 0, mid, h, darkPaint);
@@ -113,19 +104,11 @@ public class DiptychOverlayView extends View {
             if (thumbnail != null && !thumbnail.isRecycled()) {
                 int tW = thumbnail.getWidth();
                 int tH = thumbnail.getHeight();
-                int tMid = tW / 2;
-                
-                Rect srcRect;
-                Rect dstRect;
-                
-                if (thumbOnLeft) {
-                    srcRect = new Rect(0, 0, tMid, tH);
-                    dstRect = new Rect(0, 0, mid, h);
-                } else {
-                    srcRect = new Rect(0, 0, tMid, tH); // ALWAYS take the left crop of the first shot
-                    dstRect = new Rect(mid, 0, w, h);
-                }
-                
+                int srcLeft = tW / 4;
+                int srcRight = srcLeft + (tW / 2);
+
+                Rect srcRect = new Rect(srcLeft, 0, srcRight, tH);
+                Rect dstRect = thumbOnLeft ? new Rect(0, 0, mid, h) : new Rect(mid, 0, w, h);
                 canvas.drawBitmap(thumbnail, srcRect, dstRect, thumbPaint);
             }
 
@@ -135,8 +118,7 @@ public class DiptychOverlayView extends View {
                 darkPaint.setAlpha(180);
             }
         }
-        
-        // Always draw the center framing line
+
         canvas.drawLine(mid, 0, mid, h, linePaint);
     }
 }

@@ -7,6 +7,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.util.Log;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.TextView;
@@ -54,10 +55,14 @@ public class DiptychManager {
         leftFilename = null;
         rightFilename = null;
         if (overlayView != null) overlayView.setState(STATE_NEED_FIRST);
+        if (activity != null) activity.updateDiptychPreviewWindow();
     }
 
     public int getState() { return state; }
-    public void setThumbOnLeft(boolean left) { if (overlayView != null) overlayView.setThumbOnLeft(left); }
+    public void setThumbOnLeft(boolean left) {
+        if (overlayView != null) overlayView.setThumbOnLeft(left);
+        if (activity != null) activity.updateDiptychPreviewWindow();
+    }
     public boolean isThumbOnLeft() { return overlayView != null && overlayView.isThumbOnLeft(); }
     public String getLeftFilename() { return leftFilename; }
     public String getRightFilename() { return rightFilename; }
@@ -89,6 +94,7 @@ public class DiptychManager {
                                 overlayView.setThumbnail(thumb);
                                 overlayView.setState(STATE_NEED_SECOND);
                             }
+                            activity.updateDiptychPreviewWindow();
                             activity.updateMainHUD();
                         }
                     });
@@ -99,6 +105,7 @@ public class DiptychManager {
             rightFilename = filename;
             state = STATE_STITCHING;
             if (overlayView != null) overlayView.setState(STATE_STITCHING);
+            if (activity != null) activity.updateDiptychPreviewWindow();
             return true;
         }
         return false;
@@ -153,7 +160,9 @@ public class DiptychManager {
             File finalOut = new File(Filepaths.getGradedDir(), "DIPTYCH_" + new File(rightPath).getName());
             
             // USE C++ ENGINE FOR FULL RESOLUTION STITCHING!
+            Log.d("JPEG.CAM", "Diptych stitch start: left=" + leftPath + " right=" + rightPath + " out=" + finalOut.getAbsolutePath());
             final boolean success = stitchDiptychNative(leftPath, rightPath, finalOut.getAbsolutePath(), firstShotLeft, activity.getPrefJpegQuality());
+            Log.d("JPEG.CAM", "Diptych stitch result: " + success);
 
             if (success) {
                 new File(leftPath).delete();

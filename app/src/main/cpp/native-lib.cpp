@@ -327,12 +327,22 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     const char *p2 = env->GetStringUTFChars(path2, NULL);
     const char *po = env->GetStringUTFChars(outPath, NULL);
     FILE *f1 = fopen(p1, "rb"), *f2 = fopen(p2, "rb"), *fo = fopen(po, "wb");
-    if (!f1 || !f2 || !fo) { if(f1)fclose(f1); if(f2)fclose(f2); if(fo)fclose(fo); return JNI_FALSE; }
+    if (!f1 || !f2 || !fo) {
+        LOGD("Diptych open failed: %s | %s | %s", p1, p2, po);
+        if(f1)fclose(f1); if(f2)fclose(f2); if(fo)fclose(fo);
+        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
+        return JNI_FALSE;
+    }
 
     struct jpeg_decompress_struct c1, c2; struct my_error_mgr j1, j2;
     c1.err = jpeg_std_error(&j1.pub); j1.pub.error_exit = my_error_exit;
     c2.err = jpeg_std_error(&j2.pub); j2.pub.error_exit = my_error_exit;
-    if(setjmp(j1.setjmp_buffer) || setjmp(j2.setjmp_buffer)) { fclose(f1); fclose(f2); fclose(fo); return JNI_FALSE; }
+    if(setjmp(j1.setjmp_buffer) || setjmp(j2.setjmp_buffer)) {
+        LOGD("Diptych jpeg decode setup failed");
+        fclose(f1); fclose(f2); fclose(fo);
+        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
+        return JNI_FALSE;
+    }
     
     jpeg_create_decompress(&c1); jpeg_stdio_src(&c1, f1); jpeg_read_header(&c1, TRUE);
     jpeg_create_decompress(&c2); jpeg_stdio_src(&c2, f2); jpeg_read_header(&c2, TRUE);
@@ -346,12 +356,17 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     c2.out_color_space = JCS_RGB; jpeg_start_decompress(&c2);
     
     struct jpeg_compress_struct co; struct my_error_mgr jo; co.err = jpeg_std_error(&jo.pub); jo.pub.error_exit = my_error_exit;
-    if(setjmp(jo.setjmp_buffer)) { return JNI_FALSE; }
+    if(setjmp(jo.setjmp_buffer)) {
+        LOGD("Diptych jpeg encode setup failed");
+        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
+        return JNI_FALSE;
+    }
     jpeg_create_compress(&co); jpeg_stdio_dest(&co, fo);
     
     int w1 = c1.output_width, h1 = c1.output_height;
     int w2 = c2.output_width, h2 = c2.output_height;
     int half1 = w1 / 2, half2 = w2 / 2;
+    int q1 = w1 / 4, q2 = w2 / 4;
     int finalW = half1 + half2, finalH = std::min(h1, h2);
     
     co.image_width = finalW; co.image_height = finalH; co.input_components = 3; co.in_color_space = JCS_RGB;
@@ -360,20 +375,32 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     unsigned char *row1 = (unsigned char*)malloc(w1 * 3);
     unsigned char *row2 = (unsigned char*)malloc(w2 * 3);
     unsigned char *combined = (unsigned char*)malloc(finalW * 3);
+    if (!row1 || !row2 || !combined) {
+        LOGD("Diptych malloc failed");
+        if (row1) free(row1);
+        if (row2) free(row2);
+        if (combined) free(combined);
+        jpeg_destroy_compress(&co);
+        jpeg_destroy_decompress(&c1);
+        jpeg_destroy_decompress(&c2);
+        fclose(f1); fclose(f2); fclose(fo);
+        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
+        return JNI_FALSE;
+    }
     JSAMPROW rp1[1], rp2[1], rpo[1]; rp1[0] = row1; rp2[0] = row2; rpo[0] = combined;
     
     for (int y = 0; y < finalH; y++) {
         jpeg_read_scanlines(&c1, rp1, 1); jpeg_read_scanlines(&c2, rp2, 1);
         if (firstShotLeft) {
-            memcpy(combined, row1, half1 * 3);
-            memcpy(combined + half1 * 3, row2 + half2 * 3, half2 * 3);
+            memcpy(combined, row1 + q1 * 3, half1 * 3);
+            memcpy(combined + half1 * 3, row2 + q2 * 3, half2 * 3);
         } else {
-            memcpy(combined, row2 + half2 * 3, half2 * 3);
-            memcpy(combined + half2 * 3, row1, half1 * 3);
+            memcpy(combined, row2 + q2 * 3, half2 * 3);
+            memcpy(combined + half2 * 3, row1 + q1 * 3, half1 * 3);
         }
         // Draw Divider
         int dividerX = firstShotLeft ? half1 : half2;
-        for(int d=-2; d<=2; d++) {
+        for(int d=-1; d<=1; d++) {
             int dx = dividerX + d;
             if (dx >= 0 && dx < finalW) {
                 int di = dx * 3;
@@ -387,6 +414,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     jpeg_finish_compress(&co); jpeg_destroy_compress(&co);
     jpeg_finish_decompress(&c1); jpeg_destroy_decompress(&c1);
     jpeg_finish_decompress(&c2); jpeg_destroy_decompress(&c2);
+    LOGD("Diptych saved: %s", po);
     fclose(f1); fclose(f2); fclose(fo);
     env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
     return JNI_TRUE;

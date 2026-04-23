@@ -99,6 +99,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
     public void setProcessing(boolean v) {
         this.isProcessing = v;
+        updateDiptychPreviewWindow();
     }
 
     private boolean isReady = false;
@@ -139,6 +140,32 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     private ProReticleView afOverlay;
     
     private Handler uiHandler = new Handler();
+
+    private int getPreviewWindowWidth() {
+        if (mSurfaceView != null && mSurfaceView.getWidth() > 0) return mSurfaceView.getWidth();
+        if (mainUIContainer != null && mainUIContainer.getWidth() > 0) return mainUIContainer.getWidth();
+        try {
+            return getWindowManager().getDefaultDisplay().getWidth();
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    public void updateDiptychPreviewWindow() {
+        if (mSurfaceView == null) return;
+        int width = getPreviewWindowWidth();
+        if (width <= 0) return;
+
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, -1);
+        int offset = 0;
+        if (!isProcessing && diptychManager != null && diptychManager.isEnabled()
+                && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
+            offset = diptychManager.isThumbOnLeft() ? width / 4 : -(width / 4);
+        }
+        params.leftMargin = offset;
+        mSurfaceView.setLayoutParams(params);
+        mSurfaceView.invalidate();
+    }
     
     public static final int DIAL_MODE_SHUTTER = 0;
     public static final int DIAL_MODE_APERTURE = 1;
@@ -306,6 +333,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         mSurfaceView.getHolder().addCallback(this);
         mSurfaceView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
         rootLayout.addView(mSurfaceView, new FrameLayout.LayoutParams(-1, -1));
+        mSurfaceView.post(new Runnable() {
+            @Override
+            public void run() {
+                updateDiptychPreviewWindow();
+            }
+        });
         
         buildUI(rootLayout);
         setContentView(rootLayout);
@@ -460,17 +493,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (displayState == 0 && !menuController.isOpen()) setHUDVisibility(View.GONE);
         // Diptych mode: shift AF bracket to the active (open) side before focusing
         if (afOverlay != null && diptychManager != null && diptychManager.isEnabled()) {
-            int dipW = afOverlay.getWidth();
-            if (diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
-                // Shot 2: active side is opposite to the shot-1 thumbnail
-                boolean tLeft = diptychManager.isThumbOnLeft();
-                afOverlay.setDiptychCenterX(tLeft ? dipW * 3 / 4 : dipW / 4);
-            } else if (diptychManager.getState() == DiptychManager.STATE_NEED_FIRST) {
-                // Shot 1 (state 0): active half is the left
-                afOverlay.setDiptychCenterX(dipW / 4);
-            } else {
-                afOverlay.setDiptychCenterX(-1);
-            }
+            afOverlay.setDiptychCenterX(-1);
         } else if (afOverlay != null) {
             afOverlay.setDiptychCenterX(-1);
         }
@@ -723,6 +746,7 @@ public void onEnterPressed() {
         
         if (diptychManager != null && diptychManager.isEnabled() && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
             diptychManager.setThumbOnLeft(true);
+            updateDiptychPreviewWindow();
             return true;
         }
         
@@ -758,6 +782,7 @@ public void onEnterPressed() {
         
         if (diptychManager != null && diptychManager.isEnabled() && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
             diptychManager.setThumbOnLeft(false);
+            updateDiptychPreviewWindow();
             return true;
         }
         
@@ -1337,6 +1362,7 @@ public void onEnterPressed() {
     @Override
 
     public boolean onKeyDown(int k, android.view.KeyEvent e) {
+        int sc = e != null ? e.getScanCode() : 0;
 
         // UNIVERSAL CRASH PROTECTION: Swallow dial events on ALL cameras
 
@@ -1351,7 +1377,8 @@ public void onEnterPressed() {
             return true; // Prevents the OS from force-closing the app
         }
        
-        if (isProcessing && (k == ScalarInput.ISV_KEY_S1_1 || k == ScalarInput.ISV_KEY_S1_2 || k == ScalarInput.ISV_KEY_S2)) return true;
+        if (isProcessing && (sc == ScalarInput.ISV_KEY_S1_1 || sc == ScalarInput.ISV_KEY_S1_2 || sc == ScalarInput.ISV_KEY_S2 ||
+                             k == ScalarInput.ISV_KEY_S1_1 || k == ScalarInput.ISV_KEY_S1_2 || k == ScalarInput.ISV_KEY_S2)) return true;
 
         // --- FIXED: Added standard Android keycode ---
 
@@ -1367,6 +1394,7 @@ public void onEnterPressed() {
 
     @Override 
     public boolean onKeyUp(int k, android.view.KeyEvent e) { 
+        int sc = e != null ? e.getScanCode() : 0;
         // UNIVERSAL CRASH PROTECTION: Swallow dial events on ALL cameras
         if (k == 624 || k == ScalarInput.ISV_KEY_MODE_DIAL || 
            (k >= ScalarInput.ISV_KEY_MODE_INVALID && k <= ScalarInput.ISV_KEY_MODE_CUSTOM3)) {
@@ -1374,7 +1402,8 @@ public void onEnterPressed() {
         }
         
         // Protect shutter inputs while processing
-        if (isProcessing && (k == ScalarInput.ISV_KEY_S1_1 || k == ScalarInput.ISV_KEY_S1_2 || k == ScalarInput.ISV_KEY_S2)) return true; 
+        if (isProcessing && (sc == ScalarInput.ISV_KEY_S1_1 || sc == ScalarInput.ISV_KEY_S1_2 || sc == ScalarInput.ISV_KEY_S2 ||
+                             k == ScalarInput.ISV_KEY_S1_1 || k == ScalarInput.ISV_KEY_S1_2 || k == ScalarInput.ISV_KEY_S2)) return true; 
 
         // --- CRITICAL: Swallow the release event so the Sony OS does nothing ---
         if (k == ScalarInput.ISV_KEY_PLAY || k == android.view.KeyEvent.KEYCODE_MEDIA_PLAY) {
@@ -1648,7 +1677,8 @@ public void onEnterPressed() {
     @Override 
     public void surfaceCreated(SurfaceHolder h) { 
         hasSurface = true; 
-        if (cameraManager != null) cameraManager.open(h); 
+        if (cameraManager != null) cameraManager.open(h);
+        updateDiptychPreviewWindow();
     }
     
     @Override 
