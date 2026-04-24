@@ -95,7 +95,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     
     // Extremely cache-friendly chunk size for single-core execution on older L2 caches
     int CHK = 64; 
-    int BUF = CHK + 20; // r[256] and orw[256] safe: BUF max=220, CHK max=200 < 256
+    int BUF = CHK + 20;
 
     unsigned char* rb = (unsigned char*)malloc(BUF*rs);
     unsigned char* ob = (unsigned char*)malloc(CHK*rs);
@@ -119,25 +119,26 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     int inv_y[256];
     for (int i = 0; i < 256; i++) inv_y[i] = 65536 / (i == 0 ? 1 : i);
 
-    int ws_s = cd.output_width*sizeof(int);
-    int* work_0 = (int*)malloc(ws_s);
-    int* work_1 = (int*)malloc(ws_s);
-    int* work_2 = (int*)malloc(ws_s);
-    int* work_h = (int*)malloc(ws_s);
-    int* h_line = (int*)malloc(ws_s);
-
-    if (!work_0 || !work_1 || !work_2 || !work_h || !h_line) {
-        free(rb); free(ob);
-        if(work_0) free(work_0); if(work_1) free(work_1); if(work_2) free(work_2);
-        if(work_h) free(work_h); if(h_line) free(h_line);
-        jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc);
-        jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd);
-        fclose(inf); fclose(ouf);
-        env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn);
-        return JNI_FALSE;
+    int ws_s = cd.output_width * sizeof(int);
+    int* work_0 = NULL; int* work_1 = NULL; int* work_2 = NULL; int* work_h = NULL; int* h_line = NULL;
+    if (bloom > 0 || halation > 0) {
+        work_0 = (int*)malloc(ws_s); work_1 = (int*)malloc(ws_s); work_2 = (int*)malloc(ws_s);
+        work_h = (int*)malloc(ws_s); h_line = (int*)malloc(ws_s);
+        if (!work_0 || !work_1 || !work_2 || !work_h || !h_line) {
+            free(rb); free(ob);
+            if(work_0) free(work_0); if(work_1) free(work_1); if(work_2) free(work_2);
+            if(work_h) free(work_h); if(h_line) free(h_line);
+            jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc);
+            jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd);
+            fclose(inf); fclose(ouf);
+            env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn);
+            return JNI_FALSE;
+        }
     }
 
-    const uint8_t* tex = nativeGrainTexture.empty() ? NULL : nativeGrainTexture.data(); bool is1k = nativeGrainTexture.size()>1000000; JSAMPROW rpx[1];
+    const uint8_t* tex = nativeGrainTexture.empty() ? NULL : nativeGrainTexture.data();
+    bool is1k = nativeGrainTexture.size() > 1000000;
+    JSAMPROW rpx[1];
     if(cd.output_height>0){ rpx[0]=r[10]; jpeg_read_scanlines(&cd,rpx,1); for(int i=0; i<10; i++) memcpy(r[i],r[10],rs); }
     for(int i=11; i<BUF; i++){ if(cd.output_scanline < cd.output_height){ rpx[0]=r[i]; jpeg_read_scanlines(&cd,rpx,1); } else memcpy(r[i],r[i-1],rs); }
 
@@ -146,6 +147,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     long long cx = cd.output_width / 2;
     long long cy_center = cd.output_height / 2;
     long long vig_coef = get_vig_coef(vignette, cx * cx + cy_center * cy_center);
+    
+    // Seed grain randomization with a fixed but distinct value per image
+    long long current_time = get_time_ms();
+    int tx_base = (int)(current_time % 1021);
+    int ty_base = (int)((current_time / 13) % 1021);
 
     int pr = 0; while(pr < (int)cd.output_height){
         int rtp = std::min(CHK, (int)cd.output_height-pr);
@@ -161,19 +167,16 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                         work_0, work_1, work_2, work_h, h_line, scaleDenom);
                 }
                 
-                int tx = st % 1021;
-                int ty = (st / 13) % 1021;
-                
                 if (use_rgb) {
                     process_row_rgb(orw[i], cd.output_width, ay, cx, cy_center, vig_coef,
                         shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, halation, vignette,
                         grain, grainSize, scaleDenom, opac_m, map, nativeLut.data(),
                         nativeLutSize, nativeLutSize - 1, nativeLutSize * nativeLutSize,
-                        inv_y, tex, is1k, tx, ty);
+                        inv_y, tex, is1k, tx_base, ty_base);
                 } else {
                     process_row_yuv(orw[i], cd.output_width, ay, cx, cy_center, vig_coef,
                         shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, halation, vignette,
-                        grain, grainSize, scaleDenom, roll, inv_y, tex, is1k, tx, ty);
+                        grain, grainSize, scaleDenom, roll, inv_y, tex, is1k, tx_base, ty_base);
                 }
             }
         }
@@ -183,7 +186,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
         pr += rtp;
     }
     
-    free(work_0); free(work_1); free(work_2); free(work_h); free(h_line);
+    if (work_0) { free(work_0); free(work_1); free(work_2); free(work_h); free(h_line); }
     free(rb); free(ob); jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc); jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_TRUE;
 }
 

@@ -343,11 +343,12 @@ inline void process_row_rgb(
     int currRawY = prevRawY;
     int nextRawY = row_luma_rgb_at(row, width, 1);
 
+    // Constant row grain calcs
+    int oy = abs_y + t_off_y;
+
     for (int x = 0; x < width; x++) {
         int i = x * 3;
         int r = row[i], g = row[i+1], b = row[i+2];
-
-
 
         // --- LUT CALCS ---
         int fX = map[r], fY = map[g], fZ = map[b];
@@ -383,8 +384,8 @@ inline void process_row_rgb(
         if (shadowToe > 0) {
             int lift = (shadowToe == 1) ? 35 : 55;
             if (targetY < lift) {
-                if (shadowToe == 1) targetY += ((lift - targetY) * (lift - targetY)) / 140;
-                else targetY += ((lift - targetY) * (lift - targetY)) / 180;
+                int diff = lift - targetY;
+                targetY += (diff * diff) / (shadowToe == 1 ? 140 : 180);
             }
         }
         if (rollOff > 0 && targetY > 200) targetY -= ((targetY - 200) * (targetY - 200) * s_roll) / 11000;
@@ -438,64 +439,37 @@ inline void process_row_rgb(
 
         // Texture Overlay
         if (externalGrainTexture != NULL && grain > 0) {
-            // --- NEW: LUMINANCE MASKING ---
-            // Grab the optical density mask from Engine 1 to protect shadows and highlights
             int env = grain_amount_mask(targetY);
-            
             if (env > 0) {
-                // Determine if we loaded a 512 or 1024 texture based on parameter
                 bool is_1024 = is_1024_grain;
                 int tr, tg, tb;
-
-                // Pre-calculate physical offset coordinates for this pixel
                 int ox = x + t_off_x;
-                int oy = abs_y + t_off_y;
 
                 if (scaleDenom == 1) {
                     if (is_1024) {
-                        // --- FAST PATH (FULL RES): 1024x1024 with Offset & XOR Mirroring ---
-                        int tx = ox & 1023;
-                        int ty = oy & 1023;
+                        int tx = ox & 1023, ty = oy & 1023;
                         if (((ox >> 10) ^ (oy >> 10)) & 1) tx = 1023 - tx;
                         if ((((ox >> 10) * 3) ^ (oy >> 10)) & 2) ty = 1023 - ty;
                         int tex_idx = (ty * 1024 + tx) * 3;
-                        tr = externalGrainTexture[tex_idx];
-                        tg = externalGrainTexture[tex_idx + 1];
-                        tb = externalGrainTexture[tex_idx + 2];
+                        tr = externalGrainTexture[tex_idx]; tg = externalGrainTexture[tex_idx + 1]; tb = externalGrainTexture[tex_idx + 2];
                     } else {
-                        // --- FAST PATH (FULL RES): 512x512 with Offset & XOR Mirroring ---
-                        int tx = ox & 511;
-                        int ty = oy & 511;
+                        int tx = ox & 511, ty = oy & 511;
                         if (((ox >> 9) ^ (oy >> 9)) & 1) tx = 511 - tx;
                         if ((((ox >> 9) * 3) ^ (oy >> 9)) & 2) ty = 511 - ty;
                         int tex_idx = (ty * 512 + tx) * 3;
-                        tr = externalGrainTexture[tex_idx];
-                        tg = externalGrainTexture[tex_idx + 1];
-                        tb = externalGrainTexture[tex_idx + 2];
+                        tr = externalGrainTexture[tex_idx]; tg = externalGrainTexture[tex_idx + 1]; tb = externalGrainTexture[tex_idx + 2];
                     }
                 } else {
-                    // --- HQ PATH (HALF/PROXY): Bilinear Interpolation with Offset ---
                     int gRGB[3];
-                    if (is_1024) {
-                        sample_tex_bilinear_1024(externalGrainTexture, (ox * scaleDenom) << 8, (oy * scaleDenom) << 8, gRGB);
-                    } else {
-                        sample_tex_bilinear_512_xor(externalGrainTexture, (ox * scaleDenom) << 8, (oy * scaleDenom) << 8, gRGB);
-                    }
+                    if (is_1024) sample_tex_bilinear_1024(externalGrainTexture, (ox * scaleDenom) << 8, (oy * scaleDenom) << 8, gRGB);
+                    else sample_tex_bilinear_512_xor(externalGrainTexture, (ox * scaleDenom) << 8, (oy * scaleDenom) << 8, gRGB);
                     tr = gRGB[0]; tg = gRGB[1]; tb = gRGB[2];
                 }
 
-                int blendedR = blend_overlay(outR, tr);
-                int blendedG = blend_overlay(outG, tg);
-                int blendedB = blend_overlay(outB, tb);
-
-                int base_mix = (grain >= 5) ? 256 : (grain * 51);
-                int mix = (base_mix * env) >> 8;
-
-                outR = outR + (((blendedR - outR) * mix) >> 8);
-                outG = outG + (((blendedG - outG) * mix) >> 8);
-                outB = outB + (((blendedB - outB) * mix) >> 8);
+                int blendedR = blend_overlay(outR, tr); int blendedG = blend_overlay(outG, tg); int blendedB = blend_overlay(outB, tb);
+                int mix = (((grain >= 5) ? 256 : (grain * 51)) * env) >> 8;
+                outR += (((blendedR - outR) * mix) >> 8); outG += (((blendedG - outG) * mix) >> 8); outB += (((blendedB - outB) * mix) >> 8);
             }
-            
         }
 
         row[i] = (uint8_t)CLAMP(outR); row[i+1] = (uint8_t)CLAMP(outG); row[i+2] = (uint8_t)CLAMP(outB);
@@ -598,72 +572,40 @@ inline void process_row_yuv(
 
         // Texture Overlay
         if (externalGrainTexture != NULL && grain > 0) {
-            // --- NEW: LUMINANCE MASKING ---
             int env = grain_amount_mask(outY);
-
             if (env > 0) {
                 bool is_1024 = is_1024_grain;
                 int tr, tg, tb;
-
-                // Pre-calculate physical offset coordinates for this pixel
                 int ox = x + t_off_x;
-                int oy = abs_y + t_off_y;
 
                 if (scaleDenom == 1) {
                     if (is_1024) {
-                        // --- FAST PATH (FULL RES): 1024x1024 with Offset & XOR Mirroring ---
-                        int tx = ox & 1023;
-                        int ty = oy & 1023;
+                        int tx = ox & 1023, ty = oy & 1023;
                         if (((ox >> 10) ^ (oy >> 10)) & 1) tx = 1023 - tx;
                         if ((((ox >> 10) * 3) ^ (oy >> 10)) & 2) ty = 1023 - ty;
                         int tex_idx = (ty * 1024 + tx) * 3;
-                        tr = externalGrainTexture[tex_idx];
-                        tg = externalGrainTexture[tex_idx + 1];
-                        tb = externalGrainTexture[tex_idx + 2];
+                        tr = externalGrainTexture[tex_idx]; tg = externalGrainTexture[tex_idx + 1]; tb = externalGrainTexture[tex_idx + 2];
                     } else {
-                        // --- FAST PATH (FULL RES): 512x512 with Offset & XOR Mirroring ---
-                        int tx = ox & 511;
-                        int ty = oy & 511;
+                        int tx = ox & 511, ty = oy & 511;
                         if (((ox >> 9) ^ (oy >> 9)) & 1) tx = 511 - tx;
                         if ((((ox >> 9) * 3) ^ (oy >> 9)) & 2) ty = 511 - ty;
                         int tex_idx = (ty * 512 + tx) * 3;
-                        tr = externalGrainTexture[tex_idx];
-                        tg = externalGrainTexture[tex_idx + 1];
-                        tb = externalGrainTexture[tex_idx + 2];
+                        tr = externalGrainTexture[tex_idx]; tg = externalGrainTexture[tex_idx + 1]; tb = externalGrainTexture[tex_idx + 2];
                     }
                 } else {
-                    // --- HQ PATH (HALF/PROXY): Bilinear Interpolation with Offset ---
                     int gRGB[3];
-                    if (is_1024) {
-                        sample_tex_bilinear_1024(externalGrainTexture, (ox * scaleDenom) << 8, (oy * scaleDenom) << 8, gRGB);
-                    } else {
-                        sample_tex_bilinear_512_xor(externalGrainTexture, (ox * scaleDenom) << 8, (oy * scaleDenom) << 8, gRGB);
-                    }
+                    if (is_1024) sample_tex_bilinear_1024(externalGrainTexture, (ox * scaleDenom) << 8, (oy * scaleDenom) << 8, gRGB);
+                    else sample_tex_bilinear_512_xor(externalGrainTexture, (ox * scaleDenom) << 8, (oy * scaleDenom) << 8, gRGB);
                     tr = gRGB[0]; tg = gRGB[1]; tb = gRGB[2];
                 }
                 
-                // Fast YUV to RGB for blending
-                int r = outY + ((cr * 359) >> 8);
-                int g = outY - ((cb * 88 + cr * 183) >> 8);
-                int b = outY + ((cb * 454) >> 8);
-
-                int blendedR = blend_overlay(r, tr);
-                int blendedG = blend_overlay(g, tg);
-                int blendedB = blend_overlay(b, tb);
-
-                int base_mix = (grain >= 5) ? 256 : (grain * 51);
-                int mix = (base_mix * env) >> 8;
-                
-                r = r + (((blendedR - r) * mix) >> 8);
-                g = g + (((blendedG - g) * mix) >> 8);
-                b = b + (((blendedB - b) * mix) >> 8);
-
-                // Fast RGB back to YUV
+                int r = outY + ((cr * 359) >> 8), g = outY - ((cb * 88 + cr * 183) >> 8), b = outY + ((cb * 454) >> 8);
+                int blendedR = blend_overlay(r, tr); int blendedG = blend_overlay(g, tg); int blendedB = blend_overlay(b, tb);
+                int mix = (((grain >= 5) ? 256 : (grain * 51)) * env) >> 8;
+                r += (((blendedR - r) * mix) >> 8); g += (((blendedG - g) * mix) >> 8); b += (((blendedB - b) * mix) >> 8);
                 outY = (r * 77 + g * 150 + b * 29) >> 8;
-                cb = ((-38 * r - 74 * g + 112 * b) >> 8);
-                cr = ((112 * r - 94 * g - 18 * b) >> 8);
+                cb = ((-38 * r - 74 * g + 112 * b) >> 8); cr = ((112 * r - 94 * g - 18 * b) >> 8);
             }
-            
         }
 
         row[i] = (uint8_t)CLAMP(outY); row[i+1] = (uint8_t)CLAMP(128+cb); row[i+2] = (uint8_t)CLAMP(128+cr);
