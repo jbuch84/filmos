@@ -49,15 +49,15 @@ public class RecipeManager {
         savePreferences();
     }
 
-    public int getPrefC1() { return prefC1; }
+    public int getPrefC1() { return Math.min(5, Math.max(0, prefC1)); }
     public void setPrefC1(int v) { prefC1 = v; savePreferences(); }
-    public int getPrefC2() { return prefC2; }
+    public int getPrefC2() { return Math.min(5, Math.max(0, prefC2)); }
     public void setPrefC2(int v) { prefC2 = v; savePreferences(); }
-    public int getPrefC3() { return prefC3; }
+    public int getPrefC3() { return Math.min(5, Math.max(0, prefC3)); }
     public void setPrefC3(int v) { prefC3 = v; savePreferences(); }
-    public int getPrefAel() { return prefAel; }
+    public int getPrefAel() { return Math.min(5, Math.max(0, prefAel)); }
     public void setPrefAel(int v) { prefAel = v; savePreferences(); }
-    public int getPrefFn() { return prefFn; }
+    public int getPrefFn() { return Math.min(5, Math.max(0, prefFn)); }
     public void setPrefFn(int v) { prefFn = v; savePreferences(); }
 
     public RTLProfile getCurrentProfile() { return loadedProfiles[currentSlot]; }
