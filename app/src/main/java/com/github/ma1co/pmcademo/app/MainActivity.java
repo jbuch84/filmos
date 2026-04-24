@@ -1906,7 +1906,45 @@ public void onEnterPressed() {
     @Override public void    setPrefJpegQuality(int v)      { prefJpegQuality      = v; }
     @Override public void    setPrefDiptych(boolean v)      { 
         if (diptychManager != null) diptychManager.setEnabled(v);
+        updateDiptychFocusArea();
         updateMainHUD(); 
+    }
+
+    public void updateDiptychFocusArea() {
+        if (cameraManager == null || cameraManager.getCamera() == null) return;
+        try {
+            Camera c = cameraManager.getCamera();
+            Camera.Parameters p = c.getParameters();
+            
+            // Standard Android AF coordinates are -1000 to +1000
+            // Center is (0,0). Width=2000.
+            if (diptychManager != null && diptychManager.isEnabled()) {
+                if (p.getMaxNumFocusAreas() > 0) {
+                    java.util.List<Camera.Area> areas = new java.util.ArrayList<Camera.Area>();
+                    
+                    // We want to focus on the center of the active diptych half.
+                    // If thumb is on Left, active area is RIGHT half.
+                    // Right half center is +500 horizontally. Left half center is -500.
+                    boolean targetRight = diptychManager.isThumbOnLeft();
+                    int centerX = targetRight ? 500 : -500;
+                    
+                    // Define a focus rectangle around that point
+                    Rect rect = new Rect(centerX - 150, -200, centerX + 150, 200);
+                    areas.add(new Camera.Area(rect, 1000));
+                    p.setFocusAreas(areas);
+                    
+                    // Sony specific: ensure "Flexible Spot" logic is active internally
+                    if (p.get("sony-focus-area") != null) p.set("sony-focus-area", "flexible-spot");
+                }
+            } else {
+                // Restore center/wide focus
+                if (p.getMaxNumFocusAreas() > 0) p.setFocusAreas(null);
+                if (p.get("sony-focus-area") != null) p.set("sony-focus-area", "wide");
+            }
+            c.setParameters(p);
+        } catch (Exception e) {
+            android.util.Log.e("JPEG.CAM", "Failed to update Diptych focus area: " + e.getMessage());
+        }
     }
     
 

@@ -50,14 +50,20 @@ public class DiptychManager {
         leftFilename = null;
         rightFilename = null;
         if (overlayView != null) overlayView.setState(STATE_NEED_FIRST);
-        if (activity != null) activity.updateDiptychPreviewWindow();
+        if (activity != null) {
+            activity.updateDiptychPreviewWindow();
+            activity.updateDiptychFocusArea();
+        }
     }
 
     public int getState() { return state; }
 
     public void setThumbOnLeft(boolean left) {
         if (overlayView != null) overlayView.setThumbOnLeft(left);
-        if (activity != null) activity.updateDiptychPreviewWindow();
+        if (activity != null) {
+            activity.updateDiptychPreviewWindow();
+            activity.updateDiptychFocusArea();
+        }
     }
 
     public boolean isThumbOnLeft() { return overlayView != null && overlayView.isThumbOnLeft(); }
