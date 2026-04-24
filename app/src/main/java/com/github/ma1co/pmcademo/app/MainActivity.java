@@ -10,7 +10,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Matrix;
-import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.hardware.Camera;
 import android.media.ExifInterface;
@@ -1935,33 +1934,28 @@ public void onEnterPressed() {
             Camera c = cameraManager.getCamera();
             Camera.Parameters p = c.getParameters();
             
-            // Momentary Shift: Only shift if 'shift' is true AND Diptych is enabled.
             if (shift && diptychManager != null && diptychManager.isEnabled()) {
-                if (p.getMaxNumFocusAreas() > 0) {
-                    java.util.List<Camera.Area> areas = new java.util.ArrayList<Camera.Area>();
+                // Shift hardware AF sensor to side via Sony parameters
+                if (p.get("sony-focus-area") != null) {
+                    p.set("sony-focus-area", "flexible-spot");
+                    
                     boolean targetRight = diptychManager.isThumbOnLeft();
                     int centerX = targetRight ? 500 : -500;
+                    int sonyX = (centerX + 1000) / 20; // 0-100 scale
+                    int sonyY = 50; 
                     
-                    Rect rect = new Rect(centerX - 150, -200, centerX + 150, 200);
-                    areas.add(new Camera.Area(rect, 1000));
-                    p.setFocusAreas(areas);
-                    
-                    if (p.get("sony-focus-area") != null) {
-                        p.set("sony-focus-area", "flexible-spot");
-                        int sonyX = (centerX + 1000) / 20;
-                        int sonyY = 50; 
-                        p.set("sony-focus-area-rect", sonyX + "," + sonyY + ",15,20");
-                        p.set("sony-focus-area-point", sonyX + "," + sonyY);
-                    }
+                    p.set("sony-focus-area-rect", sonyX + "," + sonyY + ",15,20");
+                    p.set("sony-focus-area-point", sonyX + "," + sonyY);
                 }
             } else {
-                // Restore center/wide focus immediately
-                if (p.getMaxNumFocusAreas() > 0) p.setFocusAreas(null);
-                if (p.get("sony-focus-area") != null) p.set("sony-focus-area", "wide");
+                // Reset hardware to center focus
+                if (p.get("sony-focus-area") != null) {
+                    p.set("sony-focus-area", "wide");
+                }
             }
             c.setParameters(p);
         } catch (Exception e) {
-            android.util.Log.e("JPEG.CAM", "Hardware focus sync failed: " + e.getMessage());
+            android.util.Log.e("JPEG.CAM", "AF Hardware Handshake Failed: " + e.getMessage());
         }
     }
     
