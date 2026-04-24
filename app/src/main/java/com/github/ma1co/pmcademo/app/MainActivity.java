@@ -498,6 +498,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         // mDialMode = DIAL_MODE_RTL; <-- DELETED. Cursor memory is now permanent!
         
         if (displayState == 0 && !menuController.isOpen()) setHUDVisibility(View.GONE);
+
+        // --- NEW: FORCED HARDWARE SYNC ---
+        // Ensure the Sony AF sensor target is moved BEFORE the AF trigger fires
+        if (diptychManager != null && diptychManager.isEnabled()) {
+            updateDiptychFocusArea();
+        }
+
         // Diptych mode: shift AF bracket to the active (open) side before focusing
         if (afOverlay != null && diptychManager != null && diptychManager.isEnabled()) {
             if (diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
@@ -1934,7 +1941,15 @@ public void onEnterPressed() {
                     p.setFocusAreas(areas);
                     
                     // Sony specific: ensure "Flexible Spot" logic is active internally
-                    if (p.get("sony-focus-area") != null) p.set("sony-focus-area", "flexible-spot");
+                    if (p.get("sony-focus-area") != null) {
+                        p.set("sony-focus-area", "flexible-spot");
+                        // Format: x,y,w,h where x,y is center in 0-100 scale
+                        // centerX -500 -> 25, 500 -> 75
+                        int sonyX = (centerX + 1000) / 20;
+                        int sonyY = 50; // Middle vertically
+                        p.set("sony-focus-area-rect", sonyX + "," + sonyY + ",15,20");
+                        p.set("sony-focus-area-point", sonyX + "," + sonyY);
+                    }
                 }
             } else {
                 // Restore center/wide focus
