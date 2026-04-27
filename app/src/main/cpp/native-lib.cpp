@@ -63,6 +63,59 @@ static void* yuv_texture_fast_rows_thread(void* data) {
     return NULL;
 }
 
+struct WorkerPool {
+    pthread_mutex_t lock;
+    pthread_cond_t cond_work;
+    pthread_cond_t cond_done;
+    YuvTextureFastRowsTask tasks[4];
+    bool start_work[4];
+    bool terminate;
+    int active_workers;
+    int completed_workers;
+    pthread_t threads[4];
+    bool initialized;
+};
+
+static WorkerPool g_pool;
+
+static void* persistent_worker_thread(void* arg) {
+    int id = (int)(intptr_t)arg;
+    
+    pthread_mutex_lock(&g_pool.lock);
+    while (true) {
+        while (!g_pool.start_work[id] && !g_pool.terminate) {
+            pthread_cond_wait(&g_pool.cond_work, &g_pool.lock);
+        }
+        if (g_pool.terminate) break;
+        
+        g_pool.start_work[id] = false;
+        pthread_mutex_unlock(&g_pool.lock);
+        
+        process_yuv_texture_fast_rows(&g_pool.tasks[id]);
+        
+        pthread_mutex_lock(&g_pool.lock);
+        g_pool.completed_workers++;
+        if (g_pool.completed_workers == g_pool.active_workers) {
+            pthread_cond_signal(&g_pool.cond_done);
+        }
+    }
+    pthread_mutex_unlock(&g_pool.lock);
+    return NULL;
+}
+
+static void init_worker_pool() {
+    if (g_pool.initialized) return;
+    pthread_mutex_init(&g_pool.lock, NULL);
+    pthread_cond_init(&g_pool.cond_work, NULL);
+    pthread_cond_init(&g_pool.cond_done, NULL);
+    g_pool.terminate = false;
+    for (int i = 1; i < 4; i++) {
+        g_pool.start_work[i] = false;
+        pthread_create(&g_pool.threads[i], NULL, persistent_worker_thread, (void*)(intptr_t)i);
+    }
+    g_pool.initialized = true;
+}
+
 long long get_time_ms() { struct timeval tv; gettimeofday(&tv, NULL); return (long long)tv.tv_sec*1000 + tv.tv_usec/1000; }
 
 static int choose_grain_transform(uint32_t seed, bool enabled) {
@@ -229,10 +282,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                 if (active_workers > rows_read) active_workers = rows_read;
                 if (rows_read < worker_count * 16) active_workers = 1;
 
-                pthread_t threads[4];
-                bool created[4] = { false, false, false, false };
-                YuvTextureFastRowsTask tasks[4];
+                if (!g_pool.initialized && active_workers > 1) {
+                    init_worker_pool();
+                }
 
+                YuvTextureFastRowsTask tasks[4];
                 for (int t = 0; t < active_workers; t++) {
                     int start = (rows_read * t) / active_workers;
                     int end = (rows_read * (t + 1)) / active_workers;
@@ -248,18 +302,29 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
                     tasks[t].externalTex = externalTex;
                     tasks[t].is1024Grain = is_1024_grain;
                     tasks[t].grainTransform = grainTransform;
-                    if (t > 0) {
-                        created[t] = (pthread_create(&threads[t], NULL, yuv_texture_fast_rows_thread, &tasks[t]) == 0);
-                    }
                 }
 
-                process_yuv_texture_fast_rows(&tasks[0]);
-                for (int t = 1; t < active_workers; t++) {
-                    if (created[t]) {
-                        pthread_join(threads[t], NULL);
-                    } else {
-                        process_yuv_texture_fast_rows(&tasks[t]);
+                if (active_workers > 1) {
+                    pthread_mutex_lock(&g_pool.lock);
+                    g_pool.active_workers = active_workers - 1; // Thread 0 is main thread
+                    g_pool.completed_workers = 0;
+                    for (int t = 1; t < active_workers; t++) {
+                        g_pool.tasks[t] = tasks[t];
+                        g_pool.start_work[t] = true;
                     }
+                    pthread_cond_broadcast(&g_pool.cond_work);
+                    pthread_mutex_unlock(&g_pool.lock);
+                }
+
+                // Process first chunk on the main thread
+                process_yuv_texture_fast_rows(&tasks[0]);
+
+                if (active_workers > 1) {
+                    pthread_mutex_lock(&g_pool.lock);
+                    while (g_pool.completed_workers < g_pool.active_workers) {
+                        pthread_cond_wait(&g_pool.cond_done, &g_pool.lock);
+                    }
+                    pthread_mutex_unlock(&g_pool.lock);
                 }
 
                 int rows_written = 0;
