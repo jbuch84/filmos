@@ -1286,10 +1286,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         ed.putInt("processingFrequency", processingFrequency);
         ed.putBoolean("diptychEnabled", isPrefDiptych());
         ed.putBoolean("multiExposeEnabled", isPrefMultiExpose());
+        ed.putInt("multiExposeCount", getMultiExposeCount());
+        ed.putInt("multiExposeBlendMode", getMultiExposeBlendMode());
         ed.apply();
     }
 
-    public void setPrefMultiExpose(boolean v) {
+    @Override public void setPrefMultiExpose(boolean v) {
         SharedPreferences prefs = getSharedPreferences("JPEG.CAM_Prefs", MODE_PRIVATE);
         SharedPreferences.Editor ed = prefs.edit();
         ed.putBoolean("multiExposeEnabled", v);
@@ -1297,6 +1299,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
         if (multiExposeManager != null) {
             multiExposeManager.setEnabled(v);
         }
+    }
+    @Override public void    setMultiExposeCount(int count) {
+        if (multiExposeManager != null) multiExposeManager.setTotalExposures(count);
+    }
+    @Override public void    setMultiExposeBlendMode(int mode) {
+        if (multiExposeManager != null) multiExposeManager.setBlendMode(mode);
     }
 
     @Override
@@ -1802,6 +1810,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         diptychManager = new DiptychManager(this, mainUIContainer, tvTopStatus);
         multiExposeManager = new MultiExposeManager(this, mainUIContainer, tvTopStatus);
+        
+        SharedPreferences prefs = getSharedPreferences("JPEG.CAM_Prefs", MODE_PRIVATE);
+        multiExposeManager.setTotalExposures(prefs.getInt("multiExposeCount", 2));
+        multiExposeManager.setBlendMode(prefs.getInt("multiExposeBlendMode", 0));
         multiExposeManager.setEnabled(isPrefMultiExpose());
     }
 
@@ -2454,6 +2466,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
     @Override public int     getPrefJpegQuality() { return prefJpegQuality; }
     @Override public boolean isPrefDiptych()      { return diptychManager != null && diptychManager.isEnabled(); }
     @Override public boolean isPrefMultiExpose()  { return getSharedPreferences("JPEG.CAM_Prefs", MODE_PRIVATE).getBoolean("multiExposeEnabled", false); }
+    @Override public int     getMultiExposeCount() { return multiExposeManager != null ? multiExposeManager.getTotalExposures() : 2; }
+    @Override public int     getMultiExposeBlendMode() { return multiExposeManager != null ? multiExposeManager.getBlendMode() : 0; }
     @Override public int     getProcessingFrequency() { return processingFrequency; }
     @Override public int     getQueuedPhotoCount() { return processingQueueManager != null ? processingQueueManager.getCountForMode(currentQueueMode()) : 0; }
     @Override public List<ProcessingQueueManager.Entry> getQueuedPhotoEntries() {

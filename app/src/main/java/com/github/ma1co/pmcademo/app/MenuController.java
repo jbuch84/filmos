@@ -142,7 +142,9 @@ public class MenuController {
         boolean isPrefFocusMeter();
         boolean isPrefCinemaMattes();
         boolean isPrefDiptych();
-        boolean isPrefMultiExpose(); // <--- ADDED
+        boolean isPrefMultiExpose();
+        int     getMultiExposeCount();
+        int     getMultiExposeBlendMode(); // <--- ADDED
         boolean isPrefGridLines();
         int     getPrefJpegQuality();
         int     getProcessingFrequency();
@@ -155,7 +157,9 @@ public class MenuController {
         void setPrefFocusMeter(boolean v);
         void setPrefCinemaMattes(boolean v);
         void setPrefDiptych(boolean v);
-        void setPrefMultiExpose(boolean v); // <--- ADDED
+        void setPrefMultiExpose(boolean v);
+        void setMultiExposeCount(int count);
+        void setMultiExposeBlendMode(int mode); // <--- ADDED
         void setPrefGridLines(boolean v);
         void setPrefJpegQuality(int v);
         void setProcessingFrequency(int v);
@@ -931,6 +935,8 @@ public class MenuController {
             else if (sel == 3) host.setPrefGridLines(!host.isPrefGridLines());
             else if (sel == 4) host.setPrefJpegQuality(Math.max(60, Math.min(100, host.getPrefJpegQuality() + dir * 5)));
             else if (sel == 5) rm.setMultiCoreEnabled(!rm.isMultiCoreEnabled());
+            else if (sel == 6 && host.isPrefMultiExpose()) host.setMultiExposeCount(Math.max(2, Math.min(9, host.getMultiExposeCount() + dir)));
+            else if (sel == 7 && host.isPrefMultiExpose()) host.setMultiExposeBlendMode(host.getMultiExposeBlendMode() == 0 ? 1 : 0);
         } else if (currentPage == 7) {
             if      (sel == 0) rm.setPrefC1(clampCustomButtonAction(rm.getPrefC1() + dir));
             else if (sel == 1) rm.setPrefC2(clampCustomButtonAction(rm.getPrefC2() + dir));
@@ -1116,6 +1122,12 @@ public class MenuController {
             setRow(3, "Rule of Thirds Grid",   host.isPrefGridLines()    ? "ON" : "OFF");
             setRow(4, "SW JPEG Quality",       String.valueOf(host.getPrefJpegQuality()));
             setRow(5, "CPU Engine",            rm.isMultiCoreEnabled() ? "MULTI-CORE" : "SINGLE-CORE");
+            
+            if (host.isPrefMultiExpose()) {
+                setRow(6, "  > Exposure Count", String.valueOf(host.getMultiExposeCount()) + " SHOTS");
+                setRow(7, "  > Blend Mode",     host.getMultiExposeBlendMode() == 0 ? "AVERAGE" : "LIGHTEN");
+                ic = 8;
+            }
         } else if (currentPage == 7) {
             ic = 5;
             setRow(0, "Custom 1 (C1)", customButtonLabel(rm.getPrefC1()));
