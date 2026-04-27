@@ -73,7 +73,14 @@ public class MultiExposeManager {
             state = STATE_ACCUMULATING;
             updateTopStatus();
             // TODO: Decode a lightweight thumbnail and display as ghost overlay
-            activity.clearProcessingState();
+            activity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    activity.setProcessing(false);
+                    activity.armFileScanner();
+                    activity.updateMainHUD();
+                }
+            });
             return true; // We intercepted it, do not process yet
         } else {
             state = STATE_PROCESSING;
