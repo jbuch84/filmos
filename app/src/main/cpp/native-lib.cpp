@@ -204,7 +204,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
         && grain > 0 && colorChrome == 0 && chromeBlue == 0 && subtractiveSat == 0
         && bloom <= 0 && halation == 0 && vignette == 0);
 
-    int CHK = (use_fast_yuv_texture_candidate && !applyCrop && numCores > 1) ? 128 : 64;
+    int CHK = (use_fast_yuv_texture_candidate && !applyCrop) ? 128 : 64;
     int BUF = CHK + 20;
 
     unsigned char* rb = (unsigned char*)malloc(BUF*rs);
@@ -261,9 +261,9 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     JSAMPROW rpx[1];
 
     bool row_stream_mode = (bloom <= 0 && halation <= 0 && advancedGrainExperimental != 1);
-    bool use_fast_yuv_texture_parallel = use_fast_yuv_texture && !applyCrop && numCores > 1;
+    bool use_fast_yuv_texture_chunked = use_fast_yuv_texture && !applyCrop;
     if (row_stream_mode) {
-        if (use_fast_yuv_texture_parallel) {
+        if (use_fast_yuv_texture_chunked) {
             int worker_count = numCores;
             if (worker_count < 1) worker_count = 1;
             if (worker_count > 4) worker_count = 4;
