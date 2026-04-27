@@ -198,21 +198,24 @@ public class HudController {
         UiTheme.panel(wbGrid);
         wbGrid.setVisibility(View.GONE);
         View vAxis = new View(ctx); vAxis.setBackgroundColor(UiTheme.BORDER);
-        wbGrid.addView(vAxis, new FrameLayout.LayoutParams(2, 280, Gravity.CENTER));
+        wbGrid.addView(vAxis, new FrameLayout.LayoutParams(2, 140, Gravity.CENTER));
         View hAxis = new View(ctx); hAxis.setBackgroundColor(UiTheme.BORDER);
-        wbGrid.addView(hAxis, new FrameLayout.LayoutParams(280, 2, Gravity.CENTER));
-        TextView lG = makeLabel(ctx,"G"); wbGrid.addView(lG, new FrameLayout.LayoutParams(-2,-2, Gravity.TOP|Gravity.CENTER_HORIZONTAL));
-        TextView lM = makeLabel(ctx,"M"); wbGrid.addView(lM, new FrameLayout.LayoutParams(-2,-2, Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL));
-        TextView lB = makeLabel(ctx,"B"); FrameLayout.LayoutParams pB = new FrameLayout.LayoutParams(-2,-2,Gravity.LEFT|Gravity.CENTER_VERTICAL); pB.setMargins(10,0,0,0); wbGrid.addView(lB, pB);
-        TextView lA = makeLabel(ctx,"A"); FrameLayout.LayoutParams pA = new FrameLayout.LayoutParams(-2,-2,Gravity.RIGHT|Gravity.CENTER_VERTICAL); pA.setMargins(0,0,10,0); wbGrid.addView(lA, pA);
-        wbValueText = new TextView(ctx); wbValueText.setTextColor(UiTheme.ACCENT); wbValueText.setTextSize(16);
+        wbGrid.addView(hAxis, new FrameLayout.LayoutParams(140, 2, Gravity.CENTER));
+        TextView lG = makeLabel(ctx,"G"); lG.setTextSize(12); wbGrid.addView(lG, new FrameLayout.LayoutParams(-2,-2, Gravity.TOP|Gravity.CENTER_HORIZONTAL));
+        TextView lM = makeLabel(ctx,"M"); lM.setTextSize(12); wbGrid.addView(lM, new FrameLayout.LayoutParams(-2,-2, Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL));
+        TextView lB = makeLabel(ctx,"B"); lB.setTextSize(12); FrameLayout.LayoutParams pB = new FrameLayout.LayoutParams(-2,-2,Gravity.LEFT|Gravity.CENTER_VERTICAL); pB.setMargins(5,0,0,0); wbGrid.addView(lB, pB);
+        TextView lA = makeLabel(ctx,"A"); lA.setTextSize(12); FrameLayout.LayoutParams pA = new FrameLayout.LayoutParams(-2,-2,Gravity.RIGHT|Gravity.CENTER_VERTICAL); pA.setMargins(0,0,5,0); wbGrid.addView(lA, pA);
+        wbValueText = new TextView(ctx); wbValueText.setTextColor(UiTheme.ACCENT); wbValueText.setTextSize(12);
         if (font != null) wbValueText.setTypeface(font); else wbValueText.setTypeface(Typeface.DEFAULT_BOLD);
-        FrameLayout.LayoutParams pVal = new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.RIGHT); pVal.setMargins(0,10,15,0);
+        FrameLayout.LayoutParams pVal = new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.RIGHT); pVal.setMargins(0,5,10,0);
         wbGrid.addView(wbValueText, pVal);
         wbCursor = new View(ctx); wbCursor.setBackgroundColor(UiTheme.ACCENT);
-        FrameLayout.LayoutParams cursorLp = new FrameLayout.LayoutParams(14,14,Gravity.TOP|Gravity.LEFT); cursorLp.setMargins(153,153,0,0);
+        FrameLayout.LayoutParams cursorLp = new FrameLayout.LayoutParams(10,10,Gravity.TOP|Gravity.LEFT); cursorLp.setMargins(75,75,0,0);
         wbGrid.addView(wbCursor, cursorLp);
-        mainUIContainer.addView(wbGrid, new FrameLayout.LayoutParams(320,320,Gravity.CENTER));
+        
+        FrameLayout.LayoutParams gridLp = new FrameLayout.LayoutParams(160, 160, Gravity.CENTER_VERTICAL | Gravity.LEFT);
+        gridLp.setMargins(20, 0, 0, 0);
+        mainUIContainer.addView(wbGrid, gridLp);
     }
 
     private TextView makeLabel(Context ctx, String text) {
@@ -729,7 +732,7 @@ public class HudController {
             }
             int ab = p.wbShift; int gm = p.wbShiftGM;
             FrameLayout.LayoutParams cp = (FrameLayout.LayoutParams) wbCursor.getLayoutParams();
-            cp.setMargins(153 + ab * 20, 153 - gm * 20, 0, 0);
+            cp.setMargins(75 + ab * 10, 75 - gm * 10, 0, 0);
             wbCursor.setLayoutParams(cp);
             String abStr = ab==0?"0":(ab<0?"B"+Math.abs(ab):"A"+ab);
             String gmStr = gm==0?"0":(gm<0?"M"+Math.abs(gm):"G"+gm);
