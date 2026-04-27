@@ -89,7 +89,7 @@ public class MultiExposeManager {
         }
     }
 
-    public void processFinalShot(ProcessingQueueManager.Entry finalEntry, long scannerStartedMs, long detectedMs, long stableMs, int scannerAttempts) {
+    public void processFinalShot(final ProcessingQueueManager.Entry finalEntry, final long scannerStartedMs, final long detectedMs, final long stableMs, final int scannerAttempts) {
         if (!enabled || state != STATE_PROCESSING) return;
 
         // Start async task to blend
