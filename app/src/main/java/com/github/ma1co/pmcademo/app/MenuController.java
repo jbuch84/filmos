@@ -920,7 +920,10 @@ public class MenuController {
         } else if (currentPage == 6) {
             if      (sel == 0) rm.setQualityIndex(Math.max(0, Math.min(2, rm.getQualityIndex() + dir)));
             else if (sel == 1) host.setPrefFocusMeter(!host.isPrefFocusMeter());
-            else if (sel == 2) {
+            else if (sel == 2) host.setPrefGridLines(!host.isPrefGridLines());
+            else if (sel == 3) host.setPrefJpegQuality(Math.max(60, Math.min(100, host.getPrefJpegQuality() + dir * 5)));
+            else if (sel == 4) rm.setMultiCoreEnabled(!rm.isMultiCoreEnabled());
+            else if (sel == 5) {
                 int mode = 0;
                 if (host.isPrefCinemaMattes()) mode = 1;
                 else if (host.isPrefDiptych()) mode = 2;
@@ -932,9 +935,6 @@ public class MenuController {
                 host.setPrefDiptych(mode == 2);
                 host.setPrefMultiExpose(mode == 3);
             }
-            else if (sel == 3) host.setPrefGridLines(!host.isPrefGridLines());
-            else if (sel == 4) host.setPrefJpegQuality(Math.max(60, Math.min(100, host.getPrefJpegQuality() + dir * 5)));
-            else if (sel == 5) rm.setMultiCoreEnabled(!rm.isMultiCoreEnabled());
             else if (sel == 6 && host.isPrefMultiExpose()) host.setMultiExposeCount(Math.max(2, Math.min(9, host.getMultiExposeCount() + dir)));
             else if (sel == 7 && host.isPrefMultiExpose()) host.setMultiExposeBlendMode(host.getMultiExposeBlendMode() == 0 ? 1 : 0);
         } else if (currentPage == 7) {
@@ -1118,10 +1118,10 @@ public class MenuController {
 
             setRow(0, "SW Global Resolution", qLbls[rm.getQualityIndex()]);
             setRow(1, "Manual Focus Meter",    host.isPrefFocusMeter()   ? "ON" : "OFF");
-            setRow(2, "Creative Modes",        creativeMode);
-            setRow(3, "Rule of Thirds Grid",   host.isPrefGridLines()    ? "ON" : "OFF");
-            setRow(4, "SW JPEG Quality",       String.valueOf(host.getPrefJpegQuality()));
-            setRow(5, "CPU Engine",            rm.isMultiCoreEnabled() ? "MULTI-CORE" : "SINGLE-CORE");
+            setRow(2, "Rule of Thirds Grid",   host.isPrefGridLines()    ? "ON" : "OFF");
+            setRow(3, "SW JPEG Quality",       String.valueOf(host.getPrefJpegQuality()));
+            setRow(4, "CPU Engine",            rm.isMultiCoreEnabled() ? "MULTI-CORE" : "SINGLE-CORE");
+            setRow(5, "Creative Modes",        creativeMode);
             
             if (host.isPrefMultiExpose()) {
                 setRow(6, "  > Exposure Count", String.valueOf(host.getMultiExposeCount()) + " SHOTS");
