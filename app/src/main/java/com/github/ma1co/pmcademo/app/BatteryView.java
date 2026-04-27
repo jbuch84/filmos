@@ -18,7 +18,7 @@ public class BatteryView extends View {
         super(context);
         paint = new Paint();
         paint.setAntiAlias(true);
-        paint.setStrokeWidth(2); 
+        paint.setStrokeWidth(2);
     }
 
     public void setLevel(int level) {
@@ -32,23 +32,21 @@ public class BatteryView extends View {
         int w = getWidth();
         int h = getHeight();
 
-        // JPEG.CAM Orange Color
-        int orange = Color.rgb(227, 69, 20);
+        int accent = UiTheme.ACCENT;
 
-        // 1. Draw Border (Orange)
-        paint.setColor(orange);
+        // 1. Draw Border
+        paint.setColor(accent);
         paint.setStyle(Paint.Style.STROKE);
-        canvas.drawRect(2, 2, w - 6, h - 2, paint); 
-        
-        // 2. Draw Nub (Orange)
+        canvas.drawRect(2, 2, w - 6, h - 2, paint);
+
+        // 2. Draw Nub
         paint.setStyle(Paint.Style.FILL);
         canvas.drawRect(w - 6, h / 2 - 3, w - 1, h / 2 + 3, paint);
 
-        // 3. Draw Segments (Orange, unless critically low)
-        // --- FIXED: Changed Color.WHITE to orange ---
-        int barColor = (level < 15) ? Color.RED : orange;
+        // 3. Draw Segments, unless critically low
+        int barColor = (level < 15) ? UiTheme.ERROR : accent;
         paint.setColor(barColor);
-        
+
         float fillW = (w - 11);
         float segW = fillW / 3.0f;
 

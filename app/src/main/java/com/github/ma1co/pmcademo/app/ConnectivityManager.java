@@ -49,9 +49,29 @@ public class ConnectivityManager {
         this.connManager = (android.net.ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
 
         this.server = new HttpServer(context);
+        ensureServerRunning();
+    }
+
+    private boolean ensureServerRunning() {
         try {
+            if (server == null) server = new HttpServer(context);
             if (!server.isAlive()) server.start();
-        } catch (Exception e) {}
+            return server.isAlive();
+        } catch (Exception e) {
+            try {
+                if (server != null) server.stop();
+                server = new HttpServer(context);
+                server.start();
+                return server.isAlive();
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+    }
+
+    private String buildNetworkStatus(String ipAddress) {
+        if (!ensureServerRunning()) return "Server Error: Restart App";
+        return HttpServer.urlFor(ipAddress);
     }
 
     public String getConnStatusHotspot() { return connStatusHotspot; }
@@ -139,7 +159,7 @@ public class ConnectivityManager {
                             int ip = wifiInfo.getIpAddress();
                             if (ip != 0) {
                                 String ipAddress = String.format("%d.%d.%d.%d", (ip & 0xff), (ip >> 8 & 0xff), (ip >> 16 & 0xff), (ip >> 24 & 0xff));
-                                updateStatus("WIFI", "http://" + ipAddress + ":" + HttpServer.PORT);
+                                updateStatus("WIFI", buildNetworkStatus(ipAddress));
                                 setAutoPowerOffMode(false);
                                 return;
                             }
@@ -233,8 +253,7 @@ public class ConnectivityManager {
                             }
                         } catch (Exception e) {}
                     }
-                    // <--- CHANGED: Stacked the text using \n
-                    updateStatus("HOTSPOT", "PW: " + password + "\nIP: 192.168.122.1");
+                    updateStatus("HOTSPOT", "PW: " + password + "\nURL: " + buildNetworkStatus("192.168.122.1"));
                     setAutoPowerOffMode(false);
                 }
             }
@@ -296,8 +315,7 @@ public class ConnectivityManager {
                                                         Method getPassphrase = group.getClass().getMethod("getPassphrase");
                                                         String pass = (String) getPassphrase.invoke(group);
                                                         
-                                                        // <--- CHANGED: Stacked the text using \n
-                                                        updateStatus("HOTSPOT", "PW: " + pass + "\nIP: 192.168.49.1");
+                                                        updateStatus("HOTSPOT", "PW: " + pass + "\nURL: " + buildNetworkStatus("192.168.49.1"));
                                                         setAutoPowerOffMode(false);
                                                     } else {
                                                         updateStatus("HOTSPOT", "Error: No Group Info");

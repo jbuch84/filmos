@@ -1,16 +1,12 @@
 package com.github.ma1co.pmcademo.app;
 
 import android.content.Context;
-import android.content.Intent;
-import android.net.Uri;
 import android.os.AsyncTask;
 import android.util.Log;
 import java.io.File;
-import java.io.FileOutputStream;
 
 public class ImageProcessor {
     private LutEngine mEngine;
-    private Context mContext;
     private ProcessorCallback mCallback;
 
     public interface ProcessorCallback {
@@ -21,7 +17,6 @@ public class ImageProcessor {
     }
 
     public ImageProcessor(Context context, ProcessorCallback callback) {
-        this.mContext = context;
         this.mCallback = callback;
         this.mEngine = new LutEngine();
     }
@@ -31,7 +26,22 @@ public class ImageProcessor {
     }
 
     public void processJpeg(String originalPath, String outDirPath, int qualityIndex, int jpegQuality, RTLProfile p, boolean applyCrop, boolean isDiptych) {
-        new ProcessTask(qualityIndex, jpegQuality, p, outDirPath, applyCrop, isDiptych).execute(originalPath);
+        processJpeg(originalPath, outDirPath, qualityIndex, jpegQuality, p, applyCrop, isDiptych, 0, 0, 0, 0);
+    }
+
+    public void processJpeg(String originalPath, String outDirPath, int qualityIndex, int jpegQuality, RTLProfile p,
+                            boolean applyCrop, boolean isDiptych,
+                            long scannerStartedMs, long detectedMs, long stableMs, int scannerAttempts) {
+        processJpeg(originalPath, outDirPath, qualityIndex, jpegQuality, p, applyCrop, isDiptych,
+                null, null, scannerStartedMs, detectedMs, stableMs, scannerAttempts);
+    }
+
+    public void processJpeg(String originalPath, String outDirPath, int qualityIndex, int jpegQuality, RTLProfile p,
+                            boolean applyCrop, boolean isDiptych, String lutPath, String lutName,
+                            long scannerStartedMs, long detectedMs, long stableMs, int scannerAttempts) {
+        new ProcessTask(qualityIndex, jpegQuality, p, outDirPath, applyCrop, isDiptych,
+                lutPath, lutName,
+                scannerStartedMs, detectedMs, stableMs, scannerAttempts).execute(originalPath);
     }
 
     private class PreloadLutTask extends AsyncTask<String, Void, Boolean> {
@@ -49,14 +59,22 @@ public class ImageProcessor {
         private String outDir;
         private boolean applyCrop; // <-- NEW
         private boolean isDiptych;
+        private String lutPath;
+        private String lutName;
+        private long stableMs;
 
-        public ProcessTask(int q, int jpegQuality, RTLProfile p, String out, boolean crop, boolean isDiptych) {
+        public ProcessTask(int q, int jpegQuality, RTLProfile p, String out, boolean crop, boolean isDiptych,
+                           String lutPath, String lutName,
+                           long scannerStartedMs, long detectedMs, long stableMs, int scannerAttempts) {
             this.qualityIdx  = q;
             this.jpegQuality = jpegQuality;
             this.p           = p;
             this.outDir      = out;
             this.applyCrop   = crop; // <-- NEW
             this.isDiptych   = isDiptych;
+            this.lutPath     = lutPath;
+            this.lutName     = lutName;
+            this.stableMs = stableMs;
         }
 
         @Override protected void onPreExecute() { mCallback.onProcessStarted(); }
@@ -66,12 +84,18 @@ public class ImageProcessor {
                 File original = new File(params[0]);
                 if (!original.exists()) return "ERR";
 
-                long lastSize = -1; int timeout = 0;
-                while (timeout < 50) {
-                    long currentSize = original.length();
-                    if (currentSize > 0 && currentSize == lastSize) break;
-                    lastSize = currentSize;
-                    Thread.sleep(100); timeout++;
+                if (stableMs <= 0) {
+                    long lastSize = -1; int timeout = 0;
+                    while (timeout < 50) {
+                        long currentSize = original.length();
+                        if (currentSize > 0 && currentSize == lastSize) break;
+                        lastSize = currentSize;
+                        Thread.sleep(100); timeout++;
+                    }
+                }
+
+                if (lutPath != null || lutName != null) {
+                    if (!mEngine.loadLut(lutPath, lutName)) return "FAILED";
                 }
 
                 File dir = new File(outDir);
@@ -90,14 +114,6 @@ public class ImageProcessor {
                     finalJpegQuality = Math.min(90, this.jpegQuality);
                 }
 
-                System.gc(); // Force cleanup before heavy C++ engine starts
-
-                // Texture Intercept
-                if (MenuController.grainTextureFiles.size() > 0 && p.grainSize >= 0 && p.grainSize < MenuController.grainTextureFiles.size()) {
-                    File texFile = MenuController.grainTextureFiles.get(p.grainSize);
-                    mEngine.loadGrainTexture(texFile); // Load into C++ Global RAM
-                }
-                
                 // --- DIPTYCH COMPENSATOR ---
                 // Safely steps down physical effects to account for the smaller 6MP canvas
                 int finalGrainSize = p.grainSize;
@@ -114,18 +130,27 @@ public class ImageProcessor {
                     finalBloom = bloomMap[Math.max(0, currentBloomIdx - 1)];
                 }
 
-                int numCores = Runtime.getRuntime().availableProcessors();
-                Log.d("JPEG.CAM", "Using " + numCores + " cores for processing.");
+                int cxxGrainEngine = p.advancedGrainExperimental;
+                if (p.grain > 0) {
+                    File texFile = MenuController.getGrainTextureFile(finalGrainSize);
+                    if (mEngine.loadGrainTexture(texFile)) {
+                        cxxGrainEngine = 2;
+                    }
+                }
 
-                if (mEngine.applyLutToJpeg(
+                int numCores = Runtime.getRuntime().availableProcessors();
+
+                boolean success = mEngine.applyLutToJpeg(
                     original.getAbsolutePath(), outFile.getAbsolutePath(),
                     scale, p.opacity, p.grain, finalGrainSize, p.vignette, p.rollOff,
                     p.colorChrome, p.chromeBlue, p.shadowToe, p.subtractiveSat,
                     p.halation, finalBloom, 
+                    cxxGrainEngine,
                     finalJpegQuality, 
-                    applyCrop, numCores)) {  // <--- ADDED numCores HERE
-                return "SAVED";
-            }
+                    applyCrop, numCores);  // <--- ADDED numCores HERE
+                if (success) {
+                    return "SAVED";
+                }
             } catch (Exception e) { Log.e("COOKBOOK", "Java error: " + e.getMessage()); }
             return "FAILED";
         }

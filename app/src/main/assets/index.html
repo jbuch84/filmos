@@ -24,22 +24,22 @@
         }
 
         /* --- THEME VARIABLES (Matched to React JPEG.CAM-theme) --- */
-        :root { 
-            --bg-dark: hsl(0, 0%, 5%); 
-            --bg-panel: hsl(0, 0%, 10%); 
-            --accent: rgb(227, 69, 20); /* JPEG.CAM Orange */
-            --text-main: hsl(30, 10%, 88%); 
-            --text-muted: hsl(30, 5%, 55%);
-            --border-color: hsl(0, 0%, 20%);
+        :root {
+            --bg-dark: hsl(190, 24%, 5%);
+            --bg-panel: hsl(190, 18%, 9%);
+            --accent: rgb(234, 133, 48);
+            --text-main: hsl(165, 18%, 92%);
+            --text-muted: hsl(165, 8%, 58%);
+            --border-color: hsl(178, 10%, 24%);
         }
 
         /* --- BASE STYLES & TEXTURES --- */
-        body { 
-            margin: 0; 
-            font-family: 'Inter', -apple-system, system-ui, sans-serif; 
-            background-color: var(--bg-dark); 
-            color: var(--text-main); 
-            -webkit-user-select: none; 
+        body {
+            margin: 0;
+            font-family: 'Inter', -apple-system, system-ui, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            -webkit-user-select: none;
             min-height: 100vh;
             position: relative;
         }
@@ -51,20 +51,18 @@
             top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none;
             z-index: -1;
-            opacity: 0.03;
-            background-image: 
-              radial-gradient(circle at 25% 25%, rgba(227, 69, 20, 1), transparent 50%),
-              radial-gradient(circle at 75% 75%, rgba(227, 69, 20, 0.8), transparent 50%);
+            opacity: 0.08;
+            background-image: linear-gradient(180deg, rgba(234, 133, 48, 0.35), transparent 42%);
         }
 
         /* --- HEADER & GLOWING LCD TEXT --- */
-        header { 
-            background-color: var(--bg-panel); 
-            padding: 18px 25px; 
-            display: flex; 
-            justify-content: space-between; 
-            align-items: center; 
-            border-bottom: 1px solid var(--border-color); 
+        header {
+            background-color: var(--bg-panel);
+            padding: 18px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
         }
 
         .text-JPEG.CAM-glow {
@@ -74,31 +72,31 @@
             font-size: 28px;
             font-weight: normal;
             letter-spacing: 2px;
-            text-shadow: 0 0 15px rgba(227, 69, 20, 0.5), 0 0 30px rgba(227, 69, 20, 0.3);
+            text-shadow: 0 0 15px rgba(234, 133, 48, 0.5), 0 0 30px rgba(234, 133, 48, 0.25);
         }
 
-        .sys-info { 
-            font-size: 11px; 
-            color: var(--accent); 
-            font-weight: 800; 
-            text-transform: uppercase; 
-            letter-spacing: 1px; 
-            background: rgba(227, 69, 20, 0.1);
+        .sys-info {
+            font-size: 11px;
+            color: var(--accent);
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            background: rgba(234, 133, 48, 0.1);
             padding: 4px 10px;
             border-radius: 20px;
-            border: 1px solid rgba(227, 69, 20, 0.2);
+            border: 1px solid rgba(234, 133, 48, 0.2);
         }
 
         /* --- TOOLBAR --- */
-        .toolbar { 
-            position: sticky; 
-            top: 0; 
-            background: rgba(13, 13, 13, 0.85); 
-            backdrop-filter: blur(16px); 
+        .toolbar {
+            position: sticky;
+            top: 0;
+            background: rgba(13, 13, 13, 0.85);
+            backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
-            padding: 12px 25px; 
-            z-index: 100; 
-            border-bottom: 1px solid var(--border-color); 
+            padding: 12px 25px;
+            z-index: 100;
+            border-bottom: 1px solid var(--border-color);
             box-shadow: 0 4px 20px rgba(0,0,0,0.4);
         }
         .row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -109,31 +107,31 @@
         .btn { background: none; border: none; color: var(--text-muted); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 700; transition: all 0.2s ease; }
         .btn:hover { color: var(--text-main); }
         .btn.active { background: var(--border-color); color: var(--text-main); box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
-        
-        .action-btn { 
-            background: var(--accent); 
-            color: white; 
-            border: none; 
-            padding: 10px 20px; 
-            border-radius: 8px; 
-            font-weight: 700; 
+
+        .action-btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 700;
             font-size: 12px;
-            cursor: pointer; 
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); 
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
         .action-btn:hover {
-            box-shadow: 0 0 15px rgba(227, 69, 20, 0.4), 0 4px 8px rgba(0,0,0,0.3);
+            box-shadow: 0 0 15px rgba(234, 133, 48, 0.35), 0 4px 8px rgba(0,0,0,0.3);
             transform: translateY(-1px);
         }
         .action-btn:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
         .action-btn:disabled { background: #222; color: #555; box-shadow: none; transform: none; cursor: not-allowed; }
-        
-        .secondary-btn { 
-            background: transparent; 
-            border: 1px solid var(--border-color); 
-            color: var(--text-main); 
-            margin-right: 10px; 
+
+        .secondary-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            margin-right: 10px;
         }
         .secondary-btn:hover {
             background: rgba(255,255,255,0.05);
@@ -141,48 +139,52 @@
         }
 
         /* --- PHOTO GALLERY & CARDS --- */
-        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; padding: 25px; padding-bottom: 60px; }
-        
-        .card { 
-            background: var(--bg-panel); 
-            border-radius: 12px; 
-            overflow: hidden; 
-            position: relative; 
-            border: 1px solid var(--border-color); 
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
-            cursor: pointer; 
+        .gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; padding: 25px; padding-bottom: 60px; }
+        @media (min-width: 760px) {
+            .gallery { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+        }
+
+        .card {
+            background: var(--bg-panel);
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            border: 1px solid var(--border-color);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
         .card:hover {
             transform: translateY(-6px);
-            border-color: rgba(227, 69, 20, 0.5);
-            box-shadow: 0 0 20px rgba(227, 69, 20, 0.15), 0 10px 15px rgba(0,0,0,0.3);
+            border-color: rgba(234, 133, 48, 0.5);
+            box-shadow: 0 0 20px rgba(234, 133, 48, 0.15), 0 10px 15px rgba(0,0,0,0.3);
         }
-        .card.selected { 
-            border-color: var(--accent); 
-            background: rgba(227, 69, 20, 0.05); 
+        .card.selected {
+            border-color: var(--accent);
+            background: rgba(234, 133, 48, 0.06);
             box-shadow: 0 0 0 1px var(--accent), 0 8px 15px rgba(0,0,0,0.3);
         }
-        
+
         .card img { width: 100%; height: 160px; object-fit: cover; background: #000; border-bottom: 1px solid var(--border-color); transition: opacity 0.2s; }
         .card.selected img { opacity: 0.85; }
-        
+
         .card-info { padding: 12px; font-size: 11px; display: flex; justify-content: space-between; color: var(--text-muted); font-weight: 500; }
         .card.selected .card-info { color: var(--text-main); }
-        
+
         .checkbox-hitbox { position: absolute; top: 0; left: 0; width: 60px; height: 60px; z-index: 10; }
-        
+
         .sel-indicator { position: absolute; top: 12px; left: 12px; width: 22px; height: 22px; border: 2px solid rgba(255,255,255,0.6); border-radius: 6px; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); transition: all 0.2s; box-shadow: 0 2px 5px rgba(0,0,0,0.3); }
         .card.selected .sel-indicator { background: var(--accent); border-color: var(--accent); }
         .card.selected .sel-indicator::after { content: '✓'; color: white; font-size: 14px; position: absolute; left: 4px; top: 0px; font-weight: 900; }
-        
+
         .load-more-container { grid-column: 1 / -1; text-align: center; padding: 30px 0; }
-        
+
         /* --- LIGHTBOX --- */
         #lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); backdrop-filter: blur(10px); z-index: 1000; justify-content: center; align-items: center; flex-direction: column; cursor: zoom-out; }
         #lightbox img { max-width: 90%; max-height: 65vh; border-radius: 4px; transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); cursor: default; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
+        .lb-back { position: absolute; top: 18px; left: 18px; cursor: pointer; background: rgba(234, 133, 48, 0.16); color: var(--text-main); border: 1px solid rgba(234, 133, 48, 0.55); border-radius: 8px; padding: 10px 16px; font-weight: 800; letter-spacing: 0.8px; }
         .lb-meta { margin-top: 25px; text-align: center; max-width: 90%; pointer-events: none; }
-        .exif-tag { color: var(--accent); font-family: 'Inter', monospace; font-size: 13px; font-weight: 700; text-transform: uppercase; background: rgba(227,69,20,0.1); padding: 6px 14px; border-radius: 6px; border: 1px solid rgba(227,69,20,0.25); letter-spacing: 0.5px; }
+        .exif-tag { color: var(--accent); font-family: 'Inter', monospace; font-size: 13px; font-weight: 700; text-transform: uppercase; background: rgba(234,133,48,0.1); padding: 6px 14px; border-radius: 6px; border: 1px solid rgba(234,133,48,0.25); letter-spacing: 0.5px; }
         .lb-tools { margin-top: 30px; display: flex; gap: 15px; cursor: default; }
 
         /* --- IMPORT MODAL --- */
@@ -224,6 +226,7 @@
     <div class="gallery" id="gallery"></div>
 
     <div id="lightbox" onclick="closeLightbox()">
+        <button class="lb-back" onclick="event.stopPropagation(); closeLightbox()">BACK</button>
         <img id="lb-img" src="" onclick="event.stopPropagation()">
         <div class="lb-meta" id="lb-meta"></div>
         <div class="lb-tools" onclick="event.stopPropagation()">
@@ -236,12 +239,12 @@
         <div class="modal-content">
             <h3 style="margin-top:0; color:var(--accent); letter-spacing: 1px; font-weight: 800;">IMPORT FILES</h3>
             <p style="font-size:13px; color:var(--text-muted); margin-bottom: 25px; line-height: 1.5;">Upload <b>.cube</b> LUTs or <b>.txt</b> Lens Profiles. The Smart Router will organize them automatically.</p>
-            
+
             <input type="file" id="import-file" accept=".cube,.cub,.txt,.lens" style="display:none" onchange="handleFileSelect(event)">
             <button class="action-btn" style="width:100%; margin-bottom:15px; padding: 12px;" onclick="document.getElementById('import-file').click()">SELECT FILE TO UPLOAD</button>
-            
+
             <div id="upload-status" style="font-size:12px; font-weight:bold; margin-bottom:15px; color:#fff; height: 15px; letter-spacing: 0.5px;"></div>
-            
+
             <button class="action-btn secondary-btn" style="width:100%; margin:0; padding: 12px;" onclick="closeImportManager()">CLOSE & RESTART APP</button>
         </div>
     </div>
@@ -295,18 +298,18 @@
 
         function render(resetPage = false) {
             if (resetPage) currentPage = 1;
-            
+
             const container = document.getElementById('gallery');
             if (resetPage) container.innerHTML = '';
             else {
                 const oldBtn = document.getElementById('load-more-btn');
                 if (oldBtn) oldBtn.remove();
             }
-            
+
             const now = new Date();
             const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
             const filtered = currentFiles.filter(f => filter === 'all' || f.date >= startOfToday);
-            
+
             const startIndex = (currentPage - 1) * PAGE_SIZE;
             const paginated = filtered.slice(startIndex, currentPage * PAGE_SIZE);
 
@@ -322,7 +325,7 @@
                 `;
                 container.appendChild(card);
             });
-            
+
             if (filtered.length > currentPage * PAGE_SIZE) {
                 const loadMoreDiv = document.createElement('div');
                 loadMoreDiv.id = 'load-more-btn';
@@ -330,10 +333,10 @@
                 loadMoreDiv.innerHTML = `<button class="action-btn secondary-btn" onclick="loadMore()">LOAD MORE PHOTOS</button>`;
                 container.appendChild(loadMoreDiv);
             }
-            
+
             updateUI();
         }
-        
+
         function loadMore() {
             currentPage++;
             render(false);
@@ -342,7 +345,7 @@
         function toggleSel(name) {
             if(selected.has(name)) selected.delete(name);
             else selected.add(name);
-            
+
             const cards = document.querySelectorAll('.card');
             cards.forEach(card => {
                 const title = card.querySelector('.card-info span').innerText;
@@ -354,10 +357,10 @@
             updateUI();
         }
 
-        function unselectAll() { 
-            selected.clear(); 
+        function unselectAll() {
+            selected.clear();
             document.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
-            updateUI(); 
+            updateUI();
         }
 
         function updateUI() {
@@ -372,11 +375,11 @@
             const lb = document.getElementById('lightbox');
             const img = document.getElementById('lb-img');
             const meta = document.getElementById('lb-meta');
-            
+
             img.src = `/full/?folder=${mode}&name=${name}`;
             img.style.transform = `rotate(0deg) scale(1)`;
             meta.innerHTML = `<span class="exif-tag" style="color:var(--text-muted); border-color:var(--border-color);">READING EXIF...</span>`;
-            
+
             parseMetadata(`/full/?folder=${mode}&name=${name}`);
             lb.style.display = 'flex';
         }
@@ -386,22 +389,22 @@
                 const response = await fetch(url, { headers: { 'Range': 'bytes=0-65536' } });
                 const buffer = await response.arrayBuffer();
                 const view = new DataView(buffer);
-                
+
                 const exif = extractExif(view);
                 if (exif) {
                     let focal = exif.focal ? `${Math.round(exif.focal)}mm` : '';
                     let fnum = exif.aperture ? `f/${exif.aperture.toFixed(1)}` : 'f/--';
                     let speed = exif.shutter ? (exif.shutter < 1 ? `1/${Math.round(1/exif.shutter)}s` : `${exif.shutter}s`) : '--s';
                     let iso = exif.iso ? `ISO ${exif.iso}` : 'ISO --';
-                    
+
                     let prefix = mode === 'GRADED' ? `JPEG.CAM RECIPE • ${viewName}` : viewName;
                     let details = [prefix, focal, fnum, speed, iso].filter(Boolean).join(' • ');
                     document.getElementById('lb-meta').innerHTML = `<span class="exif-tag" ${mode === 'GRADED' ? 'style="color:#4BA653; border-color:rgba(75, 166, 83, 0.3); background:rgba(75, 166, 83, 0.1);"' : ''}>${details}</span>`;
                 } else {
                     document.getElementById('lb-meta').innerHTML = `<span class="exif-tag" style="color:var(--text-muted); border-color:var(--border-color); background:transparent;">${viewName} • NO METADATA</span>`;
                 }
-            } catch (e) { 
-                document.getElementById('lb-meta').innerHTML = `<span class="exif-tag" style="color:#E54D3A; border-color:rgba(229, 77, 58, 0.3); background:rgba(229, 77, 58, 0.1);">METADATA ERROR</span>`; 
+            } catch (e) {
+                document.getElementById('lb-meta').innerHTML = `<span class="exif-tag" style="color:#E54D3A; border-color:rgba(229, 77, 58, 0.3); background:rgba(229, 77, 58, 0.1);">METADATA ERROR</span>`;
             }
         }
 
@@ -418,16 +421,16 @@
         }
 
         function parseTags(view, start) {
-            if (view.getUint32(start, false) !== 0x45786966) return null; 
+            if (view.getUint32(start, false) !== 0x45786966) return null;
             const tiffOffset = start + 6;
-            const le = view.getUint16(tiffOffset, false) === 0x4949; 
+            const le = view.getUint16(tiffOffset, false) === 0x4949;
             const ifd0Offset = view.getUint32(tiffOffset + 4, le);
 
             let subIfdOffset = 0;
             let entries = view.getUint16(tiffOffset + ifd0Offset, le);
             for (let i = 0; i < entries; i++) {
                 let entryOffset = tiffOffset + ifd0Offset + 2 + (i * 12);
-                if (view.getUint16(entryOffset, le) === 0x8769) { 
+                if (view.getUint16(entryOffset, le) === 0x8769) {
                     subIfdOffset = view.getUint32(entryOffset + 8, le);
                     break;
                 }
@@ -481,7 +484,7 @@
             try {
                 // 1. Load the full image into memory
                 const img = new Image();
-                img.crossOrigin = "Anonymous"; 
+                img.crossOrigin = "Anonymous";
                 await new Promise((resolve, reject) => {
                     img.onload = resolve;
                     img.onerror = reject;
@@ -515,7 +518,7 @@
                     link.download = viewName; // Keeps original filename
                     link.click();
                     URL.revokeObjectURL(url);
-                    
+
                     saveBtn.innerText = originalText;
                     saveBtn.disabled = false;
                 }, 'image/jpeg', 0.95);
@@ -524,7 +527,7 @@
                 console.error("Failed to rotate and save:", err);
                 saveBtn.innerText = originalText;
                 saveBtn.disabled = false;
-                triggerDownload(viewName); 
+                triggerDownload(viewName);
             }
         }
 
@@ -547,15 +550,15 @@
             document.getElementById('import-modal').style.display = 'flex';
             document.getElementById('upload-status').innerText = '';
         }
-        
+
         function closeImportManager() {
             document.getElementById('import-modal').style.display = 'none';
         }
-        
+
         async function handleFileSelect(event) {
             const file = event.target.files[0];
             if (!file) return;
-            
+
             const ext = file.name.toLowerCase();
             if (!ext.endsWith('.cube') && !ext.endsWith('.cub') && !ext.endsWith('.txt') && !ext.endsWith('.lens')) {
                 document.getElementById('upload-status').innerText = 'ERROR: UNSUPPORTED FILE TYPE';
@@ -573,9 +576,9 @@
                     headers: {
                         'X-File-Name': file.name
                     },
-                    body: file 
+                    body: file
                 });
-                
+
                 if (res.ok) {
                     document.getElementById('upload-status').innerText = `SUCCESS: ${file.name.toUpperCase()} INSTALLED!`;
                     document.getElementById('upload-status').style.color = '#4BA653';
@@ -587,8 +590,8 @@
                 document.getElementById('upload-status').innerText = 'ERROR: NETWORK CONNECTION';
                 document.getElementById('upload-status').style.color = '#E54D3A';
             }
-            
-            event.target.value = ''; 
+
+            event.target.value = '';
         }
 
         init();

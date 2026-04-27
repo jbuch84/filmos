@@ -50,20 +50,14 @@ public class DiptychManager {
         leftFilename = null;
         rightFilename = null;
         if (overlayView != null) overlayView.setState(STATE_NEED_FIRST);
-        if (activity != null) {
-            activity.updateDiptychPreviewWindow();
-            activity.updateDiptychFocusArea(false); // Reset hardware to center
-        }
+        if (activity != null) activity.updateDiptychPreviewWindow();
     }
 
     public int getState() { return state; }
 
     public void setThumbOnLeft(boolean left) {
         if (overlayView != null) overlayView.setThumbOnLeft(left);
-        if (activity != null) {
-            activity.updateDiptychPreviewWindow();
-            activity.updateDiptychFocusArea(false); // Ensure idle is always center
-        }
+        if (activity != null) activity.updateDiptychPreviewWindow();
     }
 
     public boolean isThumbOnLeft() { return overlayView != null && overlayView.isThumbOnLeft(); }
@@ -78,37 +72,13 @@ public class DiptychManager {
             leftFilename = filename;
             rightFilename = null;
             state = STATE_PROCESSING_FIRST;
-            
-            // --- INSTANT PREVIEW ---
-            // Decode the original photo immediately so the user sees something while processing
-            final Bitmap thumb = getDiptychThumbnail(originalPath);
-            activity.runOnUiThread(new Runnable() {
-                public void run() {
-                    if (overlayView != null) {
-                        overlayView.setThumbnail(thumb);
-                        overlayView.setState(STATE_PROCESSING_FIRST);
-                    }
-                }
-            });
-
             if (activity != null) activity.updateDiptychPreviewWindow();
             return true;
         } else if (state == STATE_NEED_SECOND) {
             rightFilename = filename;
             state = STATE_STITCHING;
-            
-            // --- RAM OPTIMIZATION ---
-            // Clear the reference thumbnail immediately. This frees up memory 
-            // for the upcoming grading of the 2nd shot AND the final stitch.
-            activity.runOnUiThread(new Runnable() {
-                public void run() {
-                    if (overlayView != null) {
-                        overlayView.clearThumbnail();
-                        overlayView.setState(STATE_STITCHING);
-                    }
-                    if (activity != null) activity.updateDiptychPreviewWindow();
-                }
-            });
+            if (overlayView != null) overlayView.setState(STATE_STITCHING);
+            if (activity != null) activity.updateDiptychPreviewWindow();
             return true;
         }
         return false;
@@ -116,7 +86,6 @@ public class DiptychManager {
 
     public void processFirstShot(final String gradedPath) {
         state = STATE_NEED_SECOND;
-        // Optionally update the thumbnail with the graded version (higher quality/correct colors)
         final Bitmap thumb = getDiptychThumbnail(gradedPath);
         activity.runOnUiThread(new Runnable() {
             public void run() {
@@ -128,7 +97,7 @@ public class DiptychManager {
                 activity.armFileScanner();
                 if (tvTopStatus != null) {
                     tvTopStatus.setText("SHOT 1 SAVED. [L/R] TO SWAP SIDE.");
-                    tvTopStatus.setTextColor(Color.GREEN);
+                    tvTopStatus.setTextColor(UiTheme.SUCCESS);
                 }
                 activity.updateMainHUD();
             }
@@ -138,15 +107,14 @@ public class DiptychManager {
     public void processSecondShot(final String gradedLeftPath, final String gradedRightPath) {
         activity.runOnUiThread(new Runnable() {
             public void run() {
-                state = STATE_STITCHING; // Re-enforce
                 if (overlayView != null) {
                     // Immediately purge the thumbnail to give the C++ stitcher max breathing room
-                    overlayView.clearThumbnail(); 
+                    overlayView.clearThumbnail();
                     overlayView.setState(STATE_STITCHING);
                 }
                 if (tvTopStatus != null) {
                     tvTopStatus.setText("STITCHING DIPTYCH...");
-                    tvTopStatus.setTextColor(Color.YELLOW);
+                    tvTopStatus.setTextColor(UiTheme.WARN);
                 }
             }
         });
@@ -155,10 +123,10 @@ public class DiptychManager {
         new Thread(new Runnable() {
             public void run() {
                 try {
-                    // Increased wait time: Give the Media Scanner more room to finish indexing
-                    Thread.sleep(1000); 
+                    // Guarantee the UI thread has time to execute the thumbnail purge before C++ asks for RAM
+                    Thread.sleep(150);
                 } catch (Exception ignored) {}
-                
+
                 performDiptychStitch(gradedLeftPath, gradedRightPath, firstShotLeft);
             }
         }).start();
@@ -178,56 +146,15 @@ public class DiptychManager {
     private void performDiptychStitch(String leftPath, String rightPath, boolean firstShotLeft) {
         try {
             System.gc();
-            File fL = new File(leftPath);
-            File fR = new File(rightPath);
-            
-            // --- 8.3 FILENAME COMPLIANCE ---
-            // Sony cameras enforce a strict 8-character filename limit for DCIM.
-            // Example: DSC07127.JPG -> DIP07127.JPG
-            String originalName = fR.getName();
-            String diptychName = "DIPTYCH.JPG"; // Failsafe
-            
-            try {
-                String namePart = originalName;
-                int dotIdx = originalName.lastIndexOf(".");
-                if (dotIdx != -1) namePart = originalName.substring(0, dotIdx);
-                
-                if (namePart.length() > 5) {
-                    // Take the last 5 digits/chars (e.g., 07127) and prefix with DIP
-                    diptychName = "DIP" + namePart.substring(namePart.length() - 5) + ".JPG";
-                } else {
-                    diptychName = "DIP" + namePart + ".JPG";
-                }
-                
-                // Final safety truncate to 8 chars + extension
-                if (diptychName.length() > 12) {
-                    diptychName = diptychName.substring(0, 8) + ".JPG";
-                }
-            } catch (Exception e) {
-                Log.e("JPEG.CAM", "Filename generation error: " + e.getMessage());
-            }
-            
-            File finalOut = new File(Filepaths.getGradedDir(), diptychName);
+            File finalOut = new File(Filepaths.getGradedDir(), "DIPTYCH_" + new File(rightPath).getName());
 
-            Log.d("JPEG.CAM", "DIPTYCH STITCH ATTEMPT:");
-            Log.d("JPEG.CAM", "  - Left Path (" + fL.exists() + "): " + leftPath);
-            Log.d("JPEG.CAM", "  - Right Path (" + fR.exists() + "): " + rightPath);
-            Log.d("JPEG.CAM", "  - Output Name: " + diptychName + " (Compliant=" + (diptychName.length() <= 12) + ")");
-
-            if (!fL.exists() || !fR.exists()) {
-                Log.e("JPEG.CAM", "STITCH ABORTED: Source files missing!");
-                throw new Exception("Source files missing");
-            }
-
+            Log.d("JPEG.CAM", "Diptych stitch start: left=" + leftPath + " right=" + rightPath + " out=" + finalOut.getAbsolutePath());
             final boolean success = stitchDiptychNative(leftPath, rightPath, finalOut.getAbsolutePath(), firstShotLeft, activity.getPrefJpegQuality());
-            Log.d("JPEG.CAM", "Diptych native result: " + success);
+            Log.d("JPEG.CAM", "Diptych stitch result: " + success);
 
-            if (success && finalOut.exists()) {
-                Log.d("JPEG.CAM", "Stitch SUCCESS. Final size: " + finalOut.length());
-                fL.delete();
-                fR.delete();
-            } else {
-                Log.e("JPEG.CAM", "Stitch FAILED or output file not created!");
+            if (success) {
+                new File(leftPath).delete();
+                new File(rightPath).delete();
             }
 
             activity.runOnUiThread(new Runnable() {
@@ -236,7 +163,7 @@ public class DiptychManager {
                     reset();
                     if (tvTopStatus != null) {
                         tvTopStatus.setText(success ? "DIPTYCH SAVED" : "DIPTYCH FAILED");
-                        tvTopStatus.setTextColor(success ? Color.WHITE : Color.RED);
+                        tvTopStatus.setTextColor(success ? UiTheme.TEXT : UiTheme.ERROR);
                     }
                     activity.updateMainHUD();
                 }
@@ -249,7 +176,7 @@ public class DiptychManager {
                     reset();
                     if (tvTopStatus != null) {
                         tvTopStatus.setText("DIPTYCH FAILED");
-                        tvTopStatus.setTextColor(Color.RED);
+                        tvTopStatus.setTextColor(UiTheme.ERROR);
                     }
                     activity.updateMainHUD();
                 }

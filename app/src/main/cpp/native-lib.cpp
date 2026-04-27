@@ -20,6 +20,7 @@
 std::vector<uint8_t> nativeLut;
 int nativeLutSize = 0;
 std::vector<uint8_t> nativeGrainTexture;
+int nativeLastGrainTransform = -1;
 
 struct my_error_mgr { struct jpeg_error_mgr pub; jmp_buf setjmp_buffer; };
 METHODDEF(void) my_error_exit (j_common_ptr cinfo) {
@@ -27,7 +28,54 @@ METHODDEF(void) my_error_exit (j_common_ptr cinfo) {
     longjmp(myerr->setjmp_buffer, 1);
 }
 
+struct YuvTextureFastRowsTask {
+    unsigned char* base;
+    int rowStride;
+    int width;
+    int startY;
+    int rowStart;
+    int rowEnd;
+    int grain;
+    int scaleDenom;
+    const YuvTextureFastLut* fastLut;
+    const uint8_t* externalTex;
+    bool is1024Grain;
+    int grainTransform;
+};
+
+static void process_yuv_texture_fast_rows(YuvTextureFastRowsTask* task) {
+    for (int row = task->rowStart; row < task->rowEnd; row++) {
+        process_row_yuv_texture_fast(
+            task->base + row * task->rowStride,
+            task->width,
+            task->startY + row,
+            task->grain,
+            task->scaleDenom,
+            *task->fastLut,
+            task->externalTex,
+            task->is1024Grain,
+            task->grainTransform);
+    }
+}
+
+static void* yuv_texture_fast_rows_thread(void* data) {
+    process_yuv_texture_fast_rows((YuvTextureFastRowsTask*)data);
+    return NULL;
+}
+
 long long get_time_ms() { struct timeval tv; gettimeofday(&tv, NULL); return (long long)tv.tv_sec*1000 + tv.tv_usec/1000; }
+
+static int choose_grain_transform(uint32_t seed, bool enabled) {
+    if (!enabled) return 0;
+    uint32_t h = seed ^ (seed >> 16) ^ 0x9E3779B9u;
+    h ^= h >> 13;
+    h *= 0x85EBCA6Bu;
+    h ^= h >> 16;
+    int transform = (int)(h & 3u);
+    if (transform == nativeLastGrainTransform) transform = (transform + 1) & 3;
+    nativeLastGrainTransform = transform;
+    return transform;
+}
 
 extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngine_loadLutNative(JNIEnv* env, jobject obj, jstring path) {
     nativeLut.clear(); nativeLutSize = 0; const char *fp = env->GetStringUTFChars(path, NULL); std::string ps(fp); std::string ex = ""; size_t dp = ps.find_last_of('.');
@@ -43,7 +91,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
             stbi_image_free(id);
         }
     } else if (ex==".cube"||ex==".cub") {
-        FILE *f = fopen(fp, "r"); if(f){ char l[256]; size_t c=0; while(fgets(l, 256, f)){ if(strncmp(l,"LUT_3D_SIZE",11)==0){ sscanf(l,"LUT_3D_SIZE %d",&nativeLutSize); nativeLut.resize(nativeLutSize*nativeLutSize*nativeLutSize*3); continue; } float r,g,b; if(nativeLutSize>0 && sscanf(l,"%f %f %f",&r,&g,&b)==3){ if(c+2<nativeLut.size()){ nativeLut[c++]=(uint8_t)(r*255); nativeLut[c++]=(uint8_t)(g*255); nativeLut[c++]=(uint8_t)(b*255); } } } fclose(f); }
+        FILE *f = fopen(fp, "r"); if(f){ char l[256]; size_t c=0; while(fgets(l, 256, f)){ if(strncmp(l,"LUT_3D_SIZE",11)==0){ sscanf(l,"LUT_3D_SIZE %d",&nativeLutSize); nativeLut.resize(nativeLutSize*nativeLutSize*nativeLutSize*3); c=0; continue; } float r,g,b; if(nativeLutSize>0 && sscanf(l,"%f %f %f",&r,&g,&b)==3){ if(c+2<nativeLut.size()){ nativeLut[c++]=(uint8_t)(r*255); nativeLut[c++]=(uint8_t)(g*255); nativeLut[c++]=(uint8_t)(b*255); } } } fclose(f); }
     }
     env->ReleaseStringUTFChars(path, fp); return nativeLutSize>0 ? JNI_TRUE : JNI_FALSE;
 }
@@ -58,7 +106,8 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     jint scaleDenom, jint opacity, jint grain, jint grainSize,
     jint vignette, jint rollOff, jint colorChrome, jint chromeBlue,
     jint shadowToe, jint subtractiveSat, jint halation,
-    jint bloom, jint jpegQuality, jboolean applyCrop, jint numCores) {
+    jint bloom, jint advancedGrainExperimental, jint jpegQuality,
+    jboolean applyCrop, jint numCores) {
 
     long long st = get_time_ms(); const char *ifn = env->GetStringUTFChars(inPath, NULL); const char *ofn = env->GetStringUTFChars(outPath, NULL);
     FILE *inf = fopen(ifn, "rb"), *ouf = fopen(ofn, "wb");
@@ -72,15 +121,19 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     for (int i = 0; i < 16; i++) jpeg_save_markers(&cd, JPEG_APP0 + i, 0xFFFF);
     jpeg_save_markers(&cd, JPEG_COM, 0xFFFF);
 
+    bool use_rgb = (nativeLutSize > 0 && opacity > 0);
     jpeg_read_header(&cd, TRUE);
-    cd.scale_denom = scaleDenom; cd.out_color_space = JCS_RGB; jpeg_start_decompress(&cd);
+    cd.scale_num = 1;
+    cd.scale_denom = scaleDenom;
+    cd.out_color_space = use_rgb ? JCS_RGB : JCS_YCbCr;
+    jpeg_start_decompress(&cd);
 
     struct jpeg_compress_struct cc; struct my_error_mgr jc; cc.err = jpeg_std_error(&jc.pub); jc.pub.error_exit = my_error_exit;
     if(setjmp(jc.setjmp_buffer)){ jpeg_destroy_compress(&cc); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_FALSE; }
     jpeg_create_compress(&cc); jpeg_stdio_dest(&cc, ouf);
     
     int fh = cd.output_height, sk = 0; if(applyCrop){ fh=(int)(cd.output_width/2.71f); sk=(cd.output_height-fh)/2; }
-    cc.image_width = cd.output_width; cc.image_height = fh; cc.input_components = 3; cc.in_color_space = JCS_RGB;
+    cc.image_width = cd.output_width; cc.image_height = fh; cc.input_components = 3; cc.in_color_space = use_rgb ? JCS_RGB : JCS_YCbCr;
     jpeg_set_defaults(&cc); jpeg_set_quality(&cc, jpegQuality, TRUE); 
     
     // --- COPY ALL MARKERS BACK (Fixes Review Error) ---
@@ -92,9 +145,13 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     }
 
     int rs = cd.output_width*3;
-    
-    // Extremely cache-friendly chunk size for single-core execution on older L2 caches
-    int CHK = 64; 
+    const uint8_t* externalTex = nativeGrainTexture.empty() ? NULL : nativeGrainTexture.data();
+    bool is_1024_grain = nativeGrainTexture.size() > 1000000;
+    bool use_fast_yuv_texture_candidate = (!use_rgb && advancedGrainExperimental == 2 && externalTex != NULL
+        && grain > 0 && colorChrome == 0 && chromeBlue == 0 && subtractiveSat == 0
+        && bloom <= 0 && halation == 0 && vignette == 0);
+
+    int CHK = (use_fast_yuv_texture_candidate && !applyCrop && numCores > 1) ? 128 : 64;
     int BUF = CHK + 20;
 
     unsigned char* rb = (unsigned char*)malloc(BUF*rs);
@@ -115,10 +172,9 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
 
     int map[256]; for(int i=0; i<256; i++) map[i]=(i*(nativeLutSize-1)*128)/255;
     uint8_t roll[256]; generate_rolloff_lut(roll, rollOff);
-
-    int inv_y[256];
-    for (int i = 0; i < 256; i++) inv_y[i] = 65536 / (i == 0 ? 1 : i);
-
+    if (advancedGrainExperimental == 2 && externalTex != NULL && grain > 0) {
+        ensure_overlay_blend_lut();
+    }
     int ws_s = cd.output_width * sizeof(int);
     int* work_0 = NULL; int* work_1 = NULL; int* work_2 = NULL; int* work_h = NULL; int* h_line = NULL;
     if (bloom > 0 || halation > 0) {
@@ -136,66 +192,152 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
         }
     }
 
-    const uint8_t* tex = nativeGrainTexture.empty() ? NULL : nativeGrainTexture.data();
-    bool is1k = nativeGrainTexture.size() > 1000000;
-    JSAMPROW rpx[1];
-    if(cd.output_height>0){ rpx[0]=r[10]; jpeg_read_scanlines(&cd,rpx,1); for(int i=0; i<10; i++) memcpy(r[i],r[10],rs); }
-    for(int i=11; i<BUF; i++){ if(cd.output_scanline < cd.output_height){ rpx[0]=r[i]; jpeg_read_scanlines(&cd,rpx,1); } else memcpy(r[i],r[i-1],rs); }
-
     int opac_m = (opacity * 256) / 100;
     long long cx = cd.output_width / 2;
     long long cy_center = cd.output_height / 2;
     long long vig_coef = get_vig_coef(vignette, cx * cx + cy_center * cy_center);
-    
-    // Seed grain randomization with a fixed but distinct value per image
-    long long current_time = get_time_ms();
-    int tx_base = (int)(current_time % 1021);
-    int ty_base = (int)((current_time / 13) % 1021);
+    uint32_t grain_seed = (uint32_t)(st & 0xFFFFFFFF);
+    if (grain_seed == 0) grain_seed = 98765;
+    int grainTransform = choose_grain_transform(grain_seed, advancedGrainExperimental == 2 && externalTex != NULL && grain > 0);
+    bool use_fast_yuv_texture = use_fast_yuv_texture_candidate;
+    YuvTextureFastLut fast_yuv_texture_lut;
+    if (use_fast_yuv_texture) {
+        build_yuv_texture_fast_lut(fast_yuv_texture_lut, shadowToe, rollOff, roll, grain);
+    }
 
-    int pr = 0; while(pr < (int)cd.output_height){
-        int rtp = std::min(CHK, (int)cd.output_height-pr);
-        for (int i = 0; i < rtp; i++) {
-            int ay = pr + i;
-            if (!applyCrop || (ay >= sk && ay < sk + fh)) {
-                unsigned char* win[21];
-                for (int w = 0; w < 21; w++) win[w] = r[i + w];
-                memcpy(orw[i], win[10], cd.output_width * 3);
-                
-                if (bloom > 0 || halation > 0) {
-                    apply_bloom_halation(win, orw[i], cd.output_width, ay, false, bloom, halation,
-                        work_0, work_1, work_2, work_h, h_line, scaleDenom);
+    JSAMPROW rpx[1];
+
+    bool row_stream_mode = (bloom <= 0 && halation <= 0 && advancedGrainExperimental != 1);
+    bool use_fast_yuv_texture_parallel = use_fast_yuv_texture && !applyCrop && numCores > 1;
+    if (row_stream_mode) {
+        if (use_fast_yuv_texture_parallel) {
+            int worker_count = numCores;
+            if (worker_count < 1) worker_count = 1;
+            if (worker_count > 4) worker_count = 4;
+
+            while (cd.output_scanline < cd.output_height) {
+                int ay = cd.output_scanline;
+                int rows_read = 0;
+                while (rows_read < CHK && cd.output_scanline < cd.output_height) {
+                    JDIMENSION got = jpeg_read_scanlines(&cd, &r[rows_read], CHK - rows_read);
+                    if (got == 0) break;
+                    rows_read += (int)got;
                 }
-                
-                process_row_rgb(orw[i], cd.output_width, ay, cx, cy_center, vig_coef,
-                    shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, halation, vignette,
-                    grain, grainSize, scaleDenom, opac_m, map, nativeLut.data(),
-                    nativeLutSize, nativeLutSize - 1, nativeLutSize * nativeLutSize,
-                    inv_y, tex, is1k, tx_base, ty_base);
+                if (rows_read <= 0) break;
+
+                int active_workers = worker_count;
+                if (active_workers > rows_read) active_workers = rows_read;
+                if (rows_read < worker_count * 16) active_workers = 1;
+
+                pthread_t threads[4];
+                bool created[4] = { false, false, false, false };
+                YuvTextureFastRowsTask tasks[4];
+
+                for (int t = 0; t < active_workers; t++) {
+                    int start = (rows_read * t) / active_workers;
+                    int end = (rows_read * (t + 1)) / active_workers;
+                    tasks[t].base = rb;
+                    tasks[t].rowStride = rs;
+                    tasks[t].width = cd.output_width;
+                    tasks[t].startY = ay;
+                    tasks[t].rowStart = start;
+                    tasks[t].rowEnd = end;
+                    tasks[t].grain = grain;
+                    tasks[t].scaleDenom = scaleDenom;
+                    tasks[t].fastLut = &fast_yuv_texture_lut;
+                    tasks[t].externalTex = externalTex;
+                    tasks[t].is1024Grain = is_1024_grain;
+                    tasks[t].grainTransform = grainTransform;
+                    if (t > 0) {
+                        created[t] = (pthread_create(&threads[t], NULL, yuv_texture_fast_rows_thread, &tasks[t]) == 0);
+                    }
+                }
+
+                process_yuv_texture_fast_rows(&tasks[0]);
+                for (int t = 1; t < active_workers; t++) {
+                    if (created[t]) {
+                        pthread_join(threads[t], NULL);
+                    } else {
+                        process_yuv_texture_fast_rows(&tasks[t]);
+                    }
+                }
+
+                int rows_written = 0;
+                while (rows_written < rows_read) {
+                    JDIMENSION wrote = jpeg_write_scanlines(&cc, &r[rows_written], rows_read - rows_written);
+                    if (wrote == 0) break;
+                    rows_written += (int)wrote;
+                }
+            }
+        } else {
+            while (cd.output_scanline < cd.output_height) {
+                int ay = cd.output_scanline;
+                rpx[0] = r[0];
+                jpeg_read_scanlines(&cd, rpx, 1);
+
+                if (!applyCrop || (ay >= sk && ay < sk + fh)) {
+                    if (use_rgb) {
+                        process_row_rgb(r[0], cd.output_width, ay, cx, cy_center, vig_coef,
+                            shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, halation, vignette,
+                            grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
+                            opac_m, map, nativeLut.data(),
+                            nativeLutSize, nativeLutSize - 1, nativeLutSize * nativeLutSize,
+                            externalTex, is_1024_grain, grainTransform);
+                    } else if (use_fast_yuv_texture) {
+                        process_row_yuv_texture_fast(r[0], cd.output_width, ay,
+                            grain, scaleDenom, fast_yuv_texture_lut,
+                            externalTex, is_1024_grain, grainTransform);
+                    } else {
+                        process_row_yuv(r[0], cd.output_width, ay, cx, cy_center, vig_coef,
+                            shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, halation, vignette,
+                            grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
+                            roll, externalTex, is_1024_grain, grainTransform);
+                    }
+                    jpeg_write_scanlines(&cc, rpx, 1);
+                }
             }
         }
-        for(int i=0; i<rtp; i++){ int ay=pr+i; if(!applyCrop||(ay>=sk && ay<sk+fh)){ rpx[0]=orw[i]; jpeg_write_scanlines(&cc,rpx,1); } }
-        unsigned char* tmpx[256]; for(int i=0; i<rtp; i++) tmpx[i]=r[i]; for(int i=0; i<BUF-rtp; i++) r[i]=r[i+rtp];
-        for(int i=0; i<rtp; i++){ int di=BUF-rtp+i; r[di]=tmpx[i]; if(cd.output_scanline<cd.output_height){ rpx[0]=r[di]; jpeg_read_scanlines(&cd,rpx,1); } else memcpy(r[di],r[di-1],rs); }
-        pr += rtp;
+    } else {
+        if(cd.output_height>0){ rpx[0]=r[10]; jpeg_read_scanlines(&cd,rpx,1); for(int i=0; i<10; i++) memcpy(r[i],r[10],rs); }
+        for(int i=11; i<BUF; i++){ if(cd.output_scanline < cd.output_height){ rpx[0]=r[i]; jpeg_read_scanlines(&cd,rpx,1); } else memcpy(r[i],r[i-1],rs); }
+
+        int pr = 0; while(pr < (int)cd.output_height){
+            int rtp = std::min(CHK, (int)cd.output_height-pr);
+            for (int i = 0; i < rtp; i++) {
+                int ay = pr + i;
+                if (!applyCrop || (ay >= sk && ay < sk + fh)) {
+                    unsigned char* win[21];
+                    for (int w = 0; w < 21; w++) win[w] = r[i + w];
+                    memcpy(orw[i], win[10], cd.output_width * 3);
+
+                    apply_bloom_halation(win, orw[i], cd.output_width, ay, !use_rgb, bloom, halation, grain_seed,
+                        work_0, work_1, work_2, work_h, h_line, scaleDenom);
+
+                    if (use_rgb) {
+                        process_row_rgb(orw[i], cd.output_width, ay, cx, cy_center, vig_coef,
+                            shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, 0, vignette,
+                            grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
+                            opac_m, map, nativeLut.data(),
+                            nativeLutSize, nativeLutSize - 1, nativeLutSize * nativeLutSize,
+                            externalTex, is_1024_grain, grainTransform);
+                    } else {
+                        process_row_yuv(orw[i], cd.output_width, ay, cx, cy_center, vig_coef,
+                            shadowToe, rollOff, colorChrome, chromeBlue, subtractiveSat, 0, vignette,
+                            grain, grainSize, scaleDenom, advancedGrainExperimental, grain_seed,
+                            roll, externalTex, is_1024_grain, grainTransform);
+                    }
+                }
+            }
+            for(int i=0; i<rtp; i++){ int ay=pr+i; if(!applyCrop||(ay>=sk && ay<sk+fh)){ rpx[0]=orw[i]; jpeg_write_scanlines(&cc,rpx,1); } }
+            unsigned char* tmpx[256]; for(int i=0; i<rtp; i++) tmpx[i]=r[i]; for(int i=0; i<BUF-rtp; i++) r[i]=r[i+rtp];
+            for(int i=0; i<rtp; i++){ int di=BUF-rtp+i; r[di]=tmpx[i]; if(cd.output_scanline<cd.output_height){ rpx[0]=r[di]; jpeg_read_scanlines(&cd,rpx,1); } else memcpy(r[di],r[di-1],rs); }
+            pr += rtp;
+        }
     }
-    
+
     if (work_0) { free(work_0); free(work_1); free(work_2); free(work_h); free(h_line); }
-    free(rb); free(ob); jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc); jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn); return JNI_TRUE;
-}
-
-#include <errno.h>
-#include <unistd.h>
-
-// Helper to open files with retries for handling OS locks
-FILE* fopen_retry(const char* path, const char* mode) {
-    for (int i = 0; i < 5; i++) {
-        FILE* f = fopen(path, mode);
-        if (f) return f;
-        if (errno != EBUSY && errno != EAGAIN && errno != EINTR) break;
-        LOGD("File %s busy, retrying... (%d)", path, i + 1);
-        usleep(200000); // 200ms
-    }
-    return fopen(path, mode);
+    free(rb); free(ob); jpeg_finish_compress(&cc); jpeg_destroy_compress(&cc); jpeg_finish_decompress(&cd); jpeg_destroy_decompress(&cd); fclose(inf); fclose(ouf); env->ReleaseStringUTFChars(inPath,ifn); env->ReleaseStringUTFChars(outPath,ofn);
+    return JNI_TRUE;
 }
 
 // --- FULL RESOLUTION DIPTYCH STITCH ENGINE (FULL STABILITY) ---
@@ -205,28 +347,10 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     const char *p1 = env->GetStringUTFChars(path1, NULL);
     const char *p2 = env->GetStringUTFChars(path2, NULL);
     const char *po = env->GetStringUTFChars(outPath, NULL);
-    
-    LOGD("NATIVE STITCH START: %s + %s -> %s", p1, p2, po);
-
-    FILE *f1 = fopen_retry(p1, "rb");
-    if (!f1) {
-        LOGD("Diptych open failed (p1): %s, error: %s", p1, strerror(errno));
-        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
-        return JNI_FALSE;
-    }
-    
-    FILE *f2 = fopen_retry(p2, "rb");
-    if (!f2) {
-        LOGD("Diptych open failed (p2): %s, error: %s", p2, strerror(errno));
-        fclose(f1);
-        env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
-        return JNI_FALSE;
-    }
-
-    FILE *fo = fopen_retry(po, "wb");
-    if (!fo) {
-        LOGD("Diptych open failed (out): %s, error: %s", po, strerror(errno));
-        fclose(f1); fclose(f2);
+    FILE *f1 = fopen(p1, "rb"), *f2 = fopen(p2, "rb"), *fo = fopen(po, "wb");
+    if (!f1 || !f2 || !fo) {
+        LOGD("Diptych open failed: %s | %s | %s", p1, p2, po);
+        if(f1)fclose(f1); if(f2)fclose(f2); if(fo)fclose(fo);
         env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
         return JNI_FALSE;
     }
@@ -251,7 +375,6 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     
     jpeg_create_decompress(&c1); jpeg_stdio_src(&c1, f1); jpeg_read_header(&c1, TRUE);
     jpeg_create_decompress(&c2); jpeg_stdio_src(&c2, f2); jpeg_read_header(&c2, TRUE);
-    LOGD("Diptych headers read: %dx%d and %dx%d", c1.image_width, c1.image_height, c2.image_width, c2.image_height);
     
     c1.scale_denom = (c1.image_width > 3000) ? 2 : 1;
     c2.scale_denom = (c2.image_width > 3000) ? 2 : 1;
@@ -278,20 +401,12 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     }
     jpeg_create_compress(&co); jpeg_stdio_dest(&co, fo);
     
-    // Extract dimensions from decompressed images
-    int w1 = c1.output_width;
-    int h1 = c1.output_height;
-    int w2 = c2.output_width;
-    int h2 = c2.output_height;
-    
-    // Calculate framing: We take the center-half of each image.
-    // If w1=3000, half=1500. We want to take from 750 to 2250.
+    int w1 = c1.output_width, h1 = c1.output_height;
+    int w2 = c2.output_width, h2 = c2.output_height;
     int half1 = w1 / 2, half2 = w2 / 2;
-    int start1 = w1 / 4, start2 = w2 / 4;
+    int q1 = w1 / 4, q2 = w2 / 4;
     int finalW = half1 + half2, finalH = std::min(h1, h2);
     
-    LOGD("Diptych framing: img1_start=%d len=%d | img2_start=%d len=%d", start1, half1, start2, half2);
-
     co.image_width = finalW; co.image_height = finalH; co.input_components = 3; co.in_color_space = JCS_RGB;
     jpeg_set_defaults(&co); jpeg_set_quality(&co, quality, TRUE); jpeg_start_compress(&co, TRUE);
     
@@ -299,7 +414,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     unsigned char *row2 = (unsigned char*)malloc(w2 * 3);
     unsigned char *combined = (unsigned char*)malloc(finalW * 3);
     if (!row1 || !row2 || !combined) {
-        LOGD("Diptych malloc failed: r1=%p r2=%p c=%p", row1, row2, combined);
+        LOGD("Diptych malloc failed");
         if (row1) free(row1);
         if (row2) free(row2);
         if (combined) free(combined);
@@ -310,36 +425,29 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
         env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
         return JNI_FALSE;
     }
-    LOGD("Diptych buffers allocated. Starting loop.");
     JSAMPROW rp1[1], rp2[1], rpo[1]; rp1[0] = row1; rp2[0] = row2; rpo[0] = combined;
     
     for (int y = 0; y < finalH; y++) {
         jpeg_read_scanlines(&c1, rp1, 1); jpeg_read_scanlines(&c2, rp2, 1);
-        
-        // Surgical Slice: Extract exact center 50%
         if (firstShotLeft) {
-            memcpy(combined, row1 + start1 * 3, half1 * 3);
-            memcpy(combined + half1 * 3, row2 + start2 * 3, half2 * 3);
+            memcpy(combined, row1 + q1 * 3, half1 * 3);
+            memcpy(combined + half1 * 3, row2 + q2 * 3, half2 * 3);
         } else {
-            memcpy(combined, row2 + start2 * 3, half2 * 3);
-            memcpy(combined + half2 * 3, row1 + start1 * 3, half1 * 3);
+            memcpy(combined, row2 + q2 * 3, half2 * 3);
+            memcpy(combined + half2 * 3, row1 + q1 * 3, half1 * 3);
         }
-        
-        // Draw the black divider line (3 pixels wide for a clean look)
+        // Draw Divider
         int dividerX = firstShotLeft ? half1 : half2;
         for(int d=-1; d<=1; d++) {
             int dx = dividerX + d;
             if (dx >= 0 && dx < finalW) {
                 int di = dx * 3;
-                combined[di] = combined[di+1] = combined[di+2] = 0;
+                combined[di]=combined[di+1]=combined[di+2]=0;
             }
         }
-        
         jpeg_write_scanlines(&co, rpo, 1);
-        if (y % 1000 == 0) LOGD("Diptych progress: %d/%d", y, finalH);
     }
     
-    LOGD("Diptych loop finished. Cleaning up.");
     free(row1); free(row2); free(combined);
     jpeg_finish_compress(&co); jpeg_destroy_compress(&co);
     
@@ -347,7 +455,7 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     jpeg_destroy_decompress(&c1);
     jpeg_destroy_decompress(&c2);
     
-    LOGD("Diptych SUCCESS: %s", po);
+    LOGD("Diptych saved: %s", po);
     fclose(f1); fclose(f2); fclose(fo);
     env->ReleaseStringUTFChars(path1, p1); env->ReleaseStringUTFChars(path2, p2); env->ReleaseStringUTFChars(outPath, po);
     return JNI_TRUE;

@@ -315,7 +315,7 @@ public class LensCalibrationController {
             prompt.setLayoutParams(lp);
         } catch (Exception ignored) {}
 
-        prompt.setBackgroundColor(Color.argb(210, 15, 15, 15));
+        UiTheme.panel(prompt);
         prompt.setPadding(25, 15, 25, 15);
         prompt.setVisibility(View.VISIBLE);
         prompt.setText(android.text.Html.fromHtml(header + instructions));

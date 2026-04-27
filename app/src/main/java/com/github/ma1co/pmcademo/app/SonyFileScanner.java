@@ -16,13 +16,18 @@ public class SonyFileScanner {
     private HandlerThread scannerThread;
     private Handler backgroundHandler;
     private Handler mainHandler;
-    
+
+    private static final int POLL_INTERVAL_MS = 75;
+    private static final int MAX_SCAN_ATTEMPTS = 67;
+    private static final int MAX_DEFERRED_SCAN_ATTEMPTS = 400;
     public boolean isPolling = false;
-    private int scanAttempts = 0; 
+    private int scanAttempts = 0;
+    private long scanStartedMs = 0;
+    private boolean waitingForReady = false;
 
     public interface ScannerCallback {
-        void onNewPhotoDetected(String filePath);
-        boolean isReadyToProcess(); 
+        void onNewPhotoDetected(String filePath, long scannerStartedMs, long detectedMs, int attempts);
+        boolean isReadyToProcess();
     }
 
     public SonyFileScanner(Context context, ScannerCallback callback) {
@@ -41,15 +46,18 @@ public class SonyFileScanner {
     }
 
     public void start() {
-        stop(); 
+        stop();
         isPolling = true;
-        scanAttempts = 0; 
-        scheduleNextPoll();
+        scanAttempts = 0;
+        scanStartedMs = System.currentTimeMillis();
+        waitingForReady = false;
+        scheduleNextPoll(0);
         Log.d("JPEG.CAM", "Scanner Woken Up: Starting 5-second window...");
     }
 
     public void stop() {
         isPolling = false;
+        waitingForReady = false;
         if (backgroundHandler != null) {
             backgroundHandler.removeCallbacksAndMessages(null);
         }
@@ -59,29 +67,39 @@ public class SonyFileScanner {
     public void checkNow() {
         if (backgroundHandler != null) {
             backgroundHandler.post(new Runnable() {
-                @Override public void run() { findNewestFile(true); }
+                @Override public void run() {
+                    if (!isPolling) {
+                        scanStartedMs = System.currentTimeMillis();
+                        scanAttempts = 0;
+                    }
+                    findNewestFile(true);
+                }
             });
         }
     }
 
     public void scheduleNextPoll() {
+        scheduleNextPoll(POLL_INTERVAL_MS);
+    }
+
+    private void scheduleNextPoll(long delayMs) {
         backgroundHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
                 if (isPolling) {
-                    // 10 attempts at 500ms = 5 seconds total search window
-                    if (scanAttempts++ >= 10) {
+                    int maxAttempts = waitingForReady ? MAX_DEFERRED_SCAN_ATTEMPTS : MAX_SCAN_ATTEMPTS;
+                    if (scanAttempts++ >= maxAttempts) {
                         stop();
                         Log.d("JPEG.CAM", "Scanner Timed Out: Going back to sleep.");
                         return;
                     }
 
                     findNewestFile(true);
-                    
-                    if (isPolling) scheduleNextPoll(); 
+
+                    if (isPolling) scheduleNextPoll(POLL_INTERVAL_MS);
                 }
             }
-        }, 500);
+        }, delayMs);
     }
 
     // NEW: Lightweight PNG Metadata parser (Safely handles .txt disguises)
@@ -178,9 +196,10 @@ public class SonyFileScanner {
     }
 
     private void findNewestFile(boolean triggerCallback) {
-        File dcimDir = Filepaths.getDcimDir(); 
+        File dcimDir = Filepaths.getDcimDir();
         if (!dcimDir.exists() || !dcimDir.isDirectory()) return;
 
+        boolean deferredCandidate = false;
         File[] subDirs = dcimDir.listFiles();
         if (subDirs != null) {
             for (File dir : subDirs) {
@@ -192,19 +211,28 @@ public class SonyFileScanner {
                             if (name.endsWith(".JPG") && !name.startsWith("FILM_") && !name.startsWith("PRCS")) {
                                 String currentFilePath = f.getAbsolutePath();
                                 if (!knownFiles.contains(currentFilePath)) {
-                                    
-                                    if (f.length() < 1024) continue; 
+
+                                    if (f.length() < 1024) continue;
+
+                                    if (triggerCallback && mCallback != null && !mCallback.isReadyToProcess()) {
+                                        deferredCandidate = true;
+                                        continue;
+                                    }
 
                                     knownFiles.add(currentFilePath);
-                                    
+
                                     // SUCCESS! Kill the loop immediately
-                                    isPolling = false; 
-                                    
-                                    if (triggerCallback && mCallback != null && mCallback.isReadyToProcess()) {
-                                        final String finalPathToProcess = currentFilePath; 
+                                    isPolling = false;
+                                    waitingForReady = false;
+
+                                    if (triggerCallback && mCallback != null) {
+                                        final String finalPathToProcess = currentFilePath;
+                                        final long startedMs = scanStartedMs > 0 ? scanStartedMs : System.currentTimeMillis();
+                                        final long detectedMs = System.currentTimeMillis();
+                                        final int attempts = scanAttempts;
                                         mainHandler.post(new Runnable() {
-                                            @Override public void run() { 
-                                                mCallback.onNewPhotoDetected(finalPathToProcess); 
+                                            @Override public void run() {
+                                                mCallback.onNewPhotoDetected(finalPathToProcess, startedMs, detectedMs, attempts);
                                             }
                                         });
                                     }
@@ -215,5 +243,6 @@ public class SonyFileScanner {
                 }
             }
         }
+        if (triggerCallback && isPolling) waitingForReady = deferredCandidate;
     }
 }

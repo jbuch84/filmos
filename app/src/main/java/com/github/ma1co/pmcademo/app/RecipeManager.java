@@ -49,15 +49,15 @@ public class RecipeManager {
         savePreferences();
     }
 
-    public int getPrefC1() { return Math.min(5, Math.max(0, prefC1)); }
+    public int getPrefC1() { return prefC1; }
     public void setPrefC1(int v) { prefC1 = v; savePreferences(); }
-    public int getPrefC2() { return Math.min(5, Math.max(0, prefC2)); }
+    public int getPrefC2() { return prefC2; }
     public void setPrefC2(int v) { prefC2 = v; savePreferences(); }
-    public int getPrefC3() { return Math.min(5, Math.max(0, prefC3)); }
+    public int getPrefC3() { return prefC3; }
     public void setPrefC3(int v) { prefC3 = v; savePreferences(); }
-    public int getPrefAel() { return Math.min(5, Math.max(0, prefAel)); }
+    public int getPrefAel() { return prefAel; }
     public void setPrefAel(int v) { prefAel = v; savePreferences(); }
-    public int getPrefFn() { return Math.min(5, Math.max(0, prefFn)); }
+    public int getPrefFn() { return prefFn; }
     public void setPrefFn(int v) { prefFn = v; savePreferences(); }
 
     public RTLProfile getCurrentProfile() { return loadedProfiles[currentSlot]; }
@@ -168,6 +168,7 @@ public class RecipeManager {
                 if (p.grainSize == -1) p.grainSize = 0; // If not found, use first available
             }
 
+            p.advancedGrainExperimental = json.optInt("advancedGrainExperimental", 0);
             p.bloom           = json.optInt("bloom", 0);
             p.contrast        = json.optInt("contrast", 0);
             p.saturation      = json.optInt("saturation", 0);
@@ -225,6 +226,7 @@ public class RecipeManager {
                 }
             }
             sb.append("  \"grainName\": \"").append(grainNameToSave.replace("\"", "\\\"")).append("\",\n");
+            sb.append("  \"advancedGrainExperimental\": ").append(p.advancedGrainExperimental).append(",\n");
 
             sb.append("  \"bloom\": ").append(p.bloom).append(",\n");
             sb.append("  \"contrast\": ").append(p.contrast).append(",\n");

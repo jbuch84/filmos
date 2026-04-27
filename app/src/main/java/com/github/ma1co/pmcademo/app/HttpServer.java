@@ -25,8 +25,13 @@ public class HttpServer extends NanoHTTPD {
     private Context context;
 
     public HttpServer(Context context) {
-        super(PORT);
+        super("0.0.0.0", PORT);
         this.context = context;
+    }
+
+    public static String urlFor(String ipAddress) {
+        if (ipAddress == null || ipAddress.length() == 0) return "http://0.0.0.0:" + PORT + "/";
+        return "http://" + ipAddress + ":" + PORT + "/";
     }
 
     @Override

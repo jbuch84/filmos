@@ -16,56 +16,59 @@ import java.util.List;
  */
 public class AdvancedFocusMeterView extends View {
     private Paint trackPaint, needlePaint, dofPaint, markPaint, liveTextPaint, rulerTextPaint, bgPaint;
-    private Paint telemetryPaintLeft, telemetryPaintRight; 
-    
+    private Paint telemetryPaintLeft, telemetryPaintRight;
+
     private LensMath.GaugeState currentState = null;
     private float currentRatio = 0.5f;
     private float currentAperture = 2.8f;
     private float currentFocalLength = 50.0f;
     private float currentCoC = 0.020f; // Stores dynamic sensor size
     private boolean isCalibrating = false;
-    
+
     // Holds the dynamic calibration points to draw the dots
     private List<LensProfileManager.CalPoint> calPoints = new ArrayList<LensProfileManager.CalPoint>();
 
     public AdvancedFocusMeterView(Context context) {
         super(context);
-        
-        trackPaint = new Paint(); 
-        trackPaint.setColor(Color.argb(150, 100, 100, 100)); 
+
+        trackPaint = new Paint();
+        trackPaint.setColor(Color.argb(150, 117, 145, 140));
         trackPaint.setStrokeWidth(4);
-        
-        dofPaint = new Paint(); 
-        dofPaint.setColor(Color.argb(180, 230, 50, 15)); // JPEG.CAM Orange
+
+        dofPaint = new Paint();
+        dofPaint.setColor(Color.argb(190,
+                Color.red(UiTheme.ACCENT),
+                Color.green(UiTheme.ACCENT),
+                Color.blue(UiTheme.ACCENT)));
         dofPaint.setStrokeWidth(12);
         dofPaint.setStrokeCap(Paint.Cap.ROUND);
-        
-        needlePaint = new Paint(); 
-        needlePaint.setColor(Color.WHITE); 
+
+        needlePaint = new Paint();
+        needlePaint.setColor(UiTheme.TEXT);
         needlePaint.setStrokeWidth(6);
         needlePaint.setStrokeCap(Paint.Cap.ROUND);
-        
+
         markPaint = new Paint();
         markPaint.setColor(Color.rgb(200, 200, 200));
         markPaint.setAntiAlias(true);
 
         liveTextPaint = new Paint();
-        liveTextPaint.setColor(Color.WHITE);
+        liveTextPaint.setColor(UiTheme.TEXT);
         liveTextPaint.setTextSize(22);
         liveTextPaint.setTypeface(Typeface.DEFAULT_BOLD);
         liveTextPaint.setAntiAlias(true);
         liveTextPaint.setTextAlign(Paint.Align.CENTER);
-        liveTextPaint.setShadowLayer(4, 0, 0, Color.BLACK);
+        liveTextPaint.setShadowLayer(4, 0, 0, UiTheme.SHADOW);
 
         rulerTextPaint = new Paint();
-        rulerTextPaint.setColor(Color.LTGRAY);
+        rulerTextPaint.setColor(UiTheme.TEXT_MUTED);
         rulerTextPaint.setTextSize(16);
         rulerTextPaint.setAntiAlias(true);
         rulerTextPaint.setTextAlign(Paint.Align.CENTER);
         rulerTextPaint.setTypeface(Typeface.DEFAULT_BOLD);
 
         bgPaint = new Paint();
-        bgPaint.setColor(Color.DKGRAY);
+        bgPaint.setColor(UiTheme.SURFACE_SOFT);
         bgPaint.setStrokeWidth(4);
 
         // --- TELEMETRY HUD SETUP ---
@@ -88,39 +91,39 @@ public class AdvancedFocusMeterView extends View {
         this.isCalibrating = isCalibrating;
         this.calPoints = points;
         this.currentCoC = coc;
-        
+
         // --- Sync the dynamic CoC from MainActivity to LensMath ---
         LensMath.setCircleOfConfusion(coc);
-        
+
         // --- CRITICAL FIX: DO NOT RUN MATH WHILE CALIBRATING ---
         if (!isCalibrating && points != null && points.size() >= 2) {
             currentState = LensMath.buildGaugeState(ratio, aperture, focalLength, points);
         } else {
-            currentState = null; 
+            currentState = null;
         }
-        
+
         invalidate();
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        
+
         int w = getWidth();
         int h = getHeight();
         if (w == 0 || h == 0) return;
-        
+
         int pad = 40;
         int trackW = w - (pad * 2);
-        int y = h / 2 + 20; 
-        
+        int y = h / 2 + 20;
+
         // 0. Draw Track Background
         canvas.drawLine(pad, y, w - pad, y, bgPaint);
-        
+
         // --- 1. THE DYNAMIC DOF BAND ---
         if (currentState != null && currentState.nearMotor != null) {
             float nearX = pad + (trackW * currentState.nearMotor.floatValue());
-            float farX = pad + trackW; 
+            float farX = pad + trackW;
             if (currentState.farMotor != null && currentState.farMotor < 1.0) {
                 farX = pad + (trackW * currentState.farMotor.floatValue());
             }
@@ -132,25 +135,25 @@ public class AdvancedFocusMeterView extends View {
             for (LensProfileManager.CalPoint pt : calPoints) {
                 float markX = pad + (trackW * pt.ratio);
                 canvas.drawCircle(markX, y, 5, markPaint);
-                
+
                 if (rulerTextPaint != null) {
                     if (pt.distance > 0f && pt.distance < 999.0f) {
                         float totalInches = pt.distance * 39.3701f;
                         int ft = (int) (totalInches / 12);
-                        canvas.drawText(ft + "'", markX, y - 16, rulerTextPaint); 
-                        canvas.drawText(String.format("%.1fm", pt.distance), markX, y + 28, rulerTextPaint); 
+                        canvas.drawText(ft + "'", markX, y - 16, rulerTextPaint);
+                        canvas.drawText(String.format("%.1fm", pt.distance), markX, y + 28, rulerTextPaint);
                     } else if (pt.distance >= 999.0f) {
                         canvas.drawText("INF", markX, y + 28, rulerTextPaint);
                     }
                 }
             }
         }
-        
+
         // --- 3. THE HYPERFOCAL INDICATOR ---
         if (currentState != null && currentState.hyperMotor != null) {
             float hX = pad + (trackW * currentState.hyperMotor.floatValue());
             if (rulerTextPaint != null) {
-                canvas.drawText("[H]", hX, y - 30, rulerTextPaint); 
+                canvas.drawText("[H]", hX, y - 30, rulerTextPaint);
             }
         }
 
@@ -181,7 +184,7 @@ public class AdvancedFocusMeterView extends View {
         // --- 6. TELEMETRY HUD (NEW) ---
         double coc = LensMath.getCircleOfConfusion();
         String sensorFormat = (coc >= 0.030) ? "FF" : ((coc <= 0.011) ? "1\"" : "APS-C");
-        
+
         // Lower Left: Hardware Specs
         String leftTelemetry = String.format("[ %.0fmm f/%.1f | %s %.3f ]", currentFocalLength, currentAperture, sensorFormat, coc);
         canvas.drawText(leftTelemetry, pad, y + 45, telemetryPaintLeft);

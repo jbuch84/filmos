@@ -4,7 +4,6 @@ import android.os.Environment;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 public class Filepaths {
 
@@ -78,6 +77,23 @@ public class Filepaths {
 
     public static void buildAppStructure() {
         getAppDir(); getLutDir(); getRecipeDir(); getLensesDir(); getGradedDir(); getGrainDir();
+        cleanupDebugLogs();
+    }
+
+    private static void deleteIfExists(File file) {
+        if (file.exists() && file.isFile()) file.delete();
+    }
+
+    private static void cleanupDebugLogs() {
+        File appDir = getAppDir();
+        File gradedDir = getGradedDir();
+        File logDir = new File(appDir, "LOGS");
+        deleteIfExists(new File(appDir, "TIMING.TXT"));
+        deleteIfExists(new File(gradedDir, "TIMING.TXT"));
+        deleteIfExists(new File(logDir, "TIMING.TXT"));
+        deleteIfExists(new File(logDir, "processing_times.txt"));
+        File[] remainingLogs = logDir.listFiles();
+        if (remainingLogs != null && remainingLogs.length == 0) logDir.delete();
     }
 
     // NEW: Extracts bundled starter files explicitly (Bypasses API 10 list() bug)

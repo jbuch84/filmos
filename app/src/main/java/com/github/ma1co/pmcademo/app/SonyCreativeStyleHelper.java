@@ -158,16 +158,8 @@ public final class SonyCreativeStyleHelper {
             return;
         }
 
-        DiscoveryResult result = discover(p);
-        if ("creative-style".equals(result.preferredKey)) {
-            p.set("creative-style", token);
-            return;
-        }
-        if ("color-mode".equals(result.preferredKey)) {
-            p.set("color-mode", token);
-            return;
-        }
-
+        // v1.6 wrote the same token to both legacy Sony keys when present.
+        // Preserve that behavior so existing recipes keep the same capture base.
         if (p.get("creative-style") != null) p.set("creative-style", token);
         if (p.get("color-mode") != null) p.set("color-mode", token);
     }

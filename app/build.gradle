@@ -6,14 +6,14 @@ android {
 
     defaultConfig {
         // Leave this for one more build so it gracefully updates your existing app!
-        applicationId "com.jpgcookbook.sony" 
+        applicationId "com.jpgcookbook.sony"
         minSdkVersion 10
         targetSdkVersion 25
-        
+
         // Bumped versioning for the JPEG.CAM era
-        versionCode 19
-        versionName "1.77"
-        
+        versionCode 48
+        versionName "2.05"
+
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++11"
@@ -27,13 +27,13 @@ android {
             abiFilters "armeabi", "armeabi-v7a"
         }
     }
-    
+
     // --- THE LINT FIX: Tell Android to shut up about Google Play rules ---
     lintOptions {
         checkReleaseBuilds false
         abortOnError false
     }
-    
+
     buildTypes {
         release {
             minifyEnabled false
@@ -42,7 +42,7 @@ android {
             signingConfig signingConfigs.debug
         }
     }
-    
+
     externalNativeBuild {
         cmake {
             path "src/main/cpp/CMakeLists.txt"
@@ -65,7 +65,7 @@ repositories {
 
 dependencies {
     compileOnly 'com.github.ma1co.OpenMemories-Framework:stubs:master-SNAPSHOT'
-    
+
     // ALPHAOS DASHBOARD HTTP SERVER
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 }

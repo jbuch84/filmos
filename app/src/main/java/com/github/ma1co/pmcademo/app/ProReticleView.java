@@ -24,12 +24,12 @@ public class ProReticleView extends View {
 
     public ProReticleView(Context context) {
         super(context);
-        paint = new Paint(); 
-        paint.setStyle(Paint.Style.STROKE); 
-        paint.setStrokeWidth(6); 
+        paint = new Paint();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(6);
         paint.setAntiAlias(true);
     }
-    
+
     public boolean isPolling() { return isPolling; }
 
     /**
@@ -47,57 +47,57 @@ public class ProReticleView extends View {
             if ("manual".equals(cam.getParameters().getFocusMode())) return;
             fallbackState = STATE_SEARCHING;
             cam.autoFocus(new Camera.AutoFocusCallback() {
-                @Override public void onAutoFocus(boolean success, Camera camera) { 
-                    fallbackState = success ? STATE_LOCKED : STATE_FAILED; 
-                    invalidate(); 
+                @Override public void onAutoFocus(boolean success, Camera camera) {
+                    fallbackState = success ? STATE_LOCKED : STATE_FAILED;
+                    invalidate();
                 }
             });
-            isPolling = true; 
+            isPolling = true;
             invalidate();
         } catch (Exception e) {}
     }
 
     public void stopFocus(Camera cam) {
-        isPolling = false; 
-        fallbackState = STATE_IDLE; 
+        isPolling = false;
+        fallbackState = STATE_IDLE;
         invalidate();
-        if (cam != null) { 
-            try { 
-                if (!"manual".equals(cam.getParameters().getFocusMode())) cam.cancelAutoFocus(); 
-            } catch (Exception e) {} 
+        if (cam != null) {
+            try {
+                if (!"manual".equals(cam.getParameters().getFocusMode())) cam.cancelAutoFocus();
+            } catch (Exception e) {}
         }
     }
 
     @Override protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (!isPolling) return;
-        
+
         switch (fallbackState) {
-            case STATE_IDLE:      paint.setColor(Color.argb(100, 255, 255, 255)); break;
-            case STATE_SEARCHING: paint.setColor(Color.YELLOW); break;
-            case STATE_LOCKED:    paint.setColor(Color.GREEN); break;
-            case STATE_FAILED:    paint.setColor(Color.RED); break;
+            case STATE_IDLE:      paint.setColor(Color.argb(100, 239, 246, 243)); break;
+            case STATE_SEARCHING: paint.setColor(UiTheme.WARN); break;
+            case STATE_LOCKED:    paint.setColor(UiTheme.SUCCESS); break;
+            case STATE_FAILED:    paint.setColor(UiTheme.ERROR); break;
         }
-        
+
         // Use diptych-shifted center when active, otherwise default to screen center
         int cx = (diptychCenterX >= 0) ? diptychCenterX : getWidth() / 2;
         int cy = getHeight() / 2, size = 60, bracket = 15;
-        
+
         // Draw AF Corners
         canvas.drawLine(cx-size, cy-size, cx-size+bracket, cy-size, paint);
         canvas.drawLine(cx-size, cy-size, cx-size, cy-size+bracket, paint);
         canvas.drawLine(cx+size, cy-size, cx+size-bracket, cy-size, paint);
         canvas.drawLine(cx+size, cy-size, cx+size, cy-size+bracket, paint);
-        canvas.drawLine(cx-size, cy+size, cx-size+bracket, cy+size, paint); 
+        canvas.drawLine(cx-size, cy+size, cx-size+bracket, cy+size, paint);
         canvas.drawLine(cx-size, cy+size, cx-size, cy+size-bracket, paint);
         canvas.drawLine(cx+size, cy+size, cx+size-bracket, cy+size, paint);
         canvas.drawLine(cx+size, cy+size, cx+size, cy+size-bracket, paint);
-        
+
         // Draw Center dot
-        paint.setStyle(Paint.Style.FILL); 
-        canvas.drawCircle(cx, cy, 3, paint); 
+        paint.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(cx, cy, 3, paint);
         paint.setStyle(Paint.Style.STROKE);
-        
+
         postInvalidateDelayed(50);
     }
 }

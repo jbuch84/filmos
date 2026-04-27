@@ -104,7 +104,7 @@ public class DiptychOverlayView extends View {
 
             canvas.drawLine(mid - crossLen, cy, mid + crossLen, cy, framePaint);
             canvas.drawLine(mid, cy - crossLen, mid, cy + crossLen, framePaint);
-        } else if (state == DiptychManager.STATE_NEED_SECOND || state == DiptychManager.STATE_STITCHING || state == DiptychManager.STATE_PROCESSING_FIRST) {
+        } else if (state == DiptychManager.STATE_NEED_SECOND || state == DiptychManager.STATE_STITCHING) {
             if (thumbOnLeft) {
                 canvas.drawRect(0, 0, mid, h, darkPaint);
             } else {
@@ -114,20 +114,12 @@ public class DiptychOverlayView extends View {
             if (thumbnail != null && !thumbnail.isRecycled()) {
                 int tW = thumbnail.getWidth();
                 int tH = thumbnail.getHeight();
-                
-                // --- ALIGNED SLICE LOGIC ---
-                // Match C++: Take the exact center 50% of the width.
-                int sliceWidth = tW / 2;
                 int srcLeft = tW / 4;
-                int srcRight = srcLeft + sliceWidth;
+                int srcRight = srcLeft + (tW / 2);
 
                 Rect srcRect = new Rect(srcLeft, 0, srcRight, tH);
-                Rect dstRect = DiptychFraming.getThumbnailPaneRect(w, h, thumbOnLeft);
+                Rect dstRect = thumbOnLeft ? new Rect(0, 0, mid, h) : new Rect(mid, 0, w, h);
                 canvas.drawBitmap(thumbnail, srcRect, dstRect, thumbPaint);
-            }
-
-            if (state == DiptychManager.STATE_NEED_SECOND) {
-                drawActivePaneGuide(canvas, w, h);
             }
 
             if (state == DiptychManager.STATE_STITCHING) {
@@ -140,31 +132,5 @@ public class DiptychOverlayView extends View {
         if (state != DiptychManager.STATE_NEED_FIRST) {
             canvas.drawLine(mid, 0, mid, h, linePaint);
         }
-    }
-
-    private void drawActivePaneGuide(Canvas canvas, int w, int h) {
-        Rect activeRect = DiptychFraming.getActivePaneRect(w, h, thumbOnLeft);
-        int mg = Math.max(8, w / 32);
-        int bl = h / 10;
-        int cx = DiptychFraming.getActiveCenterX(w, thumbOnLeft);
-        int cy = h / 2;
-        int crossLen = 14;
-
-        int left = activeRect.left + mg;
-        int top = mg;
-        int right = activeRect.right - mg;
-        int bottom = h - mg;
-
-        canvas.drawLine(left, top, left + bl, top, framePaint);
-        canvas.drawLine(left, top, left, top + bl, framePaint);
-        canvas.drawLine(right, top, right - bl, top, framePaint);
-        canvas.drawLine(right, top, right, top + bl, framePaint);
-        canvas.drawLine(left, bottom, left + bl, bottom, framePaint);
-        canvas.drawLine(left, bottom, left, bottom - bl, framePaint);
-        canvas.drawLine(right, bottom, right - bl, bottom, framePaint);
-        canvas.drawLine(right, bottom, right, bottom - bl, framePaint);
-
-        canvas.drawLine(cx - crossLen, cy, cx + crossLen, cy, framePaint);
-        canvas.drawLine(cx, cy - crossLen, cx, cy + crossLen, framePaint);
     }
 }

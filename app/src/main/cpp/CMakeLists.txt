@@ -16,16 +16,16 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(libjpeg-turbo)
 add_library(native-lib SHARED native-lib.cpp)
 
+# SPEED FIX: Optimize only our processing library so libjpeg-turbo keeps its
+# original build behavior and JPEG output stays as stable as possible.
+target_compile_options(native-lib PRIVATE -O3)
+
 target_include_directories(native-lib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libjpeg-turbo
     ${CMAKE_CURRENT_BINARY_DIR}/libjpeg-turbo
 )
 
 set_target_properties(native-lib PROPERTIES LINK_FLAGS "-Wl,-Bsymbolic -Wl,--exclude-libs,ALL")
-
-# SPEED FIX: Max optimization and fast math (No NEON overrides)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -ffast-math")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -ffast-math")
 
 find_library(log-lib log)
 target_link_libraries(native-lib jpeg-static ${log-lib})
