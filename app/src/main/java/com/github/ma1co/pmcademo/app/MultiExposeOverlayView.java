@@ -59,7 +59,9 @@ public class MultiExposeOverlayView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         if (accumulator != null && !accumulator.isRecycled()) {
-            canvas.drawBitmap(accumulator, 0, 0, null);
+            Paint p = new Paint();
+            p.setAlpha(80); // 30% opacity ghost guide
+            canvas.drawBitmap(accumulator, 0, 0, p);
         }
     }
 }

@@ -101,8 +101,8 @@ public class HttpServer extends NanoHTTPD {
                     String contentLengthStr = headers.get("content-length");
                     int contentLength = contentLengthStr != null ? Integer.parseInt(contentLengthStr) : 0;
                     
-                    // Save stream to a temporary file first
-                    tempFile = new File(targetDir, "upload_" + System.currentTimeMillis() + ".tmp");
+                    // Save stream to a temporary file first (strictly 8.3 to avoid VFAT limits)
+                    tempFile = new File(targetDir, "UPLD.TMP");
                     destFile = new File(targetDir, fileName);
 
                     InputStream in = session.getInputStream();

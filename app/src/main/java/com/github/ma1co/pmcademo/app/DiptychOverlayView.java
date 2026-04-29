@@ -82,9 +82,15 @@ public class DiptychOverlayView extends View {
         int mid = w / 2;
 
         if (state == DiptychManager.STATE_NEED_FIRST) {
+            // Darken the side the user is NOT shooting. 
+            // If thumbOnLeft is true, the user is framing the LEFT side, so darken the RIGHT side.
+            if (thumbOnLeft) {
+                canvas.drawRect(mid, 0, w, h, darkPaint);
+            } else {
+                canvas.drawRect(0, 0, mid, h, darkPaint);
+            }
             int cy = h / 2;
             int crossLen = 14;
-
             canvas.drawLine(mid - crossLen, cy, mid + crossLen, cy, framePaint);
             canvas.drawLine(mid, cy - crossLen, mid, cy + crossLen, framePaint);
         } else if (state == DiptychManager.STATE_NEED_SECOND || state == DiptychManager.STATE_STITCHING) {

@@ -439,7 +439,7 @@ FILE* fopen_retry(const char* path, const char* mode) {
 
 // --- FULL RESOLUTION DIPTYCH STITCH ENGINE (FULL STABILITY) ---
 extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_DiptychManager_stitchDiptychNative(
-    JNIEnv* env, jobject obj, jstring path1, jstring path2, jstring outPath, jboolean firstShotLeft, jint quality) {
+    JNIEnv* env, jobject obj, jstring path1, jstring path2, jstring outPath, jboolean shot1PlacedLeft, jboolean shot1WasLeft, jint quality) {
     
     const char *p1 = env->GetStringUTFChars(path1, NULL);
     const char *p2 = env->GetStringUTFChars(path2, NULL);
@@ -539,19 +539,22 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_Diptych
     }
     JSAMPROW rp1[1], rp2[1], rpo[1]; rp1[0] = row1; rp2[0] = row2; rpo[0] = combined;
     
+    bool shot2PlacedLeft = !shot1PlacedLeft;
+    bool shot2WasLeft = shot2PlacedLeft; // Shot 2 is framed exactly where it is placed
+
     for (int y = 0; y < finalH; y++) {
         jpeg_read_scanlines(&c1, rp1, 1); jpeg_read_scanlines(&c2, rp2, 1);
-        if (firstShotLeft) {
-            // Shot 1 Left | Shot 2 Right
-            memcpy(combined, row1, half1 * 3);
-            memcpy(combined + half1 * 3, row2 + half2 * 3, half2 * 3);
-        } else {
-            // Shot 2 Left | Shot 1 Right
-            memcpy(combined, row2, half2 * 3);
-            memcpy(combined + half2 * 3, row1 + half1 * 3, half1 * 3);
-        }
+        
+        unsigned char* leftSrcRow = shot1PlacedLeft ? row1 : row2;
+        bool leftSrcWasLeft = shot1PlacedLeft ? shot1WasLeft : shot2WasLeft;
+        memcpy(combined, leftSrcRow + (leftSrcWasLeft ? 0 : half1 * 3), half1 * 3);
+
+        unsigned char* rightSrcRow = shot1PlacedLeft ? row2 : row1;
+        bool rightSrcWasLeft = shot1PlacedLeft ? shot2WasLeft : shot1WasLeft;
+        memcpy(combined + half1 * 3, rightSrcRow + (rightSrcWasLeft ? 0 : half2 * 3), half2 * 3);
+
         // Draw Divider
-        int dividerX = firstShotLeft ? half1 : half2;
+        int dividerX = half1;
         for(int d=-1; d<=1; d++) {
             int dx = dividerX + d;
             if (dx >= 0 && dx < finalW) {

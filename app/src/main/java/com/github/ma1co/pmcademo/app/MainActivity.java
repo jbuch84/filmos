@@ -196,9 +196,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
 
         FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(width, -1);
         int offset = 0;
-        if (!isProcessing && diptychManager != null && diptychManager.isEnabled()
-                && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
-            offset = diptychManager.isThumbOnLeft() ? width / 4 : -(width / 4);
+        if (!isProcessing && diptychManager != null && diptychManager.isEnabled()) {
+            if (diptychManager.getState() == DiptychManager.STATE_NEED_FIRST) {
+                offset = diptychManager.isThumbOnLeft() ? -(width / 4) : width / 4;
+            } else if (diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
+                offset = diptychManager.isThumbOnLeft() ? width / 4 : -(width / 4);
+            }
         }
         params.leftMargin = offset;
         mSurfaceView.setLayoutParams(params);
@@ -1194,7 +1197,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             return true;
         }
 
-        if (diptychManager != null && diptychManager.isEnabled() && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
+        if (diptychManager != null && diptychManager.isEnabled() && (diptychManager.getState() == DiptychManager.STATE_NEED_FIRST || diptychManager.getState() == DiptychManager.STATE_NEED_SECOND)) {
             diptychManager.setThumbOnLeft(true);
             updateDiptychPreviewWindow();
             return true;
@@ -1230,7 +1233,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,
             return true;
         }
 
-        if (diptychManager != null && diptychManager.isEnabled() && diptychManager.getState() == DiptychManager.STATE_NEED_SECOND) {
+        if (diptychManager != null && diptychManager.isEnabled() && (diptychManager.getState() == DiptychManager.STATE_NEED_FIRST || diptychManager.getState() == DiptychManager.STATE_NEED_SECOND)) {
             diptychManager.setThumbOnLeft(false);
             updateDiptychPreviewWindow();
             return true;

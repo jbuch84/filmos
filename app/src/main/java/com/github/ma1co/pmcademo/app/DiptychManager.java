@@ -24,6 +24,7 @@ public class DiptychManager {
     private String leftFilename = null;
     private String rightFilename = null;
     private boolean isEnabled = false;
+    private boolean shot1WasLeft = true;
 
     public DiptychManager(MainActivity activity, FrameLayout container, TextView tvTopStatus) {
         this.activity = activity;
@@ -49,6 +50,7 @@ public class DiptychManager {
         state = STATE_NEED_FIRST;
         leftFilename = null;
         rightFilename = null;
+        shot1WasLeft = true;
         if (overlayView != null) overlayView.setState(STATE_NEED_FIRST);
         if (activity != null) activity.updateDiptychPreviewWindow();
     }
@@ -64,7 +66,7 @@ public class DiptychManager {
     public String getLeftFilename() { return leftFilename; }
     public String getRightFilename() { return rightFilename; }
 
-    private native boolean stitchDiptychNative(String p1, String p2, String out, boolean left, int quality);
+    private native boolean stitchDiptychNative(String p1, String p2, String out, boolean shot1PlacedLeft, boolean shot1WasLeft, int quality);
 
     public boolean interceptNewFile(String filename, final String originalPath) {
         if (!isEnabled) return false;
@@ -131,8 +133,8 @@ public class DiptychManager {
 
     public void processFirstShot(final String gradedPath) {
         state = STATE_NEED_SECOND;
-        final boolean thumbOnLeft = isThumbOnLeft();
-        final Bitmap thumb = getDiptychThumbnail(gradedPath, thumbOnLeft);
+        shot1WasLeft = isThumbOnLeft();
+        final Bitmap thumb = getDiptychThumbnail(gradedPath, shot1WasLeft);
         activity.runOnUiThread(new Runnable() {
             public void run() {
                 if (overlayView != null) {
@@ -172,7 +174,7 @@ public class DiptychManager {
                     Thread.sleep(1000);
                 } catch (Exception ignored) {}
 
-                performDiptychStitch(leftPath, rightPath, firstShotLeft, entry, scannerStartedMs, detectedMs, stableMs, scannerAttempts);
+                performDiptychStitch(leftPath, rightPath, firstShotLeft, shot1WasLeft, entry, scannerStartedMs, detectedMs, stableMs, scannerAttempts);
             }
         }).start();
     }
@@ -198,7 +200,7 @@ public class DiptychManager {
             return null;
         }
     }
-    private void performDiptychStitch(String leftPath, String rightPath, boolean firstShotLeft, final ProcessingQueueManager.Entry entry, final long scannerStartedMs, final long detectedMs, final long stableMs, final int scannerAttempts) {
+    private void performDiptychStitch(String leftPath, String rightPath, boolean shot1PlacedLeft, boolean shot1WasLeft, final ProcessingQueueManager.Entry entry, final long scannerStartedMs, final long detectedMs, final long stableMs, final int scannerAttempts) {
         try {
             System.gc();
             File fL = new File(leftPath);
@@ -228,7 +230,7 @@ public class DiptychManager {
                 throw new Exception("Source files missing");
             }
 
-            final boolean success = stitchDiptychNative(leftPath, rightPath, tempOut.getAbsolutePath(), firstShotLeft, activity.getPrefJpegQuality());
+            final boolean success = stitchDiptychNative(leftPath, rightPath, tempOut.getAbsolutePath(), shot1PlacedLeft, shot1WasLeft, activity.getPrefJpegQuality());
 
             if (success && tempOut.exists()) {
                 activity.runOnUiThread(new Runnable() {
