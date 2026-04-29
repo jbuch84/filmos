@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.net.URLDecoder;
 
 import fi.iki.elonen.NanoHTTPD;
 
@@ -46,7 +47,7 @@ public class HttpServer extends NanoHTTPD {
             Response res = newFixedLengthResponse(Response.Status.OK, NanoHTTPD.MIME_PLAINTEXT, "");
             res.addHeader("Access-Control-Allow-Origin", "*");
             res.addHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-            res.addHeader("Access-Control-Allow-Headers", "x-file-name, content-length, content-type");
+            res.addHeader("Access-Control-Allow-Headers", "x-file-name, x-target-folder, content-length, content-type");
             return res;
         }
 
@@ -59,22 +60,40 @@ public class HttpServer extends NanoHTTPD {
                 
                 try {
                     Map<String, String> headers = session.getHeaders();
-                    String fileName = headers.get("x-file-name");
+                    String rawFileName = headers.get("x-file-name");
                     
-                    if (fileName == null) {
+                    if (rawFileName == null) {
                         return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"error\":\"Missing filename\"}");
                     }
+                    
+                    String fileName = URLDecoder.decode(rawFileName, "UTF-8");
 
                     // Smart Router Logic
+                    String targetFolder = headers.get("x-target-folder");
                     String lowerName = fileName.toLowerCase();
                     File targetDir = null;
                     
-                    if (lowerName.endsWith(".cube") || lowerName.endsWith(".cub")) {
-                        targetDir = Filepaths.getLutDir();
-                    } else if (lowerName.endsWith(".txt") || lowerName.endsWith(".lens")) {
-                        targetDir = new File(Filepaths.getAppDir(), "LENSES");
-                    } else {
-                        return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"error\":\"Unsupported file type\"}");
+                    if (targetFolder != null && !targetFolder.isEmpty()) {
+                        if (targetFolder.equals("LUTS")) targetDir = Filepaths.getLutDir();
+                        else if (targetFolder.equals("LENSES")) targetDir = Filepaths.getLensesDir();
+                        else if (targetFolder.equals("GRAIN")) targetDir = Filepaths.getGrainDir();
+                        else if (targetFolder.equals("RECIPES")) targetDir = Filepaths.getRecipeDir();
+                        else if (targetFolder.equals("MATRIX")) targetDir = new File(Filepaths.getAppDir(), "MATRIX");
+                    }
+
+                    // Fallback to legacy extension routing if header is missing
+                    if (targetDir == null) {
+                        if (lowerName.endsWith(".cube") || lowerName.endsWith(".cub")) {
+                            targetDir = Filepaths.getLutDir();
+                        } else if (lowerName.endsWith(".png")) {
+                            targetDir = Filepaths.getGrainDir();
+                        } else if (lowerName.endsWith(".txt") || lowerName.endsWith(".lens")) {
+                            if (lowerName.startsWith("m_")) targetDir = new File(Filepaths.getAppDir(), "MATRIX");
+                            else if (lowerName.startsWith("r_")) targetDir = Filepaths.getRecipeDir();
+                            else targetDir = Filepaths.getLensesDir();
+                        } else {
+                            return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"error\":\"Unsupported file type\"}");
+                        }
                     }
 
                     if (!targetDir.exists()) targetDir.mkdirs();

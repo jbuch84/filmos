@@ -189,7 +189,8 @@
 
         /* --- IMPORT MODAL --- */
         #import-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 2000; justify-content: center; align-items: center; backdrop-filter: blur(8px); }
-        .modal-content { background: var(--bg-panel); padding: 35px; border-radius: 16px; border: 1px solid var(--border-color); width: 340px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
+        .modal-content { background: var(--bg-panel); padding: 35px; border-radius: 16px; border: 1px solid var(--border-color); width: 340px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.6); transition: all 0.2s ease; }
+        .modal-content.dragover { border-color: var(--accent); box-shadow: 0 0 30px rgba(234, 133, 48, 0.4); background: rgba(234, 133, 48, 0.05); }
 
     </style>
 </head>
@@ -235,13 +236,29 @@
         </div>
     </div>
 
-    <div id="import-modal">
-        <div class="modal-content">
+    <div id="import-modal" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+        <div class="modal-content" id="drop-zone">
             <h3 style="margin-top:0; color:var(--accent); letter-spacing: 1px; font-weight: 800;">IMPORT FILES</h3>
-            <p style="font-size:13px; color:var(--text-muted); margin-bottom: 25px; line-height: 1.5;">Upload <b>.cube</b> LUTs or <b>.txt</b> Lens Profiles. The Smart Router will organize them automatically.</p>
+            <p style="font-size:13px; color:var(--text-muted); margin-bottom: 25px; line-height: 1.5;">Upload files to your camera. The Smart Router will suggest the correct folder.</p>
 
-            <input type="file" id="import-file" accept=".cube,.cub,.txt,.lens" style="display:none" onchange="handleFileSelect(event)">
-            <button class="action-btn" style="width:100%; margin-bottom:15px; padding: 12px;" onclick="document.getElementById('import-file').click()">SELECT FILE TO UPLOAD</button>
+            <input type="file" id="import-file" accept=".cube,.cub,.txt,.lens,.png" style="display:none" onchange="handleFileSelect(event)">
+            
+            <div id="file-details" style="display:none; text-align:left; margin-bottom: 15px; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;">
+                <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">SELECTED FILE(S)</div>
+                <div id="selected-filename" style="color: #fff; font-weight: bold; margin-bottom: 15px; word-break: break-all;"></div>
+                
+                <div id="folder-label" style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">INSTALL LOCATION</div>
+                <select id="target-folder" style="width: 100%; background: #222; border: 1px solid #444; color: #fff; padding: 8px; border-radius: 4px;">
+                    <option value="LUTS">LUTS (.cube, .cub)</option>
+                    <option value="GRAIN">GRAIN (.png)</option>
+                    <option value="LENSES">LENSES (E/M prefixed .txt)</option>
+                    <option value="MATRIX">MATRIX (M_ prefixed .txt)</option>
+                    <option value="RECIPES">RECIPES (R_ prefixed .txt)</option>
+                </select>
+            </div>
+
+            <button id="import-btn" class="action-btn" style="width:100%; margin-bottom:15px; padding: 12px;" onclick="document.getElementById('import-file').click()">SELECT OR DROP FILES</button>
+            <button id="upload-btn" class="action-btn" style="width:100%; margin-bottom:15px; padding: 12px; display:none; background: #4BA653; border-color: #4BA653;" onclick="executeUpload()">UPLOAD TO CAMERA</button>
 
             <div id="upload-status" style="font-size:12px; font-weight:bold; margin-bottom:15px; color:#fff; height: 15px; letter-spacing: 0.5px;"></div>
 
@@ -553,45 +570,176 @@
 
         function closeImportManager() {
             document.getElementById('import-modal').style.display = 'none';
+            document.getElementById('file-details').style.display = 'none';
+            document.getElementById('upload-btn').style.display = 'none';
+            document.getElementById('import-btn').style.display = 'block';
+            document.getElementById('import-btn').innerText = 'SELECT OR DROP FILES';
+            pendingUploads = [];
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('drop-zone').classList.add('dragover');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            document.getElementById('drop-zone').classList.remove('dragover');
+        }
+
+        async function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            handleDragLeave(e);
+            
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                processFiles(e.dataTransfer.files);
+            }
         }
 
         async function handleFileSelect(event) {
-            const file = event.target.files[0];
-            if (!file) return;
+            if (event.target.files && event.target.files.length > 0) {
+                processFiles(event.target.files);
+            }
+            event.target.value = '';
+        }
 
-            const ext = file.name.toLowerCase();
-            if (!ext.endsWith('.cube') && !ext.endsWith('.cub') && !ext.endsWith('.txt') && !ext.endsWith('.lens')) {
-                document.getElementById('upload-status').innerText = 'ERROR: UNSUPPORTED FILE TYPE';
+        let pendingUploads = [];
+
+        function determineTargetFolder(file) {
+            return new Promise((resolve) => {
+                const ext = file.name.toLowerCase();
+                const base = file.name.toUpperCase();
+
+                if (ext.endsWith('.png')) return resolve('GRAIN');
+                if (ext.endsWith('.cube') || ext.endsWith('.cub')) return resolve('LUTS');
+                if (ext.endsWith('.lens')) return resolve('LENSES');
+
+                if (ext.endsWith('.txt')) {
+                    // Smart Content Inspector: Actually read the file!
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        try {
+                            const content = e.target.result;
+                            const json = JSON.parse(content);
+                            if (json.advMatrix !== undefined) return resolve('MATRIX');
+                            if (json.profileName !== undefined) return resolve('RECIPES');
+                            return resolve('LENSES');
+                        } catch (err) {
+                            // Fallback to prefix if JSON parsing fails
+                            if (base.startsWith('M_')) return resolve('MATRIX');
+                            if (base.startsWith('R_')) return resolve('RECIPES');
+                            return resolve('LENSES');
+                        }
+                    };
+                    reader.onerror = function() {
+                        if (base.startsWith('M_')) return resolve('MATRIX');
+                        if (base.startsWith('R_')) return resolve('RECIPES');
+                        return resolve('LENSES');
+                    };
+                    // Read up to 2KB
+                    const blob = file.slice(0, 2048);
+                    reader.readAsText(blob);
+                } else {
+                    resolve('LUTS');
+                }
+            });
+        }
+
+        async function processFiles(files) {
+            if (!files || files.length === 0) return;
+
+            // Filter out unsupported files
+            const validFiles = Array.from(files).filter(file => {
+                const ext = file.name.toLowerCase();
+                return ext.endsWith('.cube') || ext.endsWith('.cub') || ext.endsWith('.txt') || ext.endsWith('.lens') || ext.endsWith('.png');
+            });
+
+            if (validFiles.length === 0) {
+                document.getElementById('upload-status').innerText = 'ERROR: NO SUPPORTED FILES FOUND';
                 document.getElementById('upload-status').style.color = '#E54D3A';
-                event.target.value = '';
                 return;
             }
 
-            document.getElementById('upload-status').innerText = `UPLOADING: ${file.name.toUpperCase()}...`;
-            document.getElementById('upload-status').style.color = '#F2CC40';
+            // Inspect contents deeply to map to exact folders
+            pendingUploads = [];
+            for (let file of validFiles) {
+                const folder = await determineTargetFolder(file);
+                pendingUploads.push({ file, folder });
+            }
 
-            try {
-                const res = await fetch('/api/upload', {
-                    method: 'POST',
-                    headers: {
-                        'X-File-Name': file.name
-                    },
-                    body: file
-                });
+            document.getElementById('file-details').style.display = 'block';
+            document.getElementById('import-btn').style.display = 'none';
+            document.getElementById('upload-btn').style.display = 'block';
+            document.getElementById('upload-status').innerText = '';
 
-                if (res.ok) {
-                    document.getElementById('upload-status').innerText = `SUCCESS: ${file.name.toUpperCase()} INSTALLED!`;
-                    document.getElementById('upload-status').style.color = '#4BA653';
-                } else {
-                    document.getElementById('upload-status').innerText = 'ERROR: UPLOAD FAILED';
-                    document.getElementById('upload-status').style.color = '#E54D3A';
+            if (pendingUploads.length === 1) {
+                // Single file logic (allow manual override)
+                const item = pendingUploads[0];
+                document.getElementById('selected-filename').innerText = item.file.name;
+                document.getElementById('target-folder').style.display = 'block';
+                document.getElementById('target-folder').value = item.folder;
+                document.getElementById('folder-label').innerText = 'INSTALL LOCATION';
+            } else {
+                // Batch upload logic (auto-route only)
+                document.getElementById('selected-filename').innerText = `${pendingUploads.length} FILES SELECTED`;
+                document.getElementById('target-folder').style.display = 'none';
+                document.getElementById('folder-label').innerText = 'SMART CONTENT INSPECTOR ACTIVE';
+            }
+        }
+
+        async function executeUpload() {
+            if (pendingUploads.length === 0) return;
+
+            document.getElementById('upload-btn').style.display = 'none';
+            
+            let successCount = 0;
+            const isBatch = pendingUploads.length > 1;
+            const explicitFolder = isBatch ? "" : document.getElementById('target-folder').value;
+
+            for (let i = 0; i < pendingUploads.length; i++) {
+                const item = pendingUploads[i];
+                const file = item.file;
+                const folder = isBatch ? item.folder : explicitFolder;
+
+                document.getElementById('upload-status').innerText = `UPLOADING (${i+1}/${pendingUploads.length}): ${file.name.toUpperCase()}...`;
+                document.getElementById('upload-status').style.color = '#F2CC40';
+
+                try {
+                    const safeHeader = encodeURIComponent(file.name);
+                    const res = await fetch('/api/upload', {
+                        method: 'POST',
+                        headers: {
+                            'X-File-Name': safeHeader,
+                            'X-Target-Folder': folder
+                        },
+                        body: file
+                    });
+
+                    if (res.ok) successCount++;
+                } catch (e) {
+                    console.error("Failed to upload " + file.name, e);
                 }
-            } catch (e) {
-                document.getElementById('upload-status').innerText = 'ERROR: NETWORK CONNECTION';
+            }
+
+            if (successCount === pendingUploads.length) {
+                document.getElementById('upload-status').innerText = isBatch ? `SUCCESS: ${successCount} FILES INSTALLED!` : `SUCCESS: INSTALLED TO ${explicitFolder}!`;
+                document.getElementById('upload-status').style.color = '#4BA653';
+            } else {
+                document.getElementById('upload-status').innerText = `PARTIAL SUCCESS: ${successCount}/${pendingUploads.length} INSTALLED`;
                 document.getElementById('upload-status').style.color = '#E54D3A';
             }
 
-            event.target.value = '';
+            // Reset UI
+            setTimeout(() => {
+                document.getElementById('file-details').style.display = 'none';
+                document.getElementById('import-btn').style.display = 'block';
+                document.getElementById('import-btn').innerText = 'SELECT MORE FILES';
+                pendingUploads = [];
+                document.getElementById('upload-status').innerText = '';
+            }, 3000);
         }
 
         init();
