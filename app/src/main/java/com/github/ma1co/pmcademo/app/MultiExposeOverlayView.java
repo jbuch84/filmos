@@ -7,12 +7,10 @@ import android.graphics.Paint;
 import android.graphics.Rect;
 import android.view.View;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class MultiExposeOverlayView extends View {
     private Paint thumbPaint;
-    private List<Bitmap> thumbnails = new ArrayList<Bitmap>();
+    private Bitmap accumulator;
+    private Canvas accumulatorCanvas;
 
     public MultiExposeOverlayView(Context context) {
         super(context);
@@ -21,38 +19,47 @@ public class MultiExposeOverlayView extends View {
     }
 
     public void addThumbnail(Bitmap thumb) {
-        if (thumb != null) {
-            thumbnails.add(thumb);
-            invalidate();
+        if (thumb == null) return;
+        
+        int w = getWidth();
+        int h = getHeight();
+        if (w <= 0 || h <= 0) {
+            // View hasn't measured yet, use thumb dimensions as fallback
+            w = thumb.getWidth();
+            h = thumb.getHeight();
         }
+
+        if (accumulator == null) {
+            accumulator = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            accumulatorCanvas = new Canvas(accumulator);
+            thumbPaint.setAlpha(255); // First shot is base
+        } else {
+            // Subsequent shots are low opacity ghosts
+            thumbPaint.setAlpha(100); 
+        }
+
+        Rect dst = new Rect(0, 0, w, h);
+        accumulatorCanvas.drawBitmap(thumb, null, dst, thumbPaint);
+        
+        // CRITICAL: Memory safety
+        thumb.recycle(); 
+        invalidate();
     }
 
     public void clearThumbnails() {
-        for (Bitmap b : thumbnails) {
-            if (b != null && !b.isRecycled()) b.recycle();
+        if (accumulator != null && !accumulator.isRecycled()) {
+            accumulator.recycle();
         }
-        thumbnails.clear();
+        accumulator = null;
+        accumulatorCanvas = null;
         invalidate();
     }
 
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        if (thumbnails.isEmpty()) return;
-
-        int w = getWidth();
-        int h = getHeight();
-        Rect dst = new Rect(0, 0, w, h);
-
-        // Calculate opacity based on stack depth to avoid "white blowout"
-        // Shot 1 is 50% opacity, Shot 2 is 33%, etc.
-        for (int i = 0; i < thumbnails.size(); i++) {
-            Bitmap b = thumbnails.get(i);
-            if (b != null && !b.isRecycled()) {
-                int alpha = 255 / (i + 2);
-                thumbPaint.setAlpha(alpha);
-                canvas.drawBitmap(b, null, dst, thumbPaint);
-            }
+        if (accumulator != null && !accumulator.isRecycled()) {
+            canvas.drawBitmap(accumulator, 0, 0, null);
         }
     }
 }
