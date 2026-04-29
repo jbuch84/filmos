@@ -181,7 +181,7 @@ public class MultiExposeManager {
                         @Override
                         public void run() {
                             tvTopStatus.setText("MULTI-EXPOSURE BLEND FAILED");
-                            tvTopStatus.setTextColor(UiTheme.WARN);
+                            tvTopStatus.setTextColor(UiTheme.ERROR);
                             reset();
                         }
                     });

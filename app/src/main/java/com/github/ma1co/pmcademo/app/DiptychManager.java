@@ -93,14 +93,14 @@ public class DiptychManager {
                         }
                     } catch (Exception ignored) {}
 
-                    if (state != STATE_PROCESSING_FIRST) return;
+                    if (state != STATE_PROCESSING_FIRST && state != STATE_NEED_SECOND) return;
                     final boolean thumbOnLeft = isThumbOnLeft();
                     final Bitmap thumb = getDiptychThumbnail(originalPath, thumbOnLeft);
                     activity.runOnUiThread(new Runnable() {
                         public void run() {
-                            if (overlayView != null && state == STATE_PROCESSING_FIRST) {
+                            if (overlayView != null && (state == STATE_PROCESSING_FIRST || state == STATE_NEED_SECOND)) {
                                 overlayView.setThumbnail(thumb);
-                                overlayView.setState(STATE_PROCESSING_FIRST);
+                                overlayView.setState(state);
                             }
                         }
                     });
@@ -143,7 +143,7 @@ public class DiptychManager {
                 activity.armFileScanner();
                 if (tvTopStatus != null) {
                     tvTopStatus.setText("SHOT 1 SAVED. [L/R] TO SWAP SIDE.");
-                    tvTopStatus.setTextColor(Color.GREEN);
+                    tvTopStatus.setTextColor(UiTheme.SUCCESS);
                 }
                 activity.updateMainHUD();
             }
@@ -160,7 +160,7 @@ public class DiptychManager {
                 }
                 if (tvTopStatus != null) {
                     tvTopStatus.setText("STITCHING DIPTYCH...");
-                    tvTopStatus.setTextColor(Color.YELLOW);
+                    tvTopStatus.setTextColor(UiTheme.WARN);
                 }
             }
         });
@@ -179,21 +179,21 @@ public class DiptychManager {
 
     private Bitmap getDiptychThumbnail(String path, boolean leftHalf) {
         try {
-            android.graphics.BitmapRegionDecoder decoder = android.graphics.BitmapRegionDecoder.newInstance(path, false);
-            int width = decoder.getWidth();
-            int height = decoder.getHeight();
-            android.graphics.Rect rect;
-            if (leftHalf) {
-                rect = new android.graphics.Rect(0, 0, width / 2, height);
-            } else {
-                rect = new android.graphics.Rect(width / 2, 0, width, height);      
-            }
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inSampleSize = 16;
             opts.inPreferredConfig = Bitmap.Config.RGB_565;
-            Bitmap bm = decoder.decodeRegion(rect, opts);
-            decoder.recycle();
-            return bm;
+            Bitmap fullBm = BitmapFactory.decodeFile(path, opts);
+            if (fullBm == null) return null;
+            int w = fullBm.getWidth();
+            int h = fullBm.getHeight();
+            Bitmap cropped;
+            if (leftHalf) {
+                cropped = Bitmap.createBitmap(fullBm, 0, 0, w / 2, h);
+            } else {
+                cropped = Bitmap.createBitmap(fullBm, w / 2, 0, w / 2, h);      
+            }
+            if (cropped != fullBm) fullBm.recycle();
+            return cropped;
         } catch (Throwable t) {
             return null;
         }
@@ -246,9 +246,13 @@ public class DiptychManager {
                 public void run() {
                     if (tvTopStatus != null) {
                         tvTopStatus.setText("STITCH ERROR. RESETTING.");
-                        tvTopStatus.setTextColor(Color.RED);
+                        tvTopStatus.setTextColor(UiTheme.ERROR);
                     }
-                    try { Thread.sleep(2000); } catch (Exception ignored) {}
+                }
+            });
+            try { Thread.sleep(2000); } catch (Exception ignored) {}
+            activity.runOnUiThread(new Runnable() {
+                public void run() {
                     reset();
                 }
             });

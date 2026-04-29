@@ -29,6 +29,7 @@ public final class UiTheme {
     public static final int WARN = Color.rgb(236, 186, 84);
     public static final int SUCCESS = Color.rgb(70, 218, 142);
     public static final int ERROR = Color.rgb(235, 74, 83);
+    public static final int REC_ON = Color.rgb(225, 60, 60);
     public static final int BORDER = Color.argb(130, 117, 145, 140);
     public static final int SHADOW = Color.argb(180, 0, 0, 0);
 
