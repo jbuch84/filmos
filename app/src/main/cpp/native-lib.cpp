@@ -686,11 +686,11 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_MultiEx
             }
         } else if (blendMode == 1) { // Lighten
             for (int x = 0; x < total_pixels; x++) {
-                int mx = 0;
-                for (int i = 0; i < count; i++) {
+                unsigned char mx = row_bufs[0][x];
+                for (int i = 1; i < count; i++) {
                     if (row_bufs[i][x] > mx) mx = row_bufs[i][x];
                 }
-                out_buf[x] = (unsigned char)mx;
+                out_buf[x] = mx;
             }
         }
         
