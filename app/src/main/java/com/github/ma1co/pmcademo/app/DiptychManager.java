@@ -182,9 +182,12 @@ public class DiptychManager {
             android.graphics.BitmapRegionDecoder decoder = android.graphics.BitmapRegionDecoder.newInstance(path, false);
             int width = decoder.getWidth();
             int height = decoder.getHeight();
-            int cropWidth = width / 2;
-            int cropLeft = (width - cropWidth) / 2;
-            android.graphics.Rect rect = new android.graphics.Rect(cropLeft, 0, cropLeft + cropWidth, height);
+            android.graphics.Rect rect;
+            if (leftHalf) {
+                rect = new android.graphics.Rect(0, 0, width / 2, height);
+            } else {
+                rect = new android.graphics.Rect(width / 2, 0, width, height);      
+            }
             BitmapFactory.Options opts = new BitmapFactory.Options();
             opts.inSampleSize = 16;
             opts.inPreferredConfig = Bitmap.Config.RGB_565;
