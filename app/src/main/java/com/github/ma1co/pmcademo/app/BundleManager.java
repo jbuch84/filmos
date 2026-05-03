@@ -56,113 +56,87 @@ public class BundleManager {
         }
     }
 
-    private static void extractBundle(File zipFile, File targetRootDir) {
-        ZipInputStream zis = null;
-        try {
-            zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
-            ZipEntry entry;
-            int fileCounter = 0;
-
-            while ((entry = zis.getNextEntry()) != null) {
-                String entryName = entry.getName();
-                
-                // Security: Prevent Zip-Slip vulnerability
-                if (entryName.contains("..")) {
-                    logToFile(targetRootDir, "Skipping malicious zip entry: " + entryName);
-                    continue;
-                }
-
-                if (entry.isDirectory()) {
-                    continue;
-                }
-
-                File destFile = new File(targetRootDir, entryName);
-                
-                // Ensure parent directories exist
-                File parentDir = destFile.getParentFile();
-                if (parentDir != null && !parentDir.exists()) {
-                    boolean created = parentDir.mkdirs();
-                    logToFile(targetRootDir, "Created directory: " + parentDir.getAbsolutePath() + " -> " + created);
-                }
-
-                // Sony Android 2.3.7 VFAT bug: write to 8.3 temp file first, then rename.
-                // Using a counter so multiple files in the same dir don't collide if rename is slow.
-                File tempFile = new File(parentDir, String.format("BNDL%03d.TMP", fileCounter++));
-
-                logToFile(targetRootDir, "Extracting: " + entryName + " to " + tempFile.getAbsolutePath());
-
-                FileOutputStream fos = null;
+    private static void extractBundle(final File zipFile, final File targetRootDir) {
+        // Run in background to avoid UI lockup and filesystem race conditions during boot
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                ZipInputStream zis = null;
                 try {
-                    fos = new FileOutputStream(tempFile);
-                    byte[] buffer = new byte[BUFFER_SIZE];
-                    int count;
-                    while ((count = zis.read(buffer, 0, BUFFER_SIZE)) != -1) {
-                        fos.write(buffer, 0, count);
-                    }
-                    fos.flush();
-                    try { fos.getFD().sync(); } catch (Exception e) {}
-                } catch (Exception e) {
-                    logToFile(targetRootDir, "Failed to extract entry: " + entryName + " - Error: " + e.getMessage());
-                } finally {
-                    try { if (fos != null) fos.close(); } catch (Exception e) {}
-                }
+                    zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
+                    ZipEntry entry;
+                    int fileCounter = 0;
 
-                if (tempFile.exists()) {
-                    if (destFile.exists()) {
-                        boolean delSuccess = destFile.delete();
-                        logToFile(targetRootDir, "Deleted existing dest: " + destFile.getName() + " -> " + delSuccess);
-                    }
-                    
-                    boolean renameSuccess = tempFile.renameTo(destFile);
-                    
-                    if (!renameSuccess) {
-                        logToFile(targetRootDir, "Rename failed for: " + tempFile.getName() + " to " + destFile.getName() + ". Attempting fallback.");
-                        // Fallback: Copy bytes directly if renameTo fails
-                        FileInputStream fis = null;
-                        FileOutputStream fallbackFos = null;
+                    while ((entry = zis.getNextEntry()) != null) {
+                        String entryName = entry.getName();
+                        String lowerName = entryName.toLowerCase();
+                        
+                        // 1. Skip Directories and Mac Junk
+                        if (entry.isDirectory() || lowerName.contains("__macosx") || entryName.contains("/.") || entryName.startsWith(".")) {
+                            continue;
+                        }
+
+                        // 2. Determine Destination Folder based on Extension (Flattening the ZIP paths)
+                        File destDir = targetRootDir;
+                        if (lowerName.endsWith(".txt")) {
+                            destDir = new File(targetRootDir, "RECIPES");
+                        } else if (lowerName.endsWith(".cube") || lowerName.endsWith(".cub")) {
+                            destDir = new File(targetRootDir, "LUTS");
+                        } else if (lowerName.endsWith(".png")) {
+                            destDir = new File(targetRootDir, "GRAIN");
+                        }
+
+                        if (!destDir.exists()) destDir.mkdirs();
+
+                        // Get just the filename (e.g. "R_MYLOOK.TXT") ignoring the "RECIPES/" prefix in zip
+                        String simpleName = new File(entryName).getName();
+                        File destFile = new File(destDir, simpleName);
+                        
+                        // 3. Sony Android 2.3.7 VFAT bug: write to 8.3 temp file first
+                        File tempFile = new File(destDir, String.format("B%07d.TMP", fileCounter++));
+
+                        logToFile(targetRootDir, "Unpacking: " + simpleName + " via " + tempFile.getName());
+
+                        FileOutputStream fos = null;
                         try {
-                            fis = new FileInputStream(tempFile);
-                            fallbackFos = new FileOutputStream(destFile);
+                            fos = new FileOutputStream(tempFile);
                             byte[] buffer = new byte[BUFFER_SIZE];
                             int count;
-                            while ((count = fis.read(buffer)) != -1) {
-                                fallbackFos.write(buffer, 0, count);
+                            while ((count = zis.read(buffer, 0, BUFFER_SIZE)) != -1) {
+                                fos.write(buffer, 0, count);
                             }
-                            fallbackFos.flush();
-                            try { fallbackFos.getFD().sync(); } catch (Exception e2) {}
-                            renameSuccess = true;
-                            logToFile(targetRootDir, "Fallback copy succeeded for: " + destFile.getName());
+                            fos.flush();
+                            try { fos.getFD().sync(); } catch (Exception e) {}
                         } catch (Exception e) {
-                            logToFile(targetRootDir, "Fallback copy also failed! Error: " + e.getMessage());
+                            logToFile(targetRootDir, "Write failed: " + simpleName + " - " + e.getMessage());
                         } finally {
-                            try { if (fis != null) fis.close(); } catch (Exception e) {}
-                            try { if (fallbackFos != null) fallbackFos.close(); } catch (Exception e) {}
-                            if (renameSuccess) { tempFile.delete(); }
+                            try { if (fos != null) fos.close(); } catch (Exception e) {}
                         }
-                    } else {
-                        logToFile(targetRootDir, "Successfully moved to: " + destFile.getName());
+
+                        // 4. Finalize via Rename
+                        if (tempFile.exists()) {
+                            if (destFile.exists()) destFile.delete();
+                            if (tempFile.renameTo(destFile)) {
+                                logToFile(targetRootDir, "Successfully extracted: " + destFile.getName());
+                            } else {
+                                logToFile(targetRootDir, "Rename failed for " + destFile.getName() + " - file may be locked.");
+                                tempFile.delete(); // Cleanup failed attempt
+                            }
+                        }
+                        zis.closeEntry();
                     }
-                } else {
-                    logToFile(targetRootDir, "FATAL: Temp file was never created! " + tempFile.getAbsolutePath());
+                    
+                    logToFile(targetRootDir, "Bundle Complete: " + zipFile.getName());
+                    zis.close();
+                    zis = null;
+                    zipFile.delete();
+
+                } catch (Exception e) {
+                    logToFile(targetRootDir, "Bundle Error: " + zipFile.getName() + " - " + e.getMessage());
+                } finally {
+                    try { if (zis != null) zis.close(); } catch (Exception e) {}
                 }
-
-                zis.closeEntry();
             }
-            logToFile(targetRootDir, "Successfully extracted bundle: " + zipFile.getName());
-            
-            // Delete the .cam file after successful extraction
-            zis.close();
-            zis = null;
-            if (zipFile.delete()) {
-                logToFile(targetRootDir, "Deleted bundle: " + zipFile.getName());
-            } else {
-                logToFile(targetRootDir, "Failed to delete bundle: " + zipFile.getName());
-            }
-
-        } catch (Exception e) {
-            logToFile(targetRootDir, "Failed to extract bundle: " + zipFile.getName() + " - Error: " + e.getMessage());
-        } finally {
-            try { if (zis != null) zis.close(); } catch (Exception e) {}
-        }
+        }).start();
     }
 }
