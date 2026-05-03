@@ -32,6 +32,7 @@ public class RecipeManager {
         recipeDir = new File(Filepaths.getAppDir(), "RECIPES");
         if (!recipeDir.exists()) recipeDir.mkdirs();
 
+        DebugLog.writeStartupBanner();
         scanRecipes();
         loadPreferences();
         loadAllWorkspaces();
@@ -120,6 +121,12 @@ public class RecipeManager {
                     }
                 }
             }
+        }
+
+        // Log what was found so users can share DEBUG.TXT when reporting LUT issues
+        DebugLog.write("SCAN LUTS: found " + (recipePaths.size() - 1) + " file(s)");
+        for (int i = 1; i < recipePaths.size(); i++) {
+            DebugLog.write("  [" + i + "] name=\"" + recipeNames.get(i) + "\"  path=" + recipePaths.get(i));
         }
     }
 

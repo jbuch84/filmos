@@ -161,6 +161,59 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     if(id){ if((w==512||w==1024)&&w==h){ nativeGrainTexture.assign(id, id+(w*h*3)); stbi_image_free(id); pthread_mutex_unlock(&g_lut_mutex); return JNI_TRUE; } stbi_image_free(id); } pthread_mutex_unlock(&g_lut_mutex); return JNI_FALSE;
 }
 
+// Patches the EXIF APP1 marker height fields to match the actual cropped output.
+// Handles both little-endian (Intel) and big-endian (Motorola) TIFF byte orders.
+// Patches IFD0 ImageLength (0x0101) and ExifSubIFD PixelYDimension (0xA003).
+static void patch_exif_height(uint8_t* data, int dataLen, int newHeight) {
+    if (dataLen < 14 || memcmp(data, "Exif\0\0", 6) != 0) return;
+    uint8_t* t = data + 6;
+    int tLen = dataLen - 6;
+    if (tLen < 8) return;
+    bool le = (t[0] == 'I');
+
+    #define EX_R16(o) (le ? ((uint16_t)t[o]|((uint16_t)t[(o)+1]<<8)) : ((uint16_t)t[o]<<8|(uint16_t)t[(o)+1]))
+    #define EX_R32(o) (le ? ((uint32_t)t[o]|(uint32_t)t[(o)+1]<<8|(uint32_t)t[(o)+2]<<16|(uint32_t)t[(o)+3]<<24) : ((uint32_t)t[o]<<24|(uint32_t)t[(o)+1]<<16|(uint32_t)t[(o)+2]<<8|(uint32_t)t[(o)+3]))
+    #define EX_W16(o,v) do{uint16_t _v=(uint16_t)(v);if(le){t[o]=_v;t[(o)+1]=_v>>8;}else{t[o]=_v>>8;t[(o)+1]=_v;}}while(0)
+    #define EX_W32(o,v) do{uint32_t _v=(uint32_t)(v);if(le){t[o]=_v;t[(o)+1]=_v>>8;t[(o)+2]=_v>>16;t[(o)+3]=_v>>24;}else{t[o]=_v>>24;t[(o)+1]=_v>>16;t[(o)+2]=_v>>8;t[(o)+3]=_v;}}while(0)
+
+    uint32_t ifd0 = EX_R32(4);
+    if ((int)(ifd0 + 2) <= tLen) {
+        uint16_t cnt = EX_R16(ifd0);
+        uint32_t exifSub = 0;
+        for (int i = 0; i < (int)cnt; i++) {
+            int e = (int)ifd0 + 2 + i * 12;
+            if (e + 12 > tLen) break;
+            uint16_t tag = EX_R16(e);
+            uint16_t type = EX_R16(e + 2);
+            if (tag == 0x0101) { // ImageLength
+                if (type == 3) EX_W16(e + 8, newHeight);
+                else if (type == 4) EX_W32(e + 8, newHeight);
+            } else if (tag == 0x8769) { // ExifIFD pointer
+                exifSub = EX_R32(e + 8);
+            }
+        }
+        if (exifSub > 0 && (int)(exifSub + 2) <= tLen) {
+            uint16_t scnt = EX_R16(exifSub);
+            for (int i = 0; i < (int)scnt; i++) {
+                int e = (int)exifSub + 2 + i * 12;
+                if (e + 12 > tLen) break;
+                uint16_t tag = EX_R16(e);
+                uint16_t type = EX_R16(e + 2);
+                if (tag == 0xA003) { // PixelYDimension
+                    if (type == 3) EX_W16(e + 8, newHeight);
+                    else if (type == 4) EX_W32(e + 8, newHeight);
+                    break;
+                }
+            }
+        }
+    }
+
+    #undef EX_R16
+    #undef EX_R32
+    #undef EX_W16
+    #undef EX_W32
+}
+
 extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngine_processImageNative(
     JNIEnv* env, jobject obj, jstring inPath, jstring outPath,
     jint scaleDenom, jint opacity, jint grain, jint grainSize,
@@ -210,7 +263,14 @@ extern "C" JNIEXPORT jboolean JNICALL Java_com_github_ma1co_pmcademo_app_LutEngi
     jpeg_start_compress(&cc, TRUE);
     jpeg_saved_marker_ptr mark = cd.marker_list;
     while (mark) {
-        jpeg_write_marker(&cc, mark->marker, mark->data, mark->data_length);
+        // When cropping, patch the EXIF APP1 height so viewers see correct dimensions.
+        if (applyCrop && mark->marker == JPEG_APP0 + 1 && mark->data_length > 6) {
+            std::vector<uint8_t> patched(mark->data, mark->data + mark->data_length);
+            patch_exif_height(patched.data(), (int)patched.size(), fh);
+            jpeg_write_marker(&cc, mark->marker, patched.data(), mark->data_length);
+        } else {
+            jpeg_write_marker(&cc, mark->marker, mark->data, mark->data_length);
+        }
         mark = mark->next;
     }
 

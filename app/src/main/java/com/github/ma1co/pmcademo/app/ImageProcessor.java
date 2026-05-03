@@ -84,7 +84,15 @@ public class ImageProcessor {
         @Override protected String doInBackground(String... params) {
             try {
                 File original = new File(params[0]);
-                if (!original.exists()) return "ERR";
+                if (!original.exists()) {
+                    DebugLog.write("PROC ERR: file not found: " + params[0]);
+                    return "ERR";
+                }
+
+                DebugLog.write("PROC START: " + original.getName()
+                        + "  size=" + original.length() + "b"
+                        + "  lut=" + (lutPath != null ? lutPath : "none")
+                        + "  crop=" + applyCrop);
 
                 if (stableMs <= 0) {
                     long lastSize = -1; int timeout = 0;
@@ -97,7 +105,9 @@ public class ImageProcessor {
                 }
 
                 if (lutPath != null || lutName != null) {
-                    if (!mEngine.loadLut(lutPath, lutName)) return "FAILED";
+                    boolean lutOk = mEngine.loadLut(lutPath, lutName);
+                    DebugLog.write("LUT LOAD: name=\"" + lutName + "\"  path=" + lutPath + "  ok=" + lutOk);
+                    if (!lutOk) return "FAILED";
                 }
 
                 File dir = new File(outDir);
@@ -149,14 +159,19 @@ public class ImageProcessor {
                     original.getAbsolutePath(), outFile.getAbsolutePath(),
                     scale, p.opacity, p.grain, finalGrainSize, p.vignette, p.rollOff,
                     p.colorChrome, p.chromeBlue, p.shadowToe, p.subtractiveSat,
-                    p.halation, finalBloom, 
+                    p.halation, finalBloom,
                     cxxGrainEngine,
-                    finalJpegQuality, 
+                    finalJpegQuality,
                     applyCrop, numCores);  // <--- ADDED numCores HERE
                 if (success) {
+                    DebugLog.write("PROC END: SAVED -> " + outFile.getName());
                     return "SAVED";
                 }
-            } catch (Exception e) { Log.e("COOKBOOK", "Java error: " + e.getMessage()); }
+                DebugLog.write("PROC END: FAILED (native returned false)");
+            } catch (Exception e) {
+                Log.e("COOKBOOK", "Java error: " + e.getMessage());
+                DebugLog.write("PROC END: EXCEPTION " + e.getMessage());
+            }
             return "FAILED";
         }
 
