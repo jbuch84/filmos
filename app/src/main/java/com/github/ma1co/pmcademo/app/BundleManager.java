@@ -15,15 +15,19 @@ public class BundleManager {
     private static final int BUFFER_SIZE = 8192;
 
     public static void extractAllBundles() {
-        File appDir = Filepaths.getAppDir();
-        if (!appDir.exists()) return;
+        extractBundlesInDir(Filepaths.getAppDir());
+        extractBundlesInDir(Filepaths.getRecipeDir());
+    }
 
-        File[] files = appDir.listFiles();
+    private static void extractBundlesInDir(File dir) {
+        if (dir == null || !dir.exists()) return;
+
+        File[] files = dir.listFiles();
         if (files == null) return;
 
         for (File file : files) {
             if (file.isFile() && file.getName().toLowerCase().endsWith(".cam")) {
-                Log.d(TAG, "Found bundle: " + file.getName());
+                Log.d(TAG, "Found bundle in " + dir.getName() + ": " + file.getName());
                 extractBundle(file);
             }
         }
