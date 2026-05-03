@@ -26,7 +26,7 @@ public class BundleManager {
                 fw.close();
             }
         } catch (IOException e) {
-            // Ignore log errors to prevent crashing the app
+            // Ignore log errors
         }
     }
 
@@ -34,7 +34,9 @@ public class BundleManager {
         for (File root : Filepaths.getStorageRoots()) {
             File appDir = new File(root, "JPEGCAM");
             if (appDir.exists() && appDir.isDirectory()) {
+                // Scan JPEGCAM root
                 extractBundlesInDir(appDir, appDir);
+                // Scan JPEGCAM/RECIPES
                 File recipeDir = new File(appDir, "RECIPES");
                 if (recipeDir.exists() && recipeDir.isDirectory()) {
                     extractBundlesInDir(recipeDir, appDir);
@@ -50,14 +52,13 @@ public class BundleManager {
         for (File file : files) {
             String name = file.getName().toLowerCase();
             if (file.isFile() && name.endsWith(".cam") && !name.startsWith(".")) {
-                logToFile(targetRootDir, "Found bundle in " + scanDir.getName() + ": " + file.getName());
+                logToFile(targetRootDir, "Starting Bundle: " + file.getName() + " on drive " + targetRootDir.getAbsolutePath());
                 extractBundle(file, targetRootDir);
             }
         }
     }
 
     private static void extractBundle(final File zipFile, final File targetRootDir) {
-        // Run in background to avoid UI lockup and filesystem race conditions during boot
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -71,33 +72,25 @@ public class BundleManager {
                         String entryName = entry.getName();
                         String lowerName = entryName.toLowerCase();
                         
-                        // 1. Skip Directories and Mac Junk
+                        // 1. Skip Directories and Mac Metadata
                         if (entry.isDirectory() || lowerName.contains("__macosx") || entryName.contains("/.") || entryName.startsWith(".")) {
+                            zis.closeEntry();
                             continue;
                         }
 
-                        // 2. Determine Destination Folder based on Extension (Flattening the ZIP paths)
-                        File destDir = targetRootDir;
-                        if (lowerName.endsWith(".txt")) {
-                            destDir = new File(targetRootDir, "RECIPES");
-                        } else if (lowerName.endsWith(".cube") || lowerName.endsWith(".cub")) {
-                            destDir = new File(targetRootDir, "LUTS");
-                        } else if (lowerName.endsWith(".png")) {
-                            destDir = new File(targetRootDir, "GRAIN");
+                        // 2. Build Destination Path (Respecting ZIP folders)
+                        File destFile = new File(targetRootDir, entryName);
+                        File parentDir = destFile.getParentFile();
+                        if (parentDir != null && !parentDir.exists()) {
+                            parentDir.mkdirs();
                         }
 
-                        if (!destDir.exists()) destDir.mkdirs();
-
-                        // Get just the filename (e.g. "R_MYLOOK.TXT") ignoring the "RECIPES/" prefix in zip
-                        String simpleName = new File(entryName).getName();
-                        File destFile = new File(destDir, simpleName);
-                        
-                        // 3. Sony Android 2.3.7 VFAT bug: write to 8.3 temp file first
-                        File tempFile = new File(destDir, String.format("B%07d.TMP", fileCounter++));
-
-                        logToFile(targetRootDir, "Unpacking: " + simpleName + " via " + tempFile.getName());
+                        // 3. Sony VFAT Bug Workaround: Write to 8.3 TMP file first
+                        File tempFile = new File(parentDir, String.format("B%07d.TMP", fileCounter++));
+                        logToFile(targetRootDir, "  - Unzipping " + entryName + " -> " + tempFile.getName());
 
                         FileOutputStream fos = null;
+                        boolean writeSuccess = false;
                         try {
                             fos = new FileOutputStream(tempFile);
                             byte[] buffer = new byte[BUFFER_SIZE];
@@ -107,36 +100,56 @@ public class BundleManager {
                             }
                             fos.flush();
                             try { fos.getFD().sync(); } catch (Exception e) {}
+                            writeSuccess = true;
                         } catch (Exception e) {
-                            logToFile(targetRootDir, "Write failed: " + simpleName + " - " + e.getMessage());
+                            logToFile(targetRootDir, "    WRITE ERROR: " + e.getMessage());
                         } finally {
-                            try { if (fos != null) fos.close(); } catch (Exception e) {}
+                            if (fos != null) try { fos.close(); } catch (Exception e) {}
                         }
 
-                        // 4. Finalize via Rename
-                        if (tempFile.exists()) {
+                        // 4. Rename to Final Long Filename
+                        if (writeSuccess && tempFile.exists()) {
                             if (destFile.exists()) destFile.delete();
                             if (tempFile.renameTo(destFile)) {
-                                logToFile(targetRootDir, "Successfully extracted: " + destFile.getName());
+                                logToFile(targetRootDir, "    OK: Renamed to " + destFile.getName());
                             } else {
-                                logToFile(targetRootDir, "Rename failed for " + destFile.getName() + " - file may be locked.");
-                                tempFile.delete(); // Cleanup failed attempt
+                                logToFile(targetRootDir, "    RENAME FAILED: " + destFile.getName() + " (Attempting fallback copy)");
+                                // Final fallback: byte-for-byte copy
+                                copyFile(tempFile, destFile);
+                                tempFile.delete();
                             }
                         }
                         zis.closeEntry();
                     }
                     
-                    logToFile(targetRootDir, "Bundle Complete: " + zipFile.getName());
                     zis.close();
                     zis = null;
                     zipFile.delete();
+                    logToFile(targetRootDir, "Bundle Complete.");
 
                 } catch (Exception e) {
-                    logToFile(targetRootDir, "Bundle Error: " + zipFile.getName() + " - " + e.getMessage());
+                    logToFile(targetRootDir, "FATAL BUNDLE ERROR: " + e.getMessage());
                 } finally {
-                    try { if (zis != null) zis.close(); } catch (Exception e) {}
+                    if (zis != null) try { zis.close(); } catch (Exception e) {}
                 }
             }
         }).start();
+    }
+
+    private static void copyFile(File src, File dst) throws IOException {
+        FileInputStream in = new FileInputStream(src);
+        FileOutputStream out = new FileOutputStream(dst);
+        try {
+            byte[] buf = new byte[BUFFER_SIZE];
+            int len;
+            while ((len = in.read(buf)) > 0) {
+                out.write(buf, 0, len);
+            }
+            out.flush();
+            try { out.getFD().sync(); } catch (Exception e) {}
+        } finally {
+            in.close();
+            out.close();
+        }
     }
 }
