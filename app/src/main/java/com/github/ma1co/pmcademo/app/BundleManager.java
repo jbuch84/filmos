@@ -22,14 +22,12 @@ public class BundleManager {
             public void run() {
                 try {
                     processed.clear();
-                    // Scan all possible storage roots for JPEGCAM folders
-                    for (File root : Filepaths.getStorageRoots()) {
-                        File appDir = new File(root, "JPEGCAM");
-                        if (appDir.exists() && appDir.isDirectory()) {
-                            scanDir(appDir, appDir);
-                            scanDir(new File(appDir, "RECIPES"), appDir);
-                        }
-                    }
+                    // Use proven app directories from Filepaths.java
+                    File appDir = Filepaths.getAppDir();
+                    File recipeDir = Filepaths.getRecipeDir();
+                    
+                    scanDir(appDir);
+                    scanDir(recipeDir);
                 } finally {
                     isRunning = false;
                 }
@@ -37,7 +35,8 @@ public class BundleManager {
         }).start();
     }
 
-    private static void scanDir(File dir, File root) {
+    private static void scanDir(File dir) {
+        if (dir == null || !dir.exists()) return;
         File[] files = dir.listFiles();
         if (files == null) return;
         for (File f : files) {
@@ -47,16 +46,14 @@ public class BundleManager {
                     String id = f.getCanonicalPath();
                     if (processed.contains(id)) continue;
                     processed.add(id);
-                    doExtract(f, root);
-                } catch (IOException e) {
-                    Log.e(TAG, "Path error: " + e.getMessage());
-                }
+                    doExtract(f);
+                } catch (IOException e) {}
             }
         }
     }
 
-    private static void doExtract(File zip, File root) {
-        Log.d(TAG, "--- UNPACKING BUNDLE: " + zip.getName() + " on " + root.getAbsolutePath() + " ---");
+    private static void doExtract(File zip) {
+        Log.d(TAG, "--- Unpacking Bundle: " + zip.getName() + " ---");
         ZipInputStream zis = null;
         try {
             zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zip)));
@@ -64,55 +61,58 @@ public class BundleManager {
             int counter = 0;
 
             while ((entry = zis.getNextEntry()) != null) {
-                String name = entry.getName();
-                if (entry.isDirectory() || name.toLowerCase().contains("__macosx") || name.contains("/.") || name.startsWith(".")) {
+                String entryName = entry.getName();
+                String lowerName = entryName.toLowerCase();
+                
+                if (entry.isDirectory() || lowerName.contains("__macosx") || entryName.contains("/.") || entryName.startsWith(".")) {
                     zis.closeEntry();
                     continue;
                 }
 
-                // Path Resolution: root is /sdcard/JPEGCAM, name is RECIPES/R_LOOK.TXT
-                File dest = new File(root, name);
-                File parent = dest.getParentFile();
-                
-                // Robust Directory Creation
-                if (parent != null && !parent.exists()) {
-                    if (!parent.mkdirs()) {
-                        // Retry once with a delay (Sony filesystem latency)
-                        try { Thread.sleep(50); } catch (Exception e) {}
-                        parent.mkdirs();
-                    }
+                // Determine target directory using proven Filepaths logic
+                File targetDir = Filepaths.getRecipeDir(); // Default
+                if (lowerName.endsWith(".cube") || lowerName.endsWith(".cub")) {
+                    targetDir = Filepaths.getLutDir();
+                } else if (lowerName.endsWith(".png")) {
+                    targetDir = Filepaths.getGrainDir();
                 }
 
-                // Sony VFAT Workaround: 8.3 TMP file
-                File tmp = new File(parent, String.format("B%07d.TMP", counter++));
-                Log.d(TAG, "  -> " + name);
+                if (!targetDir.exists()) targetDir.mkdirs();
+
+                // Get filename only, ignore zip folders
+                String simpleName = new File(entryName).getName();
+                File destFile = new File(targetDir, simpleName);
+                
+                // VFAT Workaround: 8.3 TMP file in the actual target folder
+                File tempFile = new File(targetDir, String.format("T%03d.TMP", counter++));
 
                 FileOutputStream fos = null;
                 boolean writeOk = false;
                 try {
-                    fos = new FileOutputStream(tmp);
-                    byte[] buf = new byte[BUFFER_SIZE];
-                    int len;
-                    while ((len = zis.read(buf)) != -1) {
-                        fos.write(buf, 0, len);
+                    fos = new FileOutputStream(tempFile);
+                    byte[] buffer = new byte[BUFFER_SIZE];
+                    int count;
+                    while ((count = zis.read(buffer, 0, BUFFER_SIZE)) != -1) {
+                        fos.write(buffer, 0, count);
                     }
                     fos.flush();
                     try { fos.getFD().sync(); } catch (Exception e) {}
                     writeOk = true;
                 } catch (Exception e) {
-                    Log.e(TAG, "    Write failed: " + e.getMessage());
+                    Log.e(TAG, "    Write failed: " + simpleName + " -> " + e.getMessage());
                 } finally {
                     if (fos != null) try { fos.close(); } catch (Exception e) {}
                 }
 
-                // Finalize Move
-                if (writeOk && tmp.exists()) {
-                    if (dest.exists()) dest.delete();
-                    if (!tmp.renameTo(dest)) {
-                        Log.w(TAG, "    Rename failed, using byte-copy fallback for " + dest.getName());
-                        copyFallback(tmp, dest);
+                if (writeOk && tempFile.exists()) {
+                    if (destFile.exists()) destFile.delete();
+                    if (tempFile.renameTo(destFile)) {
+                        Log.d(TAG, "    Extracted: " + destFile.getName());
+                    } else {
+                        // Last ditch fallback
+                        manualCopy(tempFile, destFile);
+                        tempFile.delete();
                     }
-                    tmp.delete(); 
                 }
                 zis.closeEntry();
             }
@@ -120,16 +120,16 @@ public class BundleManager {
             zis.close();
             zis = null;
             if (zip.delete()) {
-                Log.d(TAG, "BUNDLE CLEANUP: Deleted " + zip.getName());
+                Log.d(TAG, "Bundle deleted.");
             }
         } catch (Exception e) {
-            Log.e(TAG, "FATAL BUNDLE ERROR: " + e.getMessage());
+            Log.e(TAG, "Extraction failed: " + e.getMessage());
         } finally {
             if (zis != null) try { zis.close(); } catch (Exception e) {}
         }
     }
 
-    private static void copyFallback(File src, File dst) {
+    private static void manualCopy(File src, File dst) {
         FileInputStream in = null;
         FileOutputStream out = null;
         try {
@@ -140,7 +140,7 @@ public class BundleManager {
             while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
             out.flush();
             try { out.getFD().sync(); } catch (Exception e) {}
-            Log.d(TAG, "    Fallback copy successful.");
+            Log.d(TAG, "    Fallback copy success: " + dst.getName());
         } catch (Exception e) {
             Log.e(TAG, "    Fallback copy failed: " + e.getMessage());
         } finally {
