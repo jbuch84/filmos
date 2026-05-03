@@ -15,10 +15,10 @@ public class BundleManager {
     private static final String TAG = "JPEG.CAM_BUNDLE";
     private static final int BUFFER_SIZE = 8192;
 
-    private static void logToFile(String msg) {
+    private static void logToFile(File rootDir, String msg) {
         Log.e(TAG, msg);
         try {
-            File logFile = new File(Filepaths.getAppDir(), "BUNDLE_DEBUG.TXT");
+            File logFile = new File(rootDir, "BUNDLE_DEBUG.TXT");
             FileWriter fw = new FileWriter(logFile, true);
             fw.write(msg + "\n");
             fw.close();
@@ -28,25 +28,31 @@ public class BundleManager {
     }
 
     public static void extractAllBundles() {
-        extractBundlesInDir(Filepaths.getAppDir());
-        extractBundlesInDir(Filepaths.getRecipeDir());
-    }
-
-    private static void extractBundlesInDir(File dir) {
-        if (dir == null || !dir.exists()) return;
-
-        File[] files = dir.listFiles();
-        if (files == null) return;
-
-        for (File file : files) {
-            if (file.isFile() && file.getName().toLowerCase().endsWith(".cam")) {
-                logToFile("Found bundle in " + dir.getName() + ": " + file.getName());
-                extractBundle(file);
+        for (File root : Filepaths.getStorageRoots()) {
+            File appDir = new File(root, "JPEGCAM");
+            if (appDir.exists() && appDir.isDirectory()) {
+                extractBundlesInDir(appDir, appDir);
+                File recipeDir = new File(appDir, "RECIPES");
+                if (recipeDir.exists() && recipeDir.isDirectory()) {
+                    extractBundlesInDir(recipeDir, appDir);
+                }
             }
         }
     }
 
-    private static void extractBundle(File zipFile) {
+    private static void extractBundlesInDir(File scanDir, File targetRootDir) {
+        File[] files = scanDir.listFiles();
+        if (files == null) return;
+
+        for (File file : files) {
+            if (file.isFile() && file.getName().toUpperCase().endsWith(".cam")) {
+                logToFile(targetRootDir, "Found bundle in " + scanDir.getName() + ": " + file.getName());
+                extractBundle(file, targetRootDir);
+            }
+        }
+    }
+
+    private static void extractBundle(File zipFile, File targetRootDir) {
         ZipInputStream zis = null;
         try {
             zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
@@ -58,7 +64,7 @@ public class BundleManager {
                 
                 // Security: Prevent Zip-Slip vulnerability
                 if (entryName.contains("..")) {
-                    logToFile("Skipping malicious zip entry: " + entryName);
+                    logToFile(targetRootDir, "Skipping malicious zip entry: " + entryName);
                     continue;
                 }
 
@@ -66,19 +72,20 @@ public class BundleManager {
                     continue;
                 }
 
-                File destFile = new File(Filepaths.getAppDir(), entryName);
+                File destFile = new File(targetRootDir, entryName);
                 
                 // Ensure parent directories exist
                 File parentDir = destFile.getParentFile();
                 if (parentDir != null && !parentDir.exists()) {
-                    parentDir.mkdirs();
+                    boolean created = parentDir.mkdirs();
+                    logToFile(targetRootDir, "Created directory: " + parentDir.getAbsolutePath() + " -> " + created);
                 }
 
                 // Sony Android 2.3.7 VFAT bug: write to 8.3 temp file first, then rename.
                 // Using a counter so multiple files in the same dir don't collide if rename is slow.
                 File tempFile = new File(parentDir, String.format("BNDL%03d.TMP", fileCounter++));
 
-                logToFile("Extracting: " + entryName + " to " + tempFile.getAbsolutePath());
+                logToFile(targetRootDir, "Extracting: " + entryName + " to " + tempFile.getAbsolutePath());
 
                 FileOutputStream fos = null;
                 try {
@@ -89,9 +96,9 @@ public class BundleManager {
                         fos.write(buffer, 0, count);
                     }
                     fos.flush();
-                    fos.getFD().sync();
+                    try { fos.getFD().sync(); } catch (Exception e) {}
                 } catch (Exception e) {
-                    logToFile("Failed to extract entry: " + entryName + " - Error: " + e.getMessage());
+                    logToFile(targetRootDir, "Failed to extract entry: " + entryName + " - Error: " + e.getMessage());
                 } finally {
                     try { if (fos != null) fos.close(); } catch (Exception e) {}
                 }
@@ -99,13 +106,13 @@ public class BundleManager {
                 if (tempFile.exists()) {
                     if (destFile.exists()) {
                         boolean delSuccess = destFile.delete();
-                        logToFile("Deleted existing dest: " + destFile.getName() + " -> " + delSuccess);
+                        logToFile(targetRootDir, "Deleted existing dest: " + destFile.getName() + " -> " + delSuccess);
                     }
                     
                     boolean renameSuccess = tempFile.renameTo(destFile);
                     
                     if (!renameSuccess) {
-                        logToFile("Rename failed for: " + tempFile.getName() + " to " + destFile.getName() + ". Attempting fallback.");
+                        logToFile(targetRootDir, "Rename failed for: " + tempFile.getName() + " to " + destFile.getName() + ". Attempting fallback.");
                         // Fallback: Copy bytes directly if renameTo fails
                         FileInputStream fis = null;
                         FileOutputStream fallbackFos = null;
@@ -118,38 +125,38 @@ public class BundleManager {
                                 fallbackFos.write(buffer, 0, count);
                             }
                             fallbackFos.flush();
-                            fallbackFos.getFD().sync();
+                            try { fallbackFos.getFD().sync(); } catch (Exception e2) {}
                             renameSuccess = true;
-                            logToFile("Fallback copy succeeded for: " + destFile.getName());
+                            logToFile(targetRootDir, "Fallback copy succeeded for: " + destFile.getName());
                         } catch (Exception e) {
-                            logToFile("Fallback copy also failed! Error: " + e.getMessage());
+                            logToFile(targetRootDir, "Fallback copy also failed! Error: " + e.getMessage());
                         } finally {
                             try { if (fis != null) fis.close(); } catch (Exception e) {}
                             try { if (fallbackFos != null) fallbackFos.close(); } catch (Exception e) {}
                             if (renameSuccess) { tempFile.delete(); }
                         }
                     } else {
-                        logToFile("Successfully moved to: " + destFile.getName());
+                        logToFile(targetRootDir, "Successfully moved to: " + destFile.getName());
                     }
                 } else {
-                    logToFile("FATAL: Temp file was never created! " + tempFile.getAbsolutePath());
+                    logToFile(targetRootDir, "FATAL: Temp file was never created! " + tempFile.getAbsolutePath());
                 }
 
                 zis.closeEntry();
             }
-            logToFile("Successfully extracted bundle: " + zipFile.getName());
+            logToFile(targetRootDir, "Successfully extracted bundle: " + zipFile.getName());
             
             // Delete the .cam file after successful extraction
             zis.close();
             zis = null;
             if (zipFile.delete()) {
-                logToFile("Deleted bundle: " + zipFile.getName());
+                logToFile(targetRootDir, "Deleted bundle: " + zipFile.getName());
             } else {
-                logToFile("Failed to delete bundle: " + zipFile.getName());
+                logToFile(targetRootDir, "Failed to delete bundle: " + zipFile.getName());
             }
 
         } catch (Exception e) {
-            logToFile("Failed to extract bundle: " + zipFile.getName() + " - Error: " + e.getMessage());
+            logToFile(targetRootDir, "Failed to extract bundle: " + zipFile.getName() + " - Error: " + e.getMessage());
         } finally {
             try { if (zis != null) zis.close(); } catch (Exception e) {}
         }
