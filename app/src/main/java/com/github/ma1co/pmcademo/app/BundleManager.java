@@ -38,6 +38,7 @@ public class BundleManager {
         try {
             zis = new ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)));
             ZipEntry entry;
+            int fileCounter = 0;
 
             while ((entry = zis.getNextEntry()) != null) {
                 String entryName = entry.getName();
@@ -61,8 +62,8 @@ public class BundleManager {
                 }
 
                 // Sony Android 2.3.7 VFAT bug: write to 8.3 temp file first, then rename.
-                // Creating a new file with a long name via FileOutputStream directly can silently fail or throw.
-                File tempFile = new File(parentDir, "BNDL.TMP");
+                // Using a counter so multiple files in the same dir don't collide if rename is slow.
+                File tempFile = new File(parentDir, String.format("BNDL%03d.TMP", fileCounter++));
 
                 Log.d(TAG, "Extracting: " + entryName + " to " + tempFile.getAbsolutePath());
 
@@ -85,9 +86,18 @@ public class BundleManager {
                 }
 
                 if (tempFile.exists()) {
-                    if (destFile.exists()) destFile.delete();
-                    tempFile.renameTo(destFile);
-                    Log.d(TAG, "Successfully moved to: " + destFile.getName());
+                    if (destFile.exists()) {
+                        boolean delSuccess = destFile.delete();
+                        Log.d(TAG, "Deleted existing dest: " + destFile.getName() + " -> " + delSuccess);
+                    }
+                    boolean renameSuccess = tempFile.renameTo(destFile);
+                    if (renameSuccess) {
+                        Log.d(TAG, "Successfully moved to: " + destFile.getName());
+                    } else {
+                        Log.e(TAG, "FATAL: Failed to rename " + tempFile.getName() + " to " + destFile.getName());
+                    }
+                } else {
+                    Log.e(TAG, "FATAL: Temp file was never created! " + tempFile.getAbsolutePath());
                 }
 
                 zis.closeEntry();
