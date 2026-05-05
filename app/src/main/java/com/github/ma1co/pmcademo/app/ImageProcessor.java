@@ -108,7 +108,7 @@ public class ImageProcessor {
                 boolean camGrainLoaded = false;
                 if (p != null && p.camFile != null) {
                     String camPath = new File(Filepaths.getRecipeDir(), p.camFile).getAbsolutePath();
-                    LutEngine.CamLoadResult cam = mEngine.loadFromCam(camPath, mContext.getCacheDir());
+                    LutEngine.CamLoadResult cam = mEngine.loadFromCam(camPath, Filepaths.getAppDir());
                     DebugLog.write("CAM LOAD: file=" + p.camFile + " lut=" + cam.lutLoaded + " grain=" + cam.grainLoaded);
                     if (!cam.lutLoaded && p.opacity > 0) {
                         DebugLog.write("CAM LOAD FAILED: no LUT in bundle");
