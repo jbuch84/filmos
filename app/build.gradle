@@ -5,14 +5,13 @@ android {
     buildToolsVersion "28.0.3"
 
     defaultConfig {
-        // Leave this for one more build so it gracefully updates your existing app!
-        applicationId "com.jpgcookbook.sony"
+        applicationId "com.jpegcam.sony"
         minSdkVersion 10
         targetSdkVersion 25
 
         // Bumped versioning for the JPEG.CAM era
-        versionCode 49
-        versionName "2.01"
+        versionCode 50
+        versionName "2.02"
 
         externalNativeBuild {
             cmake {

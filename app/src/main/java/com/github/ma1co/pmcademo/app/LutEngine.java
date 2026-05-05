@@ -141,12 +141,14 @@ public class LutEngine {
             }
 
             // 2. Extract LUT to temp file, load via the same native loader as loose files.
+            //    Stream directly from the ZIP entry to disk — avoids buffering the entire
+            //    ~1 MB CUBE file in a byte[] which risks OutOfMemoryError on the 24 MB heap.
             if (lutEntry != null) {
                 java.util.zip.ZipEntry le = zf.getEntry(lutEntry);
                 if (le != null) {
                     String ext = lutEntry.contains(".") ? lutEntry.substring(lutEntry.lastIndexOf('.')) : ".cube";
                     tempLutFile = new File(cacheDir, "cam_lut_tmp" + ext);
-                    writeBytesToFile(tempLutFile, readZipEntry(zf, le));
+                    streamZipEntryToFile(zf, le, tempLutFile);
                     result.lutLoaded = loadLutNative(tempLutFile.getAbsolutePath());
                     // Invalidate the Java LUT cache so a subsequent loose-file load works correctly.
                     currentLutName = "";
@@ -160,7 +162,7 @@ public class LutEngine {
                 java.util.zip.ZipEntry ge = zf.getEntry(grainEntry);
                 if (ge != null) {
                     tempGrainFile = new File(cacheDir, "cam_grain_tmp.png");
-                    writeBytesToFile(tempGrainFile, readZipEntry(zf, ge));
+                    streamZipEntryToFile(zf, ge, tempGrainFile);
                     result.grainLoaded = loadGrainTextureNative(tempGrainFile.getAbsolutePath());
                     // Invalidate the Java grain cache so a subsequent loose-file load works correctly.
                     currentGrainTexturePath = "";
@@ -189,7 +191,7 @@ public class LutEngine {
         return result;
     }
 
-    /** Reads all bytes from a ZipEntry using random-access ZipFile. */
+    /** Reads all bytes from a ZipEntry into memory. Only use for small entries (e.g. recipe.json). */
     private static byte[] readZipEntry(java.util.zip.ZipFile zf, java.util.zip.ZipEntry entry)
             throws java.io.IOException {
         java.io.InputStream is = zf.getInputStream(entry);
@@ -201,9 +203,23 @@ public class LutEngine {
         return baos.toByteArray();
     }
 
-    /** Writes a byte array to a file. */
-    private static void writeBytesToFile(File f, byte[] data) throws java.io.IOException {
-        java.io.FileOutputStream fos = new java.io.FileOutputStream(f);
-        try { fos.write(data); } finally { fos.close(); }
+    /**
+     * Streams a ZipEntry directly to a file using an 8 KB buffer.
+     * Avoids holding the full entry content in a byte[] — safe for large assets
+     * (LUT ~1 MB, grain ~300 KB) on the 24 MB Dalvik heap.
+     */
+    private static void streamZipEntryToFile(java.util.zip.ZipFile zf,
+                                             java.util.zip.ZipEntry entry,
+                                             File dest) throws java.io.IOException {
+        java.io.InputStream is = zf.getInputStream(entry);
+        java.io.FileOutputStream fos = new java.io.FileOutputStream(dest);
+        try {
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = is.read(buf)) != -1) fos.write(buf, 0, n);
+        } finally {
+            is.close();
+            fos.close();
+        }
     }
 }
