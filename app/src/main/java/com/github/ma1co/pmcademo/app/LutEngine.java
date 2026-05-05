@@ -112,6 +112,7 @@ public class LutEngine {
         // Cache check — if same .cam and same size, native already has it loaded.
         String cacheKey = camPath + "|" + camFile.length();
         if (cacheKey.equals(currentCamKey)) {
+            DebugLog.write("CAM: cache hit lut=" + lastCamLutLoaded + " grain=" + lastCamGrainLoaded);
             result.lutLoaded   = lastCamLutLoaded;
             result.grainLoaded = lastCamGrainLoaded;
             return result;
@@ -143,13 +144,17 @@ public class LutEngine {
             // 2. Extract LUT to temp file, load via the same native loader as loose files.
             //    Stream directly from the ZIP entry to disk — avoids buffering the entire
             //    ~1 MB CUBE file in a byte[] which risks OutOfMemoryError on the 24 MB heap.
-            if (lutEntry != null) {
+            if (lutEntry == null) {
+                DebugLog.write("CAM: no lutEntry in recipe.json");
+            } else {
                 java.util.zip.ZipEntry le = zf.getEntry(lutEntry);
                 if (le != null) {
                     String ext = lutEntry.contains(".") ? lutEntry.substring(lutEntry.lastIndexOf('.')) : ".cube";
                     tempLutFile = new File(cacheDir, "cam_lut_tmp" + ext);
+                    DebugLog.write("CAM: extracting lut \"" + lutEntry + "\" (" + le.getSize() + "b) -> " + tempLutFile.getAbsolutePath());
                     streamZipEntryToFile(zf, le, tempLutFile);
                     result.lutLoaded = loadLutNative(tempLutFile.getAbsolutePath());
+                    DebugLog.write("CAM: loadLutNative=" + result.lutLoaded);
                     // Invalidate the Java LUT cache so a subsequent loose-file load works correctly.
                     currentLutName = "";
                 } else {
@@ -158,12 +163,16 @@ public class LutEngine {
             }
 
             // 3. Extract grain to temp file, load via the same native loader as loose files (optional).
-            if (grainEntry != null) {
+            if (grainEntry == null) {
+                DebugLog.write("CAM: no grainEntry in recipe.json (ok, optional)");
+            } else {
                 java.util.zip.ZipEntry ge = zf.getEntry(grainEntry);
                 if (ge != null) {
                     tempGrainFile = new File(cacheDir, "cam_grain_tmp.png");
+                    DebugLog.write("CAM: extracting grain \"" + grainEntry + "\" (" + ge.getSize() + "b) -> " + tempGrainFile.getAbsolutePath());
                     streamZipEntryToFile(zf, ge, tempGrainFile);
                     result.grainLoaded = loadGrainTextureNative(tempGrainFile.getAbsolutePath());
+                    DebugLog.write("CAM: loadGrainTextureNative=" + result.grainLoaded);
                     // Invalidate the Java grain cache so a subsequent loose-file load works correctly.
                     currentGrainTexturePath = "";
                 } else {
@@ -174,7 +183,7 @@ public class LutEngine {
             zf.close();
 
         } catch (Exception e) {
-            DebugLog.write("CAM: ZIP open failed: " + e.getMessage());
+            DebugLog.write("CAM: load exception: " + e.getClass().getSimpleName() + ": " + e.getMessage());
             return result;
         } finally {
             // Always remove temp files — they were only needed for the native load call.

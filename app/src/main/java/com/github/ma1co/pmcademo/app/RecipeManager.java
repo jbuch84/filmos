@@ -155,8 +155,10 @@ public class RecipeManager {
             fis.read(data);
             fis.close();
             JSONObject json = new JSONObject(new String(data, "UTF-8"));
-            p.profileName = json.optString("profileName", "RECIPE");
-            p.camFile     = json.optString("camFile", null);   // null = normal loose-file mode
+            p.profileName      = json.optString("profileName", "RECIPE");
+            p.camFile          = json.optString("camFile", null);   // null = normal loose-file mode
+            p.bundledLutName   = json.optString("bundledLutName", null);
+            p.bundledGrainName = json.optString("bundledGrainName", null);
             String loadedLutName = json.optString("lutName", "OFF");
             p.lutIndex = recipeNames.indexOf(loadedLutName);
             if (p.lutIndex == -1) p.lutIndex = 0;
@@ -212,6 +214,12 @@ public class RecipeManager {
             sb.append("  \"profileName\": \"").append(p.profileName.replace("\"", "\\\"")).append("\",\n");
             if (p.camFile != null) {
                 sb.append("  \"camFile\": \"").append(p.camFile.replace("\"", "\\\"")).append("\",\n");
+            }
+            if (p.bundledLutName != null) {
+                sb.append("  \"bundledLutName\": \"").append(p.bundledLutName.replace("\"", "\\\"")).append("\",\n");
+            }
+            if (p.bundledGrainName != null) {
+                sb.append("  \"bundledGrainName\": \"").append(p.bundledGrainName.replace("\"", "\\\"")).append("\",\n");
             }
             sb.append("  \"lutName\": \"").append(lutNameToSave.replace("\"", "\\\"")).append("\",\n");
             sb.append("  \"lutOpacity\": ").append(p.opacity).append(",\n");
